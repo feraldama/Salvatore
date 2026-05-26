@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   Disclosure,
   DisclosureButton,
@@ -6,7 +7,6 @@ import {
 import {
   XMarkIcon,
   ChevronDownIcon,
-  ChevronRightIcon,
   HomeIcon,
   KeyIcon,
   UsersIcon,
@@ -21,165 +21,263 @@ import {
   ChartBarIcon,
   ShoppingCartIcon,
 } from "@heroicons/react/24/outline";
+import type { ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { Dispatch, SetStateAction } from "react";
 
 interface NavigationChild {
   name: string;
   href: string;
+}
+
+interface NavigationItem {
+  name: string;
+  href: string;
+  icon: ComponentType<{ className?: string }>;
   children?: NavigationChild[];
 }
 
-interface NavigationItem extends NavigationChild {
-  icon?: React.ReactNode;
+interface NavigationSection {
+  label: string;
+  items: NavigationItem[];
 }
 
-const navigation: NavigationItem[] = [
+const sections: NavigationSection[] = [
   {
-    name: "Dashboard",
-    href: "/dashboard",
-    icon: <HomeIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Apertura/Cierre de Caja",
-    href: "/apertura-cierre-caja",
-    icon: <LockClosedIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Ventas",
-    href: "/ventas",
-    icon: <CurrencyDollarIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Compras",
-    href: "/compras",
-    icon: <ShoppingCartIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Cobro de Créditos",
-    href: "/credito-pagos",
-    icon: <BanknotesIcon className="h-7 w-6" />,
-  },
-
-  {
-    name: "Almacenes",
-    href: "/almacenes",
-    icon: <ArchiveBoxIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Productos",
-    href: "/products",
-    icon: <CubeIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Combos",
-    href: "/combos",
-    icon: <RectangleGroupIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Clientes",
-    href: "/customers",
-    icon: <UsersIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Reportes",
-    href: "/reportes",
-    icon: <ChartBarIcon className="h-7 w-6" />,
-  },
-  {
-    name: "Registro Diario",
-    href: "/movements",
-    icon: <PencilSquareIcon className="h-7 w-6" />,
-    children: [
-      { name: "Cajas", href: "/movements/cajas" },
-      { name: "Tipos de Gasto", href: "/movements/tiposgasto" },
-      // { name: "Compras", href: "/movements/purchases" },
-      { name: "Registro Diario Caja", href: "/movements/summary" },
+    label: "Operación",
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: HomeIcon },
+      {
+        name: "Apertura/Cierre de Caja",
+        href: "/apertura-cierre-caja",
+        icon: LockClosedIcon,
+      },
+      { name: "Ventas", href: "/ventas", icon: CurrencyDollarIcon },
+      { name: "Compras", href: "/compras", icon: ShoppingCartIcon },
+      {
+        name: "Cobro de Créditos",
+        href: "/credito-pagos",
+        icon: BanknotesIcon,
+      },
     ],
   },
   {
-    name: "Modificaciones",
-    href: "/modifications",
-    icon: <WrenchIcon className="h-7 w-6" />,
-    children: [
-      { name: "Facturas", href: "/facturas" },
-      { name: "Ventas", href: "/modifications/ventas" },
-      { name: "Compras", href: "/modifications/compras" },
-      { name: "Inventario", href: "/inventario" },
+    label: "Catálogo",
+    items: [
+      { name: "Productos", href: "/products", icon: CubeIcon },
+      { name: "Combos", href: "/combos", icon: RectangleGroupIcon },
+      { name: "Almacenes", href: "/almacenes", icon: ArchiveBoxIcon },
+      { name: "Clientes", href: "/customers", icon: UsersIcon },
     ],
   },
   {
-    name: "Control de Acceso",
-    href: "/access-control",
-    icon: <KeyIcon className="h-7 w-6" />,
-    children: [
-      { name: "Locales", href: "/locales" },
-      { name: "Usuarios", href: "/users" },
-      { name: "Perfiles", href: "/perfiles" },
-      { name: "Menús", href: "/menus" },
+    label: "Análisis",
+    items: [
+      { name: "Reportes", href: "/reportes", icon: ChartBarIcon },
+      {
+        name: "Registro Diario",
+        href: "/movements",
+        icon: PencilSquareIcon,
+        children: [
+          { name: "Cajas", href: "/movements/cajas" },
+          { name: "Tipos de Gasto", href: "/movements/tiposgasto" },
+          { name: "Registro Diario Caja", href: "/movements/summary" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Administración",
+    items: [
+      {
+        name: "Modificaciones",
+        href: "/modifications",
+        icon: WrenchIcon,
+        children: [
+          { name: "Facturas", href: "/facturas" },
+          { name: "Ventas", href: "/modifications/ventas" },
+          { name: "Compras", href: "/modifications/compras" },
+          { name: "Inventario", href: "/inventario" },
+        ],
+      },
+      {
+        name: "Control de Acceso",
+        href: "/access-control",
+        icon: KeyIcon,
+        children: [
+          { name: "Locales", href: "/locales" },
+          { name: "Usuarios", href: "/users" },
+          { name: "Perfiles", href: "/perfiles" },
+          { name: "Menús", href: "/menus" },
+        ],
+      },
     ],
   },
 ];
 
-interface NavItemProps {
-  item: NavigationItem;
-  level?: number;
+interface NavItemLeafProps {
+  name: string;
+  href: string;
+  icon?: ComponentType<{ className?: string }>;
+  isActive: boolean;
+  indent?: boolean;
   onNavigate?: () => void;
 }
 
-function NavItem({ item, level = 0, onNavigate }: NavItemProps) {
-  const location = useLocation();
-  const isActive = location.pathname === item.href;
-
-  if (item.children) {
-    return (
-      <Disclosure as="div" defaultOpen={isActive}>
-        {({ open }) => (
-          <>
-            <DisclosureButton
-              className={`flex items-center w-full px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md ${
-                isActive ? "bg-gray-700 text-white" : ""
-              }`}
-              style={{ paddingLeft: `${level * 12 + 12}px` }}
-            >
-              {level === 0 && <span className="mr-3 text-lg">{item.icon}</span>}
-              <span className="flex-1 text-left">{item.name}</span>
-              {open ? (
-                <ChevronDownIcon className="h-4 w-4" />
-              ) : (
-                <ChevronRightIcon className="h-4 w-4" />
-              )}
-            </DisclosureButton>
-            <DisclosurePanel as="ul" className="space-y-1">
-              {item.children &&
-                item.children.map((child) => (
-                  <li key={child.name}>
-                    <NavItem
-                      item={child}
-                      level={level + 1}
-                      onNavigate={onNavigate}
-                    />
-                  </li>
-                ))}
-            </DisclosurePanel>
-          </>
-        )}
-      </Disclosure>
-    );
-  }
-
+function NavItemLeaf({
+  name,
+  href,
+  icon: Icon,
+  isActive,
+  indent = false,
+  onNavigate,
+}: NavItemLeafProps) {
   return (
     <Link
-      to={item.href}
+      to={href}
       onClick={onNavigate}
-      className={`flex items-center px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md ${
-        isActive ? "bg-gray-700 text-white" : ""
-      }`}
-      style={{ paddingLeft: `${level * 12 + (level === 0 ? 12 : 24)}px` }}
+      aria-current={isActive ? "page" : undefined}
+      className={[
+        "group relative flex items-center gap-3 rounded-md text-sm font-medium transition-colors duration-150",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60",
+        indent ? "ml-7 pl-3 pr-3 py-1.5" : "px-3 py-2",
+        isActive
+          ? "bg-sidebar-active text-sidebar-text-active shadow-sm"
+          : "text-sidebar-text hover:bg-sidebar-hover hover:text-white",
+      ].join(" ")}
     >
-      {level === 0 && <span className="mr-3 text-lg">{item.icon}</span>}
-      {item.name}
+      {isActive && !indent && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-success-200"
+        />
+      )}
+      {Icon && (
+        <Icon
+          className={`h-5 w-5 shrink-0 ${
+            isActive ? "text-white" : "text-sidebar-text/80 group-hover:text-white"
+          }`}
+        />
+      )}
+      <span className="truncate">{name}</span>
     </Link>
+  );
+}
+
+interface NavGroupProps {
+  item: NavigationItem;
+  onNavigate?: () => void;
+}
+
+function NavGroup({ item, onNavigate }: NavGroupProps) {
+  const location = useLocation();
+  const Icon = item.icon;
+  const childActive = !!item.children?.some(
+    (c) => location.pathname === c.href || location.pathname.startsWith(c.href + "/")
+  );
+  const isOpen = childActive;
+
+  return (
+    <Disclosure as="div" defaultOpen={isOpen}>
+      {({ open }) => (
+        <>
+          <DisclosureButton
+            className={[
+              "group flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60",
+              childActive
+                ? "bg-sidebar-hover text-white"
+                : "text-sidebar-text hover:bg-sidebar-hover hover:text-white",
+            ].join(" ")}
+          >
+            <Icon
+              className={`h-5 w-5 shrink-0 ${
+                childActive
+                  ? "text-white"
+                  : "text-sidebar-text/80 group-hover:text-white"
+              }`}
+            />
+            <span className="flex-1 text-left truncate">{item.name}</span>
+            <ChevronDownIcon
+              className={`h-4 w-4 transition-transform duration-200 ${
+                open ? "rotate-180" : ""
+              } text-sidebar-text/70`}
+            />
+          </DisclosureButton>
+          <DisclosurePanel as="ul" className="mt-1 space-y-0.5">
+            {item.children?.map((child) => {
+              const isActive = location.pathname === child.href;
+              return (
+                <li key={child.name}>
+                  <NavItemLeaf
+                    name={child.name}
+                    href={child.href}
+                    isActive={isActive}
+                    indent
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              );
+            })}
+          </DisclosurePanel>
+        </>
+      )}
+    </Disclosure>
+  );
+}
+
+interface SidebarContentProps {
+  onNavigate?: () => void;
+}
+
+function SidebarContent({ onNavigate }: SidebarContentProps) {
+  const location = useLocation();
+
+  return (
+    <nav className="px-3 py-4 space-y-6" aria-label="Navegación principal">
+      {sections.map((section) => (
+        <div key={section.label}>
+          <div
+            style={{
+              color: "#fbbf24",
+              fontSize: "11px",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+              padding: "0 12px",
+              marginBottom: "8px",
+            }}
+          >
+            {section.label}
+          </div>
+          <ul className="space-y-0.5">
+            {section.items.map((item) => {
+              if (item.children) {
+                return (
+                  <li key={item.name}>
+                    <NavGroup item={item} onNavigate={onNavigate} />
+                  </li>
+                );
+              }
+              const isActive =
+                location.pathname === item.href ||
+                location.pathname.startsWith(item.href + "/");
+              return (
+                <li key={item.name}>
+                  <NavItemLeaf
+                    name={item.name}
+                    href={item.href}
+                    icon={item.icon}
+                    isActive={isActive}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
 }
 
@@ -189,65 +287,68 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen, setMobileOpen]);
+
   return (
     <>
       {/* Mobile sidebar */}
       <div className="lg:hidden">
         <div
-          className={`fixed inset-0 z-40 bg-gray-600 bg-opacity-75 transition-opacity ${
-            mobileOpen ? "block" : "hidden"
-          }`}
+          aria-hidden="true"
           onClick={() => setMobileOpen(false)}
+          className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 ${
+            mobileOpen
+              ? "opacity-100"
+              : "opacity-0 pointer-events-none"
+          }`}
         />
-
-        <div
-          className={`fixed inset-y-0 left-0 z-50 w-64 transform ${
+        <aside
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menú de navegación"
+          className={`fixed inset-y-0 left-0 z-50 w-72 bg-sidebar transform transition-transform duration-200 ease-out shadow-xl ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
-          } transition-transform lg:relative lg:translate-x-0`}
+          }`}
         >
-          <div className="flex h-full flex-col bg-gray-800">
-            <div className="flex h-16 shrink-0 items-center justify-between px-4 bg-gray-900">
-              <span className="text-white font-bold">SALVATORE</span>
-              <button
-                type="button"
-                className="rounded-md text-gray-300 hover:text-white focus:outline-none"
-                onClick={() => setMobileOpen(false)}
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <nav className="px-2 py-4 space-y-1">
-                {navigation.map((item) => (
-                  <NavItem
-                    key={item.name}
-                    item={item}
-                    onNavigate={() => setMobileOpen(false)}
-                  />
-                ))}
-              </nav>
-            </div>
+          <div className="flex h-16 shrink-0 items-center justify-between px-5 border-b border-white/10">
+            <span className="font-display text-lg font-semibold tracking-wide text-white">
+              Salvatore
+            </span>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Cerrar menú"
+              className="rounded-md p-1.5 text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors duration-150 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
           </div>
-        </div>
+          <div className="h-[calc(100%-4rem)] overflow-y-auto">
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </div>
+        </aside>
       </div>
 
-      {/* Desktop sidebar (siempre visible) */}
-      <div
-        className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-64 lg:flex lg:flex-col bg-sidebar"
-        style={{
-          top: "64px",
-          height: "calc(100vh - 64px)",
-          // background: "#0F172A",
-        }}
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:w-64 lg:flex lg:flex-col bg-sidebar pt-16"
+        aria-label="Navegación lateral"
       >
         <div className="flex-1 overflow-y-auto">
-          <nav className="px-2 py-4 space-y-1">
-            {navigation.map((item) => (
-              <NavItem key={item.name} item={item} />
-            ))}
-          </nav>
+          <SidebarContent />
         </div>
-      </div>
+      </aside>
     </>
   );
 }

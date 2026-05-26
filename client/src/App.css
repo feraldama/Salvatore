@@ -18,34 +18,35 @@
 
 @theme {
   /* -----------------------------------------------------------------------
-     1. BRAND (Navy / Blue) — primary actions, enlaces, foco, ítems activos.
+     1. BRAND (Indigo) — primary actions, enlaces, foco, ítems activos.
+        Paleta refrescada 2026: indigo moderno en lugar de royal blue clásico.
      ----------------------------------------------------------------------- */
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8; /* DEFAULT — botones primarios, links */
-  --color-brand-800: #1e40af; /* hover primario                      */
-  --color-brand-900: #1e3a8a; /* sidebar item activo                 */
-  --color-brand-950: #172554;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5; /* DEFAULT alterno — buttons en lg                       */
+  --color-brand-700: #4338ca; /* DEFAULT — botones primarios, links                    */
+  --color-brand-800: #3730a3; /* hover primario                                        */
+  --color-brand-900: #312e81; /* sidebar item hover                                    */
+  --color-brand-950: #1e1b4b;
 
   /* Alias primary: mismos valores que brand. Mantenemos `--color-primary`
      para compat con código legacy (Dashboard usaba text-primary-900). */
-  --color-primary: #1d4ed8;
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-  --color-primary-950: #172554;
+  --color-primary: #4338ca;
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b;
 
   /* -----------------------------------------------------------------------
      2. NEUTRAL / Surface — fondos, texto, bordes.
@@ -65,24 +66,29 @@
   --color-text-subtle: #94a3b8;    /* Placeholders / disabled / hints       */
   --color-text-inverse: #ffffff;   /* Sobre fondos oscuros                  */
 
-  /* Sidebar — navy con tinte cálido, no slate puro */
-  --color-sidebar: #0b1426;
-  --color-sidebar-hover: #1a2540;
-  --color-sidebar-active: #1e3a8a; /* brand-900                             */
-  --color-sidebar-text: #cbd5e1;
+  /* Sidebar — slate/charcoal con acento emerald.
+     Patrón "Linear / Vercel": el sidebar es contenedor neutro,
+     el emerald del item activo es el único color saturado → atrae la mirada. */
+  --color-sidebar: #0f172a;        /* slate-950 — base                       */
+  --color-sidebar-hover: #1e293b;  /* slate-800 — hover sutil                */
+  --color-sidebar-active: #10b981; /* emerald-500 — item activo (pop fuerte)*/
+  --color-sidebar-text: #cbd5e1;   /* slate-300 — body items                 */
   --color-sidebar-text-active: #ffffff;
+  --color-sidebar-section: #f59e0b; /* amber-500 — labels de sección (complementario)*/
 
   /* -----------------------------------------------------------------------
      3. SEMÁNTICA DE ESTADO — ventas, créditos, stock, validaciones.
         Status -700 (desaturados) por defecto: menos fatiga en uso prolongado.
      ----------------------------------------------------------------------- */
-  /* Éxito — venta aprobada, cobro confirmado, apertura de caja OK */
-  --color-success-50: #f0fdf4;
-  --color-success-100: #dcfce7;
-  --color-success-500: #22c55e;
-  --color-success-600: #16a34a;
-  --color-success-700: #15803d; /* DEFAULT */
-  --color-success-800: #166534; /* hover    */
+  /* Éxito — venta aprobada, cobro confirmado, apertura de caja OK.
+     Paleta emerald (más fresca y moderna que green forest). */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857; /* DEFAULT */
+  --color-success-800: #065f46; /* hover    */
 
   /* Advertencia — crédito pendiente, stock bajo, por vencer */
   --color-warning-50: #fffbeb;
@@ -95,6 +101,7 @@
   /* Peligro — eliminar, deuda vencida, error crítico */
   --color-danger-50: #fef2f2;
   --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
   --color-danger-500: #ef4444;
   --color-danger-600: #dc2626;
   --color-danger-700: #b91c1c; /* DEFAULT */
@@ -165,11 +172,10 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
-/* Headings por defecto con la display font */
-h1,
-h2,
-h3,
-h4 {
+/* Headings por defecto con la display font.
+   :where() mantiene la especificidad en 0, para que cualquier utilidad
+   (text-warning-500, text-white, etc.) pueda sobrescribir sin !important. */
+:where(h1, h2, h3, h4) {
   font-family: var(--font-display);
   color: var(--color-text);
 }

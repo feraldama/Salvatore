@@ -216,11 +216,13 @@ const ComprasList = ({
     {
       key: "Total",
       label: "Total",
+      numeric: true,
       render: (compra: CompraWithId) => formatCurrency(Number(compra.Total)),
     },
     {
       key: "CompraEntrega",
       label: "Entrega",
+      numeric: true,
       render: (compra: CompraWithId) =>
         compra.CompraEntrega
           ? formatCurrency(Number(compra.CompraEntrega))

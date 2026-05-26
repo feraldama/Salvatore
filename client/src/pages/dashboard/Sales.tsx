@@ -901,14 +901,14 @@ export default function Sales() {
     return <PermissionDenied resource="la pantalla de ventas" />;
 
   return (
-    <div className="flex h-screen bg-[#f5f8ff]">
+    <div className="flex h-screen bg-surface-alt">
       {/* Lado Izquierdo */}
-      <div className="flex-1 bg-[#f5f8ff] p-4 flex flex-col justify-between">
+      <div className="flex-1 bg-surface-alt p-4 flex flex-col justify-between">
         <div className="bg-white rounded-xl shadow-lg p-0 mb-4 flex flex-col max-h-[80vh] overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <table className="w-full border-separate border-spacing-0">
               <thead>
-                <tr className="text-left bg-[#f5f8ff]">
+                <tr className="text-left bg-surface-alt">
                   <th className="py-4 pl-6 font-semibold text-[15px]">
                     Nombre
                   </th>
@@ -942,7 +942,7 @@ export default function Sales() {
                         <img
                           src={p.imagen}
                           alt={p.nombre}
-                          className="w-14 h-14 object-contain rounded-lg bg-[#f5f8ff] shadow"
+                          className="w-14 h-14 object-contain rounded-lg bg-surface-alt shadow"
                         />
                         <div>
                           <div className="font-bold text-[17px] text-[#222] leading-tight">
@@ -969,7 +969,7 @@ export default function Sales() {
                               cambiarCantidad(p.cartItemId, p.cantidad - 1);
                               setSelectedProductId(p.cartItemId);
                             }}
-                            className="w-8 h-8 border border-gray-300 rounded bg-gray-50 text-gray-700 text-lg font-bold flex items-center justify-center hover:bg-gray-100"
+                            className="w-8 h-8 border border-border rounded bg-surface-sunken text-text text-lg font-bold flex items-center justify-center hover:bg-surface-muted transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                           >
                             -
                           </button>
@@ -1010,7 +1010,7 @@ export default function Sales() {
                               cambiarCantidad(p.cartItemId, p.cantidad + 1);
                               setSelectedProductId(p.cartItemId);
                             }}
-                            className="w-8 h-8 border border-gray-300 rounded bg-gray-50 text-gray-700 text-lg font-bold flex items-center justify-center hover:bg-gray-100"
+                            className="w-8 h-8 border border-border rounded bg-surface-sunken text-text text-lg font-bold flex items-center justify-center hover:bg-surface-muted transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                           >
                             +
                           </button>
@@ -1040,10 +1040,10 @@ export default function Sales() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 align-middle text-right font-medium text-[17px] text-gray-700">
+                    <td className="py-3 align-middle text-right font-num font-medium text-[17px] text-text-muted">
                       <>Gs. {formatMiles(obtenerPrecio(p))}</>
                     </td>
-                    <td className="py-3 pr-6 align-middle text-right font-medium text-[17px] text-gray-700">
+                    <td className="py-3 pr-6 align-middle text-right font-num font-medium text-[17px] text-text">
                       Gs. {formatMiles(obtenerTotal(p))}
                     </td>
                   </tr>
@@ -1072,10 +1072,10 @@ export default function Sales() {
           </div>
           {/* Total */}
           <div className="flex justify-between items-center mb-3">
-            <span className="font-bold text-lg">Total</span>
+            <span className="font-bold text-lg text-text">Total</span>
             <span
-              className={`font-semibold text-lg ${
-                isDevolucion ? "text-red-500" : "text-blue-500"
+              className={`font-num font-semibold text-lg ${
+                isDevolucion ? "text-danger-700" : "text-brand-700"
               }`}
             >
               Gs. {formatMiles(total)}
@@ -1085,10 +1085,10 @@ export default function Sales() {
           <div className="grid grid-cols-3 gap-4 mb-3">
             {/* Botón Pagar/Devolver grande */}
             <button
-              className={`text-white font-semibold rounded-lg flex items-center justify-center text-lg h-[100px] border-2 transition cursor-pointer ${
+              className={`text-white font-semibold rounded-lg flex items-center justify-center text-lg h-[100px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
                 isDevolucion
-                  ? "bg-red-500 border-red-500 hover:bg-red-600"
-                  : "bg-blue-500 border-blue-500 hover:bg-blue-600"
+                  ? "bg-danger-700 border-danger-700 hover:bg-danger-800 focus-visible:ring-danger-600/50"
+                  : "bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
               }`}
               onClick={() => setShowModal(true)}
             >
@@ -1096,14 +1096,14 @@ export default function Sales() {
             </button>
             {/* Botón Presupuesto */}
             <button
-              className="bg-white border border-gray-200 rounded-lg text-gray-700 font-medium text-lg h-[100px] flex items-center justify-center hover:bg-gray-100 transition"
+              className="bg-surface border border-border rounded-lg text-text font-medium text-lg h-[100px] flex items-center justify-center hover:bg-surface-muted transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               onClick={handlePresupuestoPDF}
             >
               Presupuesto
             </button>
             {/* Botón Imprimir Factura */}
             <button
-              className="bg-green-500 border border-green-500 rounded-lg text-white font-medium text-lg h-[100px] flex items-center justify-center hover:bg-green-600 transition"
+              className="bg-success-700 border border-success-700 rounded-lg text-white font-medium text-lg h-[100px] flex items-center justify-center hover:bg-success-800 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
               onClick={() => setShowInvoicePrintModal(true)}
             >
               Imprimir Factura
@@ -1112,7 +1112,7 @@ export default function Sales() {
           {/* Recuadro inferior para el nombre del cliente */}
           <div className="mt-2">
             <button
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 text-center text-gray-700 font-semibold text-base tracking-wide hover:bg-blue-100 transition cursor-pointer"
+              className="w-full bg-surface-sunken border border-border rounded-lg py-2 text-center text-text font-semibold text-base tracking-wide hover:bg-brand-50 hover:border-brand-200 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
               onClick={() => setShowClienteModal(true)}
             >
               {clienteSeleccionado
@@ -1201,11 +1201,11 @@ export default function Sales() {
               }}
             >
               {loading ? (
-                <div className="col-span-full text-center py-8 text-gray-500">
+                <div className="col-span-full text-center py-8 text-text-muted">
                   Cargando productos...
                 </div>
               ) : productos.length === 0 ? (
-                <div className="col-span-full text-center py-8 text-gray-500">
+                <div className="col-span-full text-center py-8 text-text-muted">
                   No se encontraron productos
                 </div>
               ) : (

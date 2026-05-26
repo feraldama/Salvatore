@@ -12,6 +12,9 @@ export type { TextInputProps } from "./Input/TextInput";
 export { Card, CardHeader } from "./Card/Card";
 export type { CardProps, CardHeaderProps } from "./Card/Card";
 
+export { default as Modal } from "./Modal/Modal";
+export type { ModalProps } from "./Modal/Modal";
+
 export { default as Badge } from "./Badge/Badge";
 export type { BadgeProps } from "./Badge/Badge";
 

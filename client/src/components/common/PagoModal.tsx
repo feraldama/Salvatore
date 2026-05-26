@@ -7,6 +7,7 @@ import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.s
 import { getCajaById } from "../../services/cajas.service";
 import Swal from "sweetalert2";
 import { formatMiles } from "../../utils/utils";
+import { Modal, Button, TextInput } from "./ui";
 
 interface TipoGasto {
   TipoGastoId: number;
@@ -25,6 +26,10 @@ interface PagoModalProps {
   usuario: { id: number | string } | null;
 }
 
+const selectClasses =
+  "w-full bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong";
+const labelClasses = "block text-xs font-medium text-text-muted mb-1";
+
 const PagoModal: React.FC<PagoModalProps> = ({
   show,
   handleClose,
@@ -38,6 +43,7 @@ const PagoModal: React.FC<PagoModalProps> = ({
   const [monto, setMonto] = useState<number | "">("");
   const [tiposGasto, setTiposGasto] = useState<TipoGasto[]>([]);
   const [tiposGastoGrupo, setTiposGastoGrupo] = useState<TipoGastoGrupo[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (show) {
@@ -58,6 +64,7 @@ const PagoModal: React.FC<PagoModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cajaAperturada || !usuario) return;
+    setSubmitting(true);
     try {
       await createRegistroDiarioCaja({
         CajaId: cajaAperturada.CajaId,
@@ -68,19 +75,16 @@ const PagoModal: React.FC<PagoModalProps> = ({
         RegistroDiarioCajaMonto: monto,
         UsuarioId: usuario.id,
       });
-      // Obtener el monto actualizado de la caja aperturada por el usuario
       const estado = await getEstadoAperturaPorUsuario(usuario.id);
       const cajaAperturadaId = estado.cajaId;
       const cajaActualizada = await getCajaById(cajaAperturadaId);
       const cajaMontoActual = cajaActualizada.CajaMonto;
       if (tipoGastoId === 1) {
-        // Restar el monto
         await updateCajaMonto(
           cajaAperturadaId,
           Number(cajaMontoActual) - Number(monto)
         );
       } else if (tipoGastoId === 2) {
-        // Sumar el monto
         await updateCajaMonto(
           cajaAperturadaId,
           Number(cajaMontoActual) + Number(monto)
@@ -101,126 +105,105 @@ const PagoModal: React.FC<PagoModalProps> = ({
       const errorMsg =
         err instanceof Error ? err.message : "No se pudo registrar el pago";
       Swal.fire("Error", errorMsg, "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  if (!show) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
-        <button
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl"
-          onClick={handleClose}
-        >
-          &times;
-        </button>
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-          Nuevo Pago
-        </h2>
-        <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 gap-4 mb-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Fecha
-              </label>
-              <input
-                type="date"
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                required
-                className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Tipo de Gasto
-              </label>
-              <select
-                value={tipoGastoId}
-                onChange={(e) => setTipoGastoId(Number(e.target.value))}
-                required
-                className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-              >
-                <option value="">Seleccione...</option>
-                {tiposGasto.map((tg) => (
-                  <option key={tg.TipoGastoId} value={tg.TipoGastoId}>
-                    {tg.TipoGastoDescripcion}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Grupo de Gasto
-              </label>
-              <select
-                value={tipoGastoGrupoId}
-                onChange={(e) => setTipoGastoGrupoId(Number(e.target.value))}
-                required
-                className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-              >
-                <option value="">Seleccione...</option>
-                {gruposFiltrados.map((gg) => (
-                  <option key={gg.TipoGastoGrupoId} value={gg.TipoGastoGrupoId}>
-                    {gg.TipoGastoGrupoDescripcion}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Descripción
-              </label>
-              <input
-                type="text"
-                value={detalle}
-                onChange={(e) => setDetalle(e.target.value)}
-                required
-                className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">
-                Monto
-              </label>
-              <input
-                type="text"
-                value={monto !== "" ? formatMiles(monto) : ""}
-                onChange={(e) => {
-                  // Eliminar puntos y formatear correctamente
-                  const raw = e.target.value
-                    .replace(/\./g, "")
-                    .replace(/,/g, ".");
-                  const num = Number(raw);
-                  setMonto(isNaN(num) ? "" : num);
-                }}
-                required
-                className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-                inputMode="numeric"
-                pattern="[0-9.]*"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button
-              type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-            >
-              Guardar
-            </button>
-            <button
-              type="button"
-              className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition"
-              onClick={handleClose}
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      open={show}
+      onClose={handleClose}
+      size="md"
+      title="Nuevo pago"
+      footer={
+        <>
+          <Button
+            variant="secondary"
+            onClick={handleClose}
+            disabled={submitting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            form="pago-form"
+            loading={submitting}
+          >
+            Guardar
+          </Button>
+        </>
+      }
+    >
+      <form id="pago-form" onSubmit={handleSubmit} className="space-y-4">
+        <TextInput
+          label="Fecha"
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          required
+        />
+        <div>
+          <label className={labelClasses} htmlFor="pago-tipo">
+            Tipo de gasto
+          </label>
+          <select
+            id="pago-tipo"
+            value={tipoGastoId}
+            onChange={(e) => setTipoGastoId(Number(e.target.value))}
+            required
+            className={selectClasses}
+          >
+            <option value="">Seleccione...</option>
+            {tiposGasto.map((tg) => (
+              <option key={tg.TipoGastoId} value={tg.TipoGastoId}>
+                {tg.TipoGastoDescripcion}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelClasses} htmlFor="pago-grupo">
+            Grupo de gasto
+          </label>
+          <select
+            id="pago-grupo"
+            value={tipoGastoGrupoId}
+            onChange={(e) => setTipoGastoGrupoId(Number(e.target.value))}
+            required
+            className={selectClasses}
+          >
+            <option value="">Seleccione...</option>
+            {gruposFiltrados.map((gg) => (
+              <option key={gg.TipoGastoGrupoId} value={gg.TipoGastoGrupoId}>
+                {gg.TipoGastoGrupoDescripcion}
+              </option>
+            ))}
+          </select>
+        </div>
+        <TextInput
+          label="Descripción"
+          type="text"
+          value={detalle}
+          onChange={(e) => setDetalle(e.target.value)}
+          required
+        />
+        <TextInput
+          label="Monto"
+          type="text"
+          numeric
+          value={monto !== "" ? formatMiles(monto) : ""}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/\./g, "").replace(/,/g, ".");
+            const num = Number(raw);
+            setMonto(isNaN(num) ? "" : num);
+          }}
+          required
+          inputMode="numeric"
+          pattern="[0-9.]*"
+        />
+      </form>
+    </Modal>
   );
 };
 

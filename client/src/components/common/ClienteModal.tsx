@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from "react";
-import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { PlusIcon } from "@heroicons/react/24/outline";
 import ClienteFormModal from "./ClienteFormModal";
 import type { Cliente } from "./ClienteFormModal";
-import { Button, TextInput, Badge } from "./ui";
+import { Button, TextInput, Badge, Modal } from "./ui";
 import { formatMiles } from "../../utils/utils";
 
 interface ClienteModalProps {
@@ -59,22 +59,11 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
     }
   };
 
-  if (!show) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-surface rounded-lg shadow-modal w-full max-w-4xl max-h-[90vh] p-6 relative flex flex-col">
-        <button
-          aria-label="Cerrar"
-          className="absolute top-4 right-4 text-text-subtle hover:text-text transition-colors duration-150 cursor-pointer"
-          onClick={onClose}
-        >
-          <XMarkIcon className="w-5 h-5" />
-        </button>
-        <div className="flex justify-between items-center mb-4 pr-8">
-          <h2 className="text-xl font-semibold text-text">Buscar Cliente</h2>
-          {onCreateCliente && (
+    <Modal open={show} onClose={onClose} size="4xl" title="Buscar cliente">
+      <div className="flex flex-col">
+        {onCreateCliente && (
+          <div className="flex justify-end mb-4">
             <Button
               variant="primary"
               size="sm"
@@ -83,8 +72,8 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
             >
               Nuevo Cliente
             </Button>
-          )}
-        </div>
+          </div>
+        )}
         <div className="bg-surface-sunken rounded-md p-4 mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <TextInput
@@ -231,7 +220,7 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
           currentUserId={currentUserId}
         />
       </div>
-    </div>
+    </Modal>
   );
 };
 

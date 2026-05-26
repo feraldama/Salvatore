@@ -300,17 +300,20 @@ const VentasList = ({
     {
       key: "Total",
       label: "Total",
+      numeric: true,
       render: (venta: VentaWithId) => formatCurrency(venta.Total),
     },
     {
       key: "VentaEntrega",
       label: "Entrega",
+      numeric: true,
       render: (venta: VentaWithId) =>
         venta.VentaEntrega ? formatCurrency(Number(venta.VentaEntrega)) : "-",
     },
     {
       key: "Saldo",
       label: "Saldo",
+      numeric: true,
       render: (venta: VentaWithId) => formatCurrency(venta.Saldo || 0),
     },
     {

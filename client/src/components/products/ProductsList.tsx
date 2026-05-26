@@ -369,16 +369,19 @@ export default function ProductsList({
     {
       key: "ProductoPrecioVenta",
       label: "Precio Venta",
+      numeric: true,
       render: (item: Producto) =>
-        `Gs. ${item.ProductoPrecioVenta?.toLocaleString()}`,
+        `Gs. ${item.ProductoPrecioVenta?.toLocaleString("es-PY")}`,
     },
     {
       key: "ProductoStock",
       label: "Stock",
+      numeric: true,
     },
     {
       key: "ProductoStockUnitario",
       label: "Stock Unitario",
+      numeric: true,
     },
     {
       key: "LocalId",

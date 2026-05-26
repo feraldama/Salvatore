@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
-import { PlusIcon } from "@heroicons/react/24/outline";
-
+import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import type { Proveedor } from "../../types";
+import { Modal, Button, TextInput } from "./ui";
 
 interface CreateProveedorData {
   ProveedorRUC: string;
@@ -18,6 +18,13 @@ interface ProveedorModalProps {
   onCreateProveedor: (proveedorData: CreateProveedorData) => Promise<void>;
 }
 
+const emptyForm: CreateProveedorData = {
+  ProveedorRUC: "",
+  ProveedorNombre: "",
+  ProveedorDireccion: "",
+  ProveedorTelefono: "",
+};
+
 const ProveedorModal: React.FC<ProveedorModalProps> = ({
   show,
   onClose,
@@ -27,12 +34,8 @@ const ProveedorModal: React.FC<ProveedorModalProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newProveedor, setNewProveedor] = useState<CreateProveedorData>({
-    ProveedorRUC: "",
-    ProveedorNombre: "",
-    ProveedorDireccion: "",
-    ProveedorTelefono: "",
-  });
+  const [submitting, setSubmitting] = useState(false);
+  const [newProveedor, setNewProveedor] = useState<CreateProveedorData>(emptyForm);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const filteredProveedores = proveedores.filter(
@@ -43,183 +46,149 @@ const ProveedorModal: React.FC<ProveedorModalProps> = ({
 
   const handleCreateProveedor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProveedor.ProveedorNombre.trim()) {
-      return;
-    }
-
+    if (!newProveedor.ProveedorNombre.trim()) return;
+    setSubmitting(true);
     try {
       await onCreateProveedor(newProveedor);
-      setNewProveedor({
-        ProveedorRUC: "",
-        ProveedorNombre: "",
-        ProveedorDireccion: "",
-        ProveedorTelefono: "",
-      });
+      setNewProveedor(emptyForm);
       setShowCreateForm(false);
     } catch (error) {
       console.error("Error al crear proveedor:", error);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Enfocar el input de búsqueda cuando se abre el modal y no está en modo crear
   useEffect(() => {
-    if (show && !showCreateForm && searchInputRef.current) {
-      searchInputRef.current.focus();
+    if (!show) {
+      setShowCreateForm(false);
+      setSearchTerm("");
     }
-  }, [show, showCreateForm]);
-
-  if (!show) return null;
+  }, [show]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-4xl p-6 relative">
-        <button
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl cursor-pointer"
-          onClick={onClose}
-        >
-          &times;
-        </button>
-        <div className="flex justify-between items-center mb-4 pr-8">
-          <h2 className="text-2xl font-semibold text-gray-800">
-            Seleccionar Proveedor
-          </h2>
-          <button
+    <Modal
+      open={show}
+      onClose={onClose}
+      size="4xl"
+      title={showCreateForm ? "Nuevo proveedor" : "Seleccionar proveedor"}
+      initialFocusRef={!showCreateForm ? searchInputRef : undefined}
+      footer={
+        !showCreateForm ? (
+          <Button
+            variant="primary"
+            leftIcon={PlusIcon}
             onClick={() => setShowCreateForm(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
           >
-            <PlusIcon className="w-4 h-4" />
-            Crear Nuevo Proveedor
-          </button>
-        </div>
-
-        {!showCreateForm ? (
+            Crear nuevo proveedor
+          </Button>
+        ) : (
           <>
-            <div className="mb-4">
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Buscar proveedor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-
-            <div className="max-h-96 overflow-y-auto">
-              {filteredProveedores.map((proveedor) => (
-                <div
+            <Button
+              variant="secondary"
+              onClick={() => setShowCreateForm(false)}
+              disabled={submitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="success"
+              onClick={handleCreateProveedor}
+              loading={submitting}
+              disabled={!newProveedor.ProveedorNombre.trim()}
+            >
+              Crear
+            </Button>
+          </>
+        )
+      }
+    >
+      {!showCreateForm ? (
+        <>
+          <TextInput
+            ref={searchInputRef}
+            leftIcon={MagnifyingGlassIcon}
+            placeholder="Buscar proveedor por nombre o RUC..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Buscar proveedor"
+          />
+          <div className="mt-4 space-y-2">
+            {filteredProveedores.length === 0 ? (
+              <p className="py-8 text-center text-sm text-text-muted">
+                No se encontraron proveedores
+              </p>
+            ) : (
+              filteredProveedores.map((proveedor) => (
+                <button
                   key={proveedor.ProveedorId}
-                  className="p-3 border border-gray-200 rounded-lg mb-2 hover:bg-gray-50 cursor-pointer"
+                  type="button"
                   onClick={() => onSelect(proveedor)}
+                  className="w-full text-left p-3 border border-border rounded-lg hover:bg-surface-muted hover:border-border-strong transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                 >
-                  <div className="font-semibold">
+                  <div className="font-medium text-text">
                     {proveedor.ProveedorNombre}
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-text-muted">
                     RUC: {proveedor.ProveedorRUC || "Sin RUC"}
                   </div>
                   {proveedor.ProveedorTelefono && (
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-text-muted">
                       Tel: {proveedor.ProveedorTelefono}
                     </div>
                   )}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <form onSubmit={handleCreateProveedor} className="space-y-4">
-            <h3 className="text-lg font-semibold">Crear Nuevo Proveedor</h3>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nombre *
-              </label>
-              <input
-                type="text"
-                value={newProveedor.ProveedorNombre}
-                onChange={(e) =>
-                  setNewProveedor({
-                    ...newProveedor,
-                    ProveedorNombre: e.target.value,
-                  })
-                }
-                className="w-full p-2 border border-gray-300 rounded-lg"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                RUC
-              </label>
-              <input
-                type="text"
-                value={newProveedor.ProveedorRUC}
-                onChange={(e) =>
-                  setNewProveedor({
-                    ...newProveedor,
-                    ProveedorRUC: e.target.value,
-                  })
-                }
-                className="w-full p-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Dirección
-              </label>
-              <input
-                type="text"
-                value={newProveedor.ProveedorDireccion}
-                onChange={(e) =>
-                  setNewProveedor({
-                    ...newProveedor,
-                    ProveedorDireccion: e.target.value,
-                  })
-                }
-                className="w-full p-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Teléfono
-              </label>
-              <input
-                type="text"
-                value={newProveedor.ProveedorTelefono}
-                onChange={(e) =>
-                  setNewProveedor({
-                    ...newProveedor,
-                    ProveedorTelefono: e.target.value,
-                  })
-                }
-                className="w-full p-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-              >
-                Crear
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      ) : (
+        <form
+          id="proveedor-form"
+          onSubmit={handleCreateProveedor}
+          className="space-y-4"
+        >
+          <TextInput
+            label="Nombre *"
+            value={newProveedor.ProveedorNombre}
+            onChange={(e) =>
+              setNewProveedor({
+                ...newProveedor,
+                ProveedorNombre: e.target.value,
+              })
+            }
+            required
+          />
+          <TextInput
+            label="RUC"
+            value={newProveedor.ProveedorRUC}
+            onChange={(e) =>
+              setNewProveedor({ ...newProveedor, ProveedorRUC: e.target.value })
+            }
+          />
+          <TextInput
+            label="Dirección"
+            value={newProveedor.ProveedorDireccion}
+            onChange={(e) =>
+              setNewProveedor({
+                ...newProveedor,
+                ProveedorDireccion: e.target.value,
+              })
+            }
+          />
+          <TextInput
+            label="Teléfono"
+            value={newProveedor.ProveedorTelefono}
+            onChange={(e) =>
+              setNewProveedor({
+                ...newProveedor,
+                ProveedorTelefono: e.target.value,
+              })
+            }
+          />
+        </form>
+      )}
+    </Modal>
   );
 };
 

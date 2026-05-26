@@ -182,6 +182,7 @@ export default function MovementsList({
     {
       key: "RegistroDiarioCajaMonto",
       label: "Monto",
+      numeric: true,
       render: (item: Movimiento) => formatAmount(item.RegistroDiarioCajaMonto),
     },
     {

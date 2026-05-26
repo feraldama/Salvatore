@@ -100,6 +100,7 @@ export default function CajasList({
     {
       key: "CajaMonto",
       label: "Monto",
+      numeric: true,
       render: (caja: Caja) => `Gs. ${formatMiles(caja.CajaMonto)}`,
     },
   ];

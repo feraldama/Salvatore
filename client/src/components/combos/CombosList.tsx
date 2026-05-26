@@ -162,10 +162,11 @@ export default function CombosList({
     { key: "ComboId", label: "ID" },
     { key: "ComboDescripcion", label: "Descripción" },
     { key: "ProductoId", label: "Producto" },
-    { key: "ComboCantidad", label: "Cantidad" },
+    { key: "ComboCantidad", label: "Cantidad", numeric: true },
     {
       key: "ComboPrecio",
       label: "Precio",
+      numeric: true,
       render: (item: Combo) => formatMiles(item.ComboPrecio),
     },
   ];

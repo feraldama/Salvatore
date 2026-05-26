@@ -8,33 +8,35 @@ export default function Layout() {
   const location = useLocation();
   const ocultarLayout = location.pathname === "/ventas";
 
+  if (ocultarLayout) {
+    return (
+      <main className="min-h-dvh">
+        <Outlet />
+      </main>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-screen font-baloo">
-      {/* Navbar con altura fija */}
-      {!ocultarLayout && (
-        <div className="flex-shrink-0">
-          <Navbar setMobileOpen={setMobileOpen} />
-        </div>
-      )}
+    <div className="min-h-dvh bg-surface-alt">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-3 focus:py-2 focus:rounded-md focus:bg-brand-700 focus:text-white focus:shadow-lg"
+      >
+        Saltar al contenido
+      </a>
 
-      {/* Contenedor principal que ocupa el resto */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        {!ocultarLayout && (
-          <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
-        )}
+      <Navbar setMobileOpen={setMobileOpen} />
+      <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-        {/* Contenido principal con scroll */}
-        <main
-          className={
-            ocultarLayout
-              ? "flex-1 overflow-y-auto p-0 m-0"
-              : "flex-1 overflow-y-auto p-4 lg:ml-64"
-          }
-        >
+      <main
+        id="main"
+        className="lg:pl-64 pt-0"
+        role="main"
+      >
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
