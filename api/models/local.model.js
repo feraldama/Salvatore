@@ -137,11 +137,13 @@ const Local = {
         LocalDireccion
       ) VALUES (?, ?, ?, ?)
     `;
+      // Columnas NOT NULL con default ''. Postgres rechaza NULL explícito
+      // (a diferencia de MySQL), así que coalesce a cadena vacía.
       const values = [
         localData.LocalNombre,
-        localData.LocalTelefono,
-        localData.LocalCelular,
-        localData.LocalDireccion,
+        localData.LocalTelefono || "",
+        localData.LocalCelular || "",
+        localData.LocalDireccion || "",
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);

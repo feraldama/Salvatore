@@ -135,11 +135,13 @@ const Proveedor = {
           ProveedorTelefono
         ) VALUES (?, ?, ?, ?)
       `;
+      // Las columnas son NOT NULL con default ''. Postgres rechaza NULL
+      // explícito (a diferencia de MySQL), así que usamos cadena vacía.
       const values = [
-        proveedorData.ProveedorRUC || null,
+        proveedorData.ProveedorRUC || "",
         proveedorData.ProveedorNombre,
-        proveedorData.ProveedorDireccion || null,
-        proveedorData.ProveedorTelefono || null,
+        proveedorData.ProveedorDireccion || "",
+        proveedorData.ProveedorTelefono || "",
       ];
 
       db.query(query, values, (err, result) => {

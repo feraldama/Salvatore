@@ -229,7 +229,7 @@ const Usuario = {
       const values = [
         usuarioData.UsuarioId,
         usuarioData.UsuarioNombre,
-        usuarioData.UsuarioApellido,
+        usuarioData.UsuarioApellido ?? "",
         usuarioData.UsuarioCorreo ?? "",
         usuarioData.UsuarioContrasena ? hashedPassword : hashedPassword,
         usuarioData.UsuarioIsAdmin,
