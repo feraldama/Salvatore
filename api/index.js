@@ -24,6 +24,10 @@ const ventaCreditoPagoRoutes = require("./routes/ventacreditopago.routes");
 const facturaRoutes = require("./routes/factura.routes");
 const compraRoutes = require("./routes/compra.routes");
 const proveedorRoutes = require("./routes/proveedor.routes");
+// Rutas para la app Mobile (contrato JWF): auth gen + módulo flota.
+const genAuthRoutes = require("./routes/genauth.routes");
+const flotaRoutes = require("./routes/flota.routes");
+const path = require("path");
 // const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
 const app = express();
@@ -33,9 +37,9 @@ const app = express();
 // ALLOWED_ORIGINS en .env como lista separada por comas, o "*" para abrir
 // a todos los orígenes (útil solo en LAN cerrada).
 const defaultOrigins = [
-  "http://localhost:3008",
-  "http://127.0.0.1:3008",
-  "http://192.168.0.17:3008",
+  "http://localhost:3024",
+  "http://127.0.0.1:3024",
+  "http://192.168.0.17:3024",
 ];
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
@@ -85,6 +89,11 @@ app.use("/api/ventacreditopago", ventaCreditoPagoRoutes);
 app.use("/api/factura", facturaRoutes);
 app.use("/api/compras", compraRoutes);
 app.use("/api/proveedores", proveedorRoutes);
+// Rutas de la app Mobile (flota)
+app.use("/api/gen/auth", genAuthRoutes);
+app.use("/api/gen/flota", flotaRoutes);
+// Servir fotos subidas (combustible)
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // app.use("/api/productos", productoRoutes); // Ejemplo adicional
 
 // Ruta de prueba
