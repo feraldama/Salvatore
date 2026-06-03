@@ -252,11 +252,10 @@ export default function Sales() {
 
     setLoading(true);
     try {
-      // El backend filtra por el local del usuario incluyendo los productos
-      // "universales" (LocalId=0). Así la paginación ya devuelve exactamente
-      // los ítems visibles y no quedan páginas incompletas.
-      const localUsuario = Number(user?.LocalId);
-      const filters = localUsuario ? { localIdOrZero: localUsuario } : undefined;
+      // El catálogo se scopea por empresa: el backend filtra por la empresa
+      // activa (header X-Empresa-Id que envía el interceptor). No se filtra por
+      // local — los locales de una empresa comparten catálogo.
+      const filters = undefined;
       const data = busquedaDebounced.trim()
         ? await searchProductos(
             busquedaDebounced.trim(),
@@ -480,6 +479,23 @@ export default function Sales() {
   }
 
   const sendRequest = async () => {
+    // Guardrail: el descuento de stock necesita un almacén real. Los usuarios
+    // en local "TODOS" (LocalId 0) resuelven al almacén 0, que no tiene stock
+    // (el stock vive en los almacenes de cada local). Bloqueamos la venta con
+    // un mensaje claro en vez de descontar de un almacén vacío.
+    const almacenVenta = Number(user?.AlmacenId ?? user?.LocalId);
+    if (!almacenVenta || Number(user?.LocalId) === 0) {
+      await Swal.fire({
+        icon: "warning",
+        title: "Sin local de venta asignado",
+        text:
+          "Tu usuario no tiene un local de venta válido (figura como \"TODOS\"). " +
+          "Pedí al administrador que te asigne un local real (ej. SALON) para poder vender y descontar stock.",
+        confirmButtonColor: "#3085d6",
+      });
+      return;
+    }
+
     // Hora local del navegador. El parche UTC-4 viejo era para compensar un
     // bug del JVM/Tomcat de GeneXus que sumaba 1h al guardar; ahora vamos a
     // Node/PG directo y no hace falta.
@@ -526,7 +542,7 @@ export default function Sales() {
       if (isDevolucionMode) {
         await devolverVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.LocalId),
+          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),
           Total2: getSubtotal(cartItems),
@@ -539,7 +555,7 @@ export default function Sales() {
       } else {
         await confirmarVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.LocalId),
+          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
           ClienteId: Number(clienteSeleccionado?.ClienteId),
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),

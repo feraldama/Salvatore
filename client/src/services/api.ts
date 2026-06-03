@@ -6,11 +6,15 @@ const api = axios.create({
   timeout: 30000, // 30 segundos de timeout
 });
 
-// Interceptor para añadir token a las peticiones
+// Interceptor para añadir token y empresa activa a las peticiones
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const empresaId = localStorage.getItem("empresaActivaId");
+  if (empresaId) {
+    config.headers["X-Empresa-Id"] = empresaId;
   }
   return config;
 });

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import SearchButton from "../common/Input/SearchButton";
-import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
+import { Modal, Button, TextInput } from "../common/ui";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
+import { getLocales } from "../../services/locales.service";
 
-import type { Almacen } from "../../types";
+import type { Almacen, Local } from "../../types";
 
 interface Pagination {
   totalItems: number;
@@ -52,7 +53,13 @@ export default function AlmacenesList({
     id: "",
     AlmacenId: "",
     AlmacenNombre: "",
+    LocalId: "",
   });
+  const [locales, setLocales] = useState<Local[]>([]);
+
+  useEffect(() => {
+    getLocales(1, 100).then((res) => setLocales(res.data || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (currentAlmacen) {
@@ -60,12 +67,14 @@ export default function AlmacenesList({
         id: String(currentAlmacen.id ?? currentAlmacen.AlmacenId),
         AlmacenId: String(currentAlmacen.AlmacenId),
         AlmacenNombre: currentAlmacen.AlmacenNombre,
+        LocalId: currentAlmacen.LocalId != null ? String(currentAlmacen.LocalId) : "",
       });
     } else {
       setFormData({
         id: "",
         AlmacenId: "",
         AlmacenNombre: "",
+        LocalId: "",
       });
     }
   }, [currentAlmacen]);
@@ -82,18 +91,16 @@ export default function AlmacenesList({
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSubmit(formData as Almacen);
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onCloseModal();
-    }
+    onSubmit({
+      ...formData,
+      LocalId: formData.LocalId ? Number(formData.LocalId) : null,
+    } as unknown as Almacen);
   };
 
   const columns = [
     { key: "AlmacenId", label: "ID" },
     { key: "AlmacenNombre", label: "Nombre" },
+    { key: "LocalNombre", label: "Local" },
   ];
 
   return (
@@ -110,16 +117,14 @@ export default function AlmacenesList({
         </div>
         <div className="py-4">
           {onCreate && (
-            <ActionButton
-              label="Nuevo Almacén"
-              onClick={onCreate}
-              icon={PlusIcon}
-            />
+            <Button leftIcon={PlusIcon} onClick={onCreate}>
+              Nuevo Almacén
+            </Button>
           )}
         </div>
       </div>
       <div className="flex justify-between items-center mb-4">
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-text-muted">
           Mostrando {formatMiles(almacenes.length)} de{" "}
           {formatMiles(pagination?.totalItems || 0)} almacenes
         </div>
@@ -134,89 +139,70 @@ export default function AlmacenesList({
         sortOrder={sortOrder}
         onSort={onSort}
       />
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={handleBackdropClick}
-        >
-          <div className="absolute inset-0 bg-black opacity-50" />
-          <div className="relative w-full max-w-2xl max-h-full z-10">
-            <form
-              onSubmit={handleSubmit}
-              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+      <Modal
+        open={isModalOpen}
+        onClose={onCloseModal}
+        size="lg"
+        title={
+          currentAlmacen
+            ? `Editar almacén: ${currentAlmacen.AlmacenId}`
+            : "Crear nuevo almacén"
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={onCloseModal}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="almacen-form">
+              {currentAlmacen ? "Actualizar" : "Crear"}
+            </Button>
+          </>
+        }
+      >
+        <form id="almacen-form" onSubmit={handleSubmit} className="space-y-4">
+          <TextInput
+            label="Nombre *"
+            name="AlmacenNombre"
+            value={formData.AlmacenNombre}
+            onChange={(e) =>
+              handleInputChange({
+                target: {
+                  name: "AlmacenNombre",
+                  value: e.target.value.toUpperCase(),
+                },
+              } as React.ChangeEvent<HTMLInputElement>)
+            }
+            className="uppercase"
+            required
+          />
+          <div>
+            <label
+              htmlFor="LocalId"
+              className="block text-xs font-medium text-text-muted mb-1"
             >
-              <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  {currentAlmacen
-                    ? `Editar almacén: ${currentAlmacen.AlmacenId}`
-                    : "Crear nuevo almacén"}
-                </h3>
-                <button
-                  type="button"
-                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
-                  onClick={onCloseModal}
-                >
-                  <svg
-                    className="w-3 h-3"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 14 14"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-6 gap-6">
-                  <div className="col-span-6 sm:col-span-6">
-                    <label
-                      htmlFor="AlmacenNombre"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Nombre
-                    </label>
-                    <input
-                      type="text"
-                      name="AlmacenNombre"
-                      id="AlmacenNombre"
-                      value={formData.AlmacenNombre}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        handleInputChange({
-                          target: {
-                            name: "AlmacenNombre",
-                            value: value,
-                          },
-                        } as React.ChangeEvent<HTMLInputElement>);
-                      }}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
-                <ActionButton
-                  label={currentAlmacen ? "Actualizar" : "Crear"}
-                  type="submit"
-                />
-                <ActionButton
-                  label="Cancelar"
-                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10"
-                  onClick={onCloseModal}
-                />
-              </div>
-            </form>
+              Local *
+            </label>
+            <select
+              name="LocalId"
+              id="LocalId"
+              value={formData.LocalId}
+              onChange={handleInputChange}
+              required
+              className="w-full bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
+            >
+              <option value="">— Seleccionar local —</option>
+              {locales.map((l) => (
+                <option key={l.LocalId} value={l.LocalId}>
+                  {l.LocalNombre}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-text-muted">
+              Cada local tiene un único almacén. El stock se descuenta de este almacén al vender en el local.
+            </p>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 }

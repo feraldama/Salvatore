@@ -26,7 +26,11 @@ const TipoGasto = {
   create: (data) => {
     return new Promise((resolve, reject) => {
       const query = `INSERT INTO TipoGasto (TipoGastoDescripcion, TipoGastoCantGastos) VALUES (?, ?)`;
-      const values = [data.TipoGastoDescripcion, data.TipoGastoCantGastos];
+      // TipoGastoCantGastos: smallint NOT NULL. Default a 0 si no viene.
+      const values = [
+        data.TipoGastoDescripcion || "",
+        data.TipoGastoCantGastos ?? 0,
+      ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         TipoGasto.getById(result.insertId)

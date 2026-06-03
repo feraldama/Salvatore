@@ -7,6 +7,7 @@ import {
   getProductosByVentaId,
 } from "../../services/venta.service";
 import { getClienteById } from "../../services/clientes.service";
+import { calcularDV } from "../../utils/utils";
 
 interface VentaProducto {
   VentaId: number;
@@ -512,7 +513,7 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               venta.ClienteRazonSocial || "N/A"
             }</p>
             <p style="margin-left: 280px;">
-              <span>${venta.ClienteRUC || "N/A"}</span>
+              <span>${venta.ClienteRUC ? `${venta.ClienteRUC}-${calcularDV(venta.ClienteRUC)}` : "N/A"}</span>
               <span style="margin-left: 75px;">${
                 venta.ClienteTelefono || ""
               }</span>

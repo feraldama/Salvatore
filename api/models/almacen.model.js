@@ -23,28 +23,54 @@ const Almacen = {
     });
   },
 
+  // Almacén del local indicado (un almacén por local).
+  getByLocal: (localId) => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        "SELECT * FROM Almacen WHERE LocalId = ? LIMIT 1",
+        [localId],
+        (err, results) => {
+          if (err) return reject(err);
+          resolve(results.length > 0 ? results[0] : null);
+        }
+      );
+    });
+  },
+
   create: (almacenData) => {
     return new Promise((resolve, reject) => {
-      const query = `INSERT INTO Almacen (AlmacenNombre) VALUES (?)`;
-      db.query(query, [almacenData.AlmacenNombre], (err, result) => {
-        if (err) return reject(err);
-        Almacen.getById(result.insertId)
-          .then((almacen) => resolve(almacen))
-          .catch((error) => reject(error));
-      });
+      const query = `INSERT INTO Almacen (AlmacenNombre, LocalId, EmpresaId) VALUES (?, ?, ?)`;
+      db.query(
+        query,
+        [
+          almacenData.AlmacenNombre,
+          almacenData.LocalId || null,
+          almacenData.EmpresaId || 1,
+        ],
+        (err, result) => {
+          if (err) return reject(err);
+          Almacen.getById(result.insertId)
+            .then((almacen) => resolve(almacen))
+            .catch((error) => reject(error));
+        }
+      );
     });
   },
 
   update: (id, almacenData) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE Almacen SET AlmacenNombre = ? WHERE AlmacenId = ?`;
-      db.query(query, [almacenData.AlmacenNombre, id], (err, result) => {
-        if (err) return reject(err);
-        if (result.affectedRows === 0) return resolve(null);
-        Almacen.getById(id)
-          .then((almacen) => resolve(almacen))
-          .catch((error) => reject(error));
-      });
+      const query = `UPDATE Almacen SET AlmacenNombre = ?, LocalId = ? WHERE AlmacenId = ?`;
+      db.query(
+        query,
+        [almacenData.AlmacenNombre, almacenData.LocalId ?? null, id],
+        (err, result) => {
+          if (err) return reject(err);
+          if (result.affectedRows === 0) return resolve(null);
+          Almacen.getById(id)
+            .then((almacen) => resolve(almacen))
+            .catch((error) => reject(error));
+        }
+      );
     });
   },
 
@@ -73,7 +99,10 @@ const Almacen = {
         : "ASC";
 
       db.query(
-        `SELECT * FROM Almacen ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
+        `SELECT a.*, l.LocalNombre
+           FROM Almacen a
+           LEFT JOIN local l ON a.LocalId = l.LocalId
+          ORDER BY a.${sortField} ${order} LIMIT ? OFFSET ?`,
         [limit, offset],
         (err, results) => {
           if (err) return reject(err);

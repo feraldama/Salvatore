@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import SearchButton from "../common/Input/SearchButton";
-import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
+import { Modal, Button, TextInput } from "../common/ui";
 import {
   PlusIcon,
   EyeIcon,
@@ -9,6 +9,10 @@ import {
   FunnelIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+
+const selectClasses =
+  "w-full bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong";
+const fieldLabel = "block text-xs font-medium text-text-muted mb-1";
 import { getLocales } from "../../services/locales.service";
 import { getPerfiles } from "../../services/perfiles.service";
 import { getPerfilesByUsuario } from "../../services/usuarioperfil.service";
@@ -193,13 +197,7 @@ export default function UsuariosList({
 
   // Determinar el color del estado
   const getEstadoColor = (estado: unknown) => {
-    return (estado as string) === "A" ? "bg-green-500" : "bg-red-500";
-  };
-
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onCloseModal();
-    }
+    return (estado as string) === "A" ? "bg-success-500" : "bg-danger-500";
   };
 
   const handlePerfilChange = (perfilId: number) => {
@@ -259,36 +257,31 @@ export default function UsuariosList({
         </div>
         <div className="py-4 flex gap-2">
           {onFiltersChange && onToggleFilters && (
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              leftIcon={FunnelIcon}
               onClick={onToggleFilters}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
-              <FunnelIcon className="w-4 h-4" />
               Filtros
               {activeFilterCount > 0 && (
-                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold text-white bg-blue-600 rounded-full">
+                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold text-white bg-brand-600 rounded-full">
                   {activeFilterCount}
                 </span>
               )}
-            </button>
+            </Button>
           )}
           {onCreate && (
-            <ActionButton
-              label="Nuevo Usuario"
-              onClick={onCreate}
-              icon={PlusIcon}
-            />
+            <Button leftIcon={PlusIcon} onClick={onCreate}>
+              Nuevo Usuario
+            </Button>
           )}
         </div>
       </div>
       {onFiltersChange && showFilters && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <div className="bg-surface-sunken border border-border rounded-lg p-4 mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block mb-1 text-xs font-medium text-gray-700">
-                Estado
-              </label>
+              <label className={fieldLabel}>Estado</label>
               <select
                 value={activeFilters.estado || ""}
                 onChange={(e) =>
@@ -297,7 +290,7 @@ export default function UsuariosList({
                     (e.target.value as UsuarioFilters["estado"]) || ""
                   )
                 }
-                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:ring-blue-500 focus:border-blue-500 p-2"
+                className={selectClasses}
               >
                 <option value="">Todos</option>
                 <option value="A">Activo</option>
@@ -305,9 +298,7 @@ export default function UsuariosList({
               </select>
             </div>
             <div>
-              <label className="block mb-1 text-xs font-medium text-gray-700">
-                Administrador
-              </label>
+              <label className={fieldLabel}>Administrador</label>
               <select
                 value={activeFilters.admin || ""}
                 onChange={(e) =>
@@ -316,7 +307,7 @@ export default function UsuariosList({
                     (e.target.value as UsuarioFilters["admin"]) || ""
                   )
                 }
-                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:ring-blue-500 focus:border-blue-500 p-2"
+                className={selectClasses}
               >
                 <option value="">Todos</option>
                 <option value="S">Sí</option>
@@ -324,15 +315,11 @@ export default function UsuariosList({
               </select>
             </div>
             <div>
-              <label className="block mb-1 text-xs font-medium text-gray-700">
-                Local
-              </label>
+              <label className={fieldLabel}>Local</label>
               <select
                 value={activeFilters.localId ?? ""}
-                onChange={(e) =>
-                  updateFilter("localId", e.target.value || "")
-                }
-                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-md focus:ring-blue-500 focus:border-blue-500 p-2"
+                onChange={(e) => updateFilter("localId", e.target.value || "")}
+                className={selectClasses}
               >
                 <option value="">Todos</option>
                 {filterLocales.map((l) => (
@@ -348,7 +335,7 @@ export default function UsuariosList({
               <button
                 type="button"
                 onClick={clearFilters}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-text-muted hover:text-text cursor-pointer"
               >
                 <XMarkIcon className="w-4 h-4" />
                 Limpiar filtros
@@ -359,7 +346,7 @@ export default function UsuariosList({
       )}
 
       <div className="flex justify-between items-center mb-4">
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-text-muted">
           Mostrando {formatMiles(usuarios.length)} de{" "}
           {formatMiles(pagination?.totalItems || 0)} usuarios
         </div>
@@ -380,299 +367,190 @@ export default function UsuariosList({
       />
 
       {/* Modal para crear/editar */}
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={handleBackdropClick}
+      <Modal
+        open={isModalOpen}
+        onClose={onCloseModal}
+        size="2xl"
+        title={
+          currentUser
+            ? `Editar usuario: ${currentUser.UsuarioId}`
+            : "Crear nuevo usuario"
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={onCloseModal}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="user-form">
+              {currentUser ? "Actualizar" : "Crear"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="user-form"
+          onSubmit={handleSubmit}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
-          {/* Fondo opacado */}
-          <div className="absolute inset-0 bg-black opacity-50" />
-
-          <div className="relative w-full max-w-2xl max-h-full z-10">
-            <form
-              onSubmit={handleSubmit}
-              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+          {!currentUser && (
+            <TextInput
+              label="ID de Usuario *"
+              name="UsuarioId"
+              value={formData.UsuarioId}
+              onChange={handleInputChange}
+              required
+            />
+          )}
+          <TextInput
+            label="Nombre *"
+            name="UsuarioNombre"
+            value={formData.UsuarioNombre}
+            onChange={(e) =>
+              handleInputChange({
+                target: { name: "UsuarioNombre", value: e.target.value.toUpperCase() },
+              } as React.ChangeEvent<HTMLInputElement>)
+            }
+            className="uppercase"
+            required
+          />
+          <TextInput
+            label="Apellido"
+            name="UsuarioApellido"
+            value={formData.UsuarioApellido}
+            onChange={(e) =>
+              handleInputChange({
+                target: { name: "UsuarioApellido", value: e.target.value.toUpperCase() },
+              } as React.ChangeEvent<HTMLInputElement>)
+            }
+            className="uppercase"
+          />
+          <TextInput
+            label="Email"
+            type="email"
+            name="UsuarioCorreo"
+            value={formData.UsuarioCorreo}
+            onChange={handleInputChange}
+          />
+          <div>
+            <label htmlFor="LocalId" className={fieldLabel}>
+              Local *
+            </label>
+            <select
+              name="LocalId"
+              id="LocalId"
+              value={formData.LocalId}
+              onChange={handleInputChange}
+              className={selectClasses}
+              required
             >
-              <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  {currentUser
-                    ? `Editar usuario: ${currentUser.UsuarioId}`
-                    : "Crear nuevo usuario"}
-                </h3>
+              <option value="">Seleccione un local</option>
+              {locales.map((local) => (
+                <option key={local.LocalId} value={local.LocalId}>
+                  {local.LocalNombre}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="UsuarioIsAdmin" className={fieldLabel}>
+              ¿Es administrador?
+            </label>
+            <select
+              name="UsuarioIsAdmin"
+              id="UsuarioIsAdmin"
+              value={formData.UsuarioIsAdmin}
+              onChange={handleInputChange}
+              className={selectClasses}
+            >
+              <option value="N">No</option>
+              <option value="S">Sí</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="UsuarioEstado" className={fieldLabel}>
+              Estado
+            </label>
+            <select
+              name="UsuarioEstado"
+              id="UsuarioEstado"
+              value={formData.UsuarioEstado}
+              onChange={handleInputChange}
+              className={selectClasses}
+            >
+              <option value="A">Activo</option>
+              <option value="I">Inactivo</option>
+            </select>
+          </div>
+
+          {currentUser && !editingPassword && (
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => setEditingPassword(true)}
+                className="text-brand-700 hover:text-brand-800 text-sm font-medium cursor-pointer"
+              >
+                Cambiar contraseña
+              </button>
+            </div>
+          )}
+          {(!currentUser || editingPassword) && (
+            <TextInput
+              label={
+                currentUser
+                  ? "Contraseña (dejar en blanco para no cambiar)"
+                  : "Contraseña *"
+              }
+              type={showPassword ? "text" : "password"}
+              name="UsuarioContrasena"
+              value={formData.UsuarioContrasena}
+              onChange={handleInputChange}
+              required={!currentUser}
+              placeholder={currentUser ? "Nueva contraseña" : "Contraseña"}
+              rightSlot={
                 <button
                   type="button"
-                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
-                  onClick={onCloseModal}
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={
+                    showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                  }
+                  className="p-1 text-text-subtle hover:text-text-muted cursor-pointer"
                 >
-                  <svg
-                    className="w-3 h-3"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 14 14"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                    />
-                  </svg>
+                  {showPassword ? (
+                    <EyeSlashIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
                 </button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-6 gap-6">
-                  {!currentUser && (
-                    <div className="col-span-6 sm:col-span-3">
-                      <label
-                        htmlFor="UsuarioId"
-                        className="block mb-2 text-sm font-medium text-gray-900"
-                      >
-                        ID de Usuario
-                      </label>
-                      <input
-                        type="text"
-                        name="UsuarioId"
-                        id="UsuarioId"
-                        value={formData.UsuarioId}
-                        onChange={handleInputChange}
-                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                        required
-                      />
-                    </div>
-                  )}
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="UsuarioNombre"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Nombre
-                    </label>
+              }
+            />
+          )}
+          <div className="sm:col-span-2">
+            <label className={fieldLabel}>Perfiles</label>
+            <div className="flex flex-col gap-2 mt-1">
+              {perfiles.map((perfil) => {
+                const checkboxId = `perfil-checkbox-${perfil.PerfilId}`;
+                return (
+                  <div className="flex items-center" key={perfil.PerfilId}>
                     <input
-                      type="text"
-                      name="UsuarioNombre"
-                      id="UsuarioNombre"
-                      value={formData.UsuarioNombre}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        handleInputChange({
-                          target: {
-                            name: "UsuarioNombre",
-                            value: value,
-                          },
-                        } as React.ChangeEvent<HTMLInputElement>);
-                      }}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required
+                      id={checkboxId}
+                      type="checkbox"
+                      checked={perfilesSeleccionados.includes(perfil.PerfilId)}
+                      onChange={() => handlePerfilChange(perfil.PerfilId)}
+                      className="w-4 h-4 text-brand-600 bg-surface border-border rounded focus:ring-brand-500 focus:ring-2 cursor-pointer"
                     />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3">
                     <label
-                      htmlFor="UsuarioApellido"
-                      className="block mb-2 text-sm font-medium text-gray-900"
+                      htmlFor={checkboxId}
+                      className="ms-2 text-sm font-medium text-text cursor-pointer"
                     >
-                      Apellido
+                      {perfil.PerfilDescripcion}
                     </label>
-                    <input
-                      type="text"
-                      name="UsuarioApellido"
-                      id="UsuarioApellido"
-                      value={formData.UsuarioApellido}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        handleInputChange({
-                          target: {
-                            name: "UsuarioApellido",
-                            value: value,
-                          },
-                        } as React.ChangeEvent<HTMLInputElement>);
-                      }}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    />
                   </div>
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="UsuarioCorreo"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      name="UsuarioCorreo"
-                      id="UsuarioCorreo"
-                      value={formData.UsuarioCorreo}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="LocalId"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Local
-                    </label>
-                    <select
-                      name="LocalId"
-                      id="LocalId"
-                      value={formData.LocalId}
-                      onChange={handleInputChange}
-                      className="shadow-sm bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-600 focus:border-blue-600 block w-full p-2.5"
-                      required
-                    >
-                      <option value="">Seleccione un local</option>
-                      {locales.map((local) => (
-                        <option key={local.LocalId} value={local.LocalId}>
-                          {local.LocalNombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="UsuarioIsAdmin"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      ¿Es administrador?
-                    </label>
-                    <select
-                      name="UsuarioIsAdmin"
-                      id="UsuarioIsAdmin"
-                      value={formData.UsuarioIsAdmin}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    >
-                      <option value="N">No</option>
-                      <option value="S">Sí</option>
-                    </select>
-                  </div>
-
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="UsuarioEstado"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Estado
-                    </label>
-                    <select
-                      name="UsuarioEstado"
-                      id="UsuarioEstado"
-                      value={formData.UsuarioEstado}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    >
-                      <option value="A">Activo</option>
-                      <option value="I">Inactivo</option>
-                    </select>
-                  </div>
-                  {currentUser && !editingPassword && (
-                    <div className="col-span-6 sm:col-span-3 flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => setEditingPassword(true)}
-                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                      >
-                        Cambiar contraseña
-                      </button>
-                    </div>
-                  )}
-                  {/* Campo de contraseña para nuevos usuarios o cuando se edita */}
-                  {(!currentUser || editingPassword) && (
-                    <div className="col-span-6 sm:col-span-3">
-                      <label
-                        htmlFor="UsuarioContrasena"
-                        className="block mb-2 text-sm font-medium text-gray-900"
-                      >
-                        Contraseña
-                        {currentUser && (
-                          <span className="text-gray-500 text-xs ml-1">
-                            (dejar en blanco para no cambiar)
-                          </span>
-                        )}
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          name="UsuarioContrasena"
-                          id="UsuarioContrasena"
-                          className="shadow-sm bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-600 focus:border-blue-600 block w-full p-2.5 pr-10"
-                          value={formData.UsuarioContrasena}
-                          onChange={handleInputChange}
-                          required={!currentUser}
-                          placeholder={
-                            currentUser ? "Nueva contraseña" : "Contraseña"
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-500"
-                        >
-                          {showPassword ? (
-                            <EyeSlashIcon className="h-5 w-5" />
-                          ) : (
-                            <EyeIcon className="h-5 w-5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <div className="col-span-6">
-                    <label className="block mb-2 text-sm font-medium text-gray-900">
-                      Perfiles
-                    </label>
-                    <div className="flex flex-col gap-0">
-                      {perfiles.map((perfil) => {
-                        const checkboxId = `perfil-checkbox-${perfil.PerfilId}`;
-                        return (
-                          <div
-                            className="flex items-center mb-2"
-                            key={perfil.PerfilId}
-                          >
-                            <input
-                              id={checkboxId}
-                              type="checkbox"
-                              checked={perfilesSeleccionados.includes(
-                                perfil.PerfilId
-                              )}
-                              onChange={() =>
-                                handlePerfilChange(perfil.PerfilId)
-                              }
-                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded-sm focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                            />
-                            <label
-                              htmlFor={checkboxId}
-                              className="ms-2 text-sm font-medium text-gray-900"
-                            >
-                              {perfil.PerfilDescripcion}
-                            </label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
-                <ActionButton
-                  label={currentUser ? "Actualizar" : "Crear"}
-                  type="submit"
-                />
-                <ActionButton
-                  label="Cancelar"
-                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10"
-                  onClick={onCloseModal}
-                />
-              </div>
-            </form>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 }

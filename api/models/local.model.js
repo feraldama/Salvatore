@@ -39,7 +39,10 @@ const Local = {
         : "ASC";
 
       db.query(
-        `SELECT * FROM local ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
+        `SELECT l.*, e.EmpresaNombre
+           FROM local l
+           LEFT JOIN empresa e ON l.EmpresaId = e.EmpresaId
+          ORDER BY l.${sortField} ${order} LIMIT ? OFFSET ?`,
         [limit, offset],
         (err, results) => {
           if (err) return reject(err);
@@ -134,8 +137,9 @@ const Local = {
         LocalNombre,
         LocalTelefono,
         LocalCelular,
-        LocalDireccion
-      ) VALUES (?, ?, ?, ?)
+        LocalDireccion,
+        EmpresaId
+      ) VALUES (?, ?, ?, ?, ?)
     `;
       // Columnas NOT NULL con default ''. Postgres rechaza NULL explícito
       // (a diferencia de MySQL), así que coalesce a cadena vacía.
@@ -144,6 +148,7 @@ const Local = {
         localData.LocalTelefono || "",
         localData.LocalCelular || "",
         localData.LocalDireccion || "",
+        localData.EmpresaId || 1,
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -164,6 +169,7 @@ const Local = {
         "LocalTelefono",
         "LocalCelular",
         "LocalDireccion",
+        "EmpresaId",
       ];
       camposActualizables.forEach((campo) => {
         if (localData[campo] !== undefined) {

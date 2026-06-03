@@ -50,8 +50,9 @@ async function buildUserPayload(usuario) {
     nombre: nombreCompleto || usuario.UsuarioNombre || usuario.UsuarioId,
     email: usuario.UsuarioCorreo || null,
     isAdmin: usuario.UsuarioIsAdmin === "S",
-    empresa: null,
-    empresaNombre: null,
+    empresa: usuario.EmpresaId ?? 1,
+    empresaNombre: usuario.EmpresaNombre ?? null,
+    empresaTipo: usuario.EmpresaTipo ?? 'M',
     sucursal: usuario.LocalId ?? null,
     sucursalNombre: usuario.LocalNombre ?? null,
     departamentoId: null,
@@ -67,9 +68,10 @@ async function buildUserPayload(usuario) {
 function getUsuarioConLocal(login) {
   return new Promise((resolve, reject) => {
     db.query(
-      `SELECT u.*, l.LocalNombre
+      `SELECT u.*, l.LocalNombre, e.EmpresaNombre, e.EmpresaTipo
          FROM usuario u
          LEFT JOIN local l ON u.LocalId = l.LocalId
+         LEFT JOIN empresa e ON u.EmpresaId = e.EmpresaId
         WHERE TRIM(u.UsuarioId) = ?
         LIMIT 1`,
       [String(login).trim()],
@@ -118,6 +120,7 @@ exports.login = async (req, res) => {
         isAdmin: usuario.UsuarioIsAdmin,
         estado: usuario.UsuarioEstado,
         LocalId: usuario.LocalId,
+        EmpresaId: usuario.EmpresaId || 1,
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }

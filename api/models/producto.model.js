@@ -13,7 +13,7 @@ const PRODUCTO_LIST_COLS = `
   p.ProductoStock, p.ProductoStockUnitario,
   p.ProductoCantidadCaja, p.ProductoIVA,
   p.ProductoStockMinimo, p.ProductoImagen_GXI,
-  p.LocalId,
+  p.LocalId, p.EmpresaId,
   (LENGTH(p.ProductoImagen) > 0) AS HasImagen
 `;
 
@@ -27,6 +27,11 @@ function buildProductoFiltersWhere(filters = {}) {
   const conditions = [];
   const params = [];
 
+  // Scope principal: catálogo por empresa.
+  if (filters.empresaId != null && filters.empresaId !== "") {
+    conditions.push("p.EmpresaId = ?");
+    params.push(Number(filters.empresaId));
+  }
   if (filters.localId != null && filters.localId !== "") {
     conditions.push("p.LocalId = ?");
     params.push(Number(filters.localId));
@@ -288,8 +293,9 @@ const Producto = {
           ProductoStockMinimo,
           ProductoImagen,
           ProductoImagen_GXI,
-          LocalId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          LocalId,
+          EmpresaId
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
         productoData.ProductoCodigo,
@@ -305,7 +311,8 @@ const Producto = {
         productoData.ProductoStockMinimo,
         imagenBuffer,
         productoData.ProductoImagen_GXI || null,
-        productoData.LocalId,
+        productoData.LocalId ?? 0,
+        productoData.EmpresaId || 1,
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -485,13 +492,13 @@ const Producto = {
           p.ProductoId,
           p.ProductoCodigo,
           p.ProductoNombre,
-          COALESCE(v.CantidadVendidaCajas,     0) AS CantidadVendidaCajas,
-          COALESCE(v.CantidadVendidaUnidades,  0) AS CantidadVendidaUnidades,
-          COALESCE(v.MontoVendido,             0) AS MontoVendido,
-          COALESCE(v.CostoVendido,             0) AS CostoVendido,
-          COALESCE(c.CantidadCompradaCajas,    0) AS CantidadCompradaCajas,
-          COALESCE(c.CantidadCompradaUnidades, 0) AS CantidadCompradaUnidades,
-          COALESCE(c.MontoComprado,            0) AS MontoComprado
+          COALESCE(v.vendida_cajas,     0) AS CantidadVendidaCajas,
+          COALESCE(v.vendida_unidades,  0) AS CantidadVendidaUnidades,
+          COALESCE(v.monto_vendido,     0) AS MontoVendido,
+          COALESCE(v.costo_vendido,     0) AS CostoVendido,
+          COALESCE(c.comprada_cajas,    0) AS CantidadCompradaCajas,
+          COALESCE(c.comprada_unidades, 0) AS CantidadCompradaUnidades,
+          COALESCE(c.monto_comprado,    0) AS MontoComprado
         FROM producto p
         LEFT JOIN (
           SELECT
@@ -499,15 +506,15 @@ const Producto = {
             /* 'C' o desconocido → caja; 'U' → unidad */
             SUM(CASE WHEN vp.VentaProductoUnitario = 'U'
                      THEN 0 ELSE vp.VentaProductoCantidad END)
-              AS CantidadVendidaCajas,
+              AS vendida_cajas,
             SUM(CASE WHEN vp.VentaProductoUnitario = 'U'
                      THEN vp.VentaProductoCantidad ELSE 0 END)
-              AS CantidadVendidaUnidades,
-            SUM(vp.VentaProductoPrecioTotal) AS MontoVendido,
+              AS vendida_unidades,
+            SUM(vp.VentaProductoPrecioTotal) AS monto_vendido,
             /* precioPromedio ya está en la unidad del renglón, no dividir */
             SUM(COALESCE(vp.VentaProductoCantidad, 0)
                 * COALESCE(vp.VentaProductoPrecioPromedio, 0))
-              AS CostoVendido
+              AS costo_vendido
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
@@ -518,20 +525,20 @@ const Producto = {
             cp.ProductoId,
             SUM(CASE WHEN cp.CompraProductoCantidadUnidad = 'U'
                      THEN 0 ELSE cp.CompraProductoCantidad END)
-              AS CantidadCompradaCajas,
+              AS comprada_cajas,
             SUM(CASE WHEN cp.CompraProductoCantidadUnidad = 'U'
                      THEN cp.CompraProductoCantidad ELSE 0 END)
-              AS CantidadCompradaUnidades,
-            SUM(cp.CompraProductoCantidad * cp.CompraProductoPrecio) AS MontoComprado
+              AS comprada_unidades,
+            SUM(cp.CompraProductoCantidad * cp.CompraProductoPrecio) AS monto_comprado
           FROM compraproducto cp
           INNER JOIN compra cc ON cc.CompraId = cp.CompraId
           WHERE DATE(cc.CompraFecha) BETWEEN ? AND ?
           GROUP BY cp.ProductoId
         ) c ON c.ProductoId = p.ProductoId
-        WHERE COALESCE(v.CantidadVendidaCajas,     0) <> 0
-           OR COALESCE(v.CantidadVendidaUnidades,  0) <> 0
-           OR COALESCE(c.CantidadCompradaCajas,    0) <> 0
-           OR COALESCE(c.CantidadCompradaUnidades, 0) <> 0
+        WHERE COALESCE(v.vendida_cajas,     0) <> 0
+           OR COALESCE(v.vendida_unidades,  0) <> 0
+           OR COALESCE(c.comprada_cajas,    0) <> 0
+           OR COALESCE(c.comprada_unidades, 0) <> 0
         ORDER BY p.ProductoNombre ASC
       `;
       db.query(
@@ -578,6 +585,13 @@ const Producto = {
       // La agregación va en subquery por ProductoId y recién después se
       // cruza con producto. Si se hacía GROUP BY sobre producto directo,
       // la columna BLOB ProductoImagen colgaba el query en MySQL.
+      // NOTA: los alias del subquery van en minúscula (vendida_cajas, ...) a
+      // propósito. El adaptador PG (config/db.js) entrecomilla los alias en
+      // PascalCase para preservar el casing en el resultado, pero NO entrecomilla
+      // las referencias a esos alias en el query externo (PG las baja a minúscula),
+      // lo que rompía `v.CantidadVendidaCajas`. Con alias minúscula en el subquery
+      // las referencias coinciden, y recién en el SELECT externo re-aliaseamos a
+      // PascalCase para que el mapper devuelva las claves que espera el JS.
       const query = `
         SELECT
           p.ProductoId,
@@ -589,29 +603,29 @@ const Producto = {
           COALESCE(p.ProductoPrecioPromedio, 0) AS ProductoPrecioPromedio,
           COALESCE(p.ProductoStock, 0)          AS ProductoStock,
           COALESCE(p.ProductoStockUnitario, 0)  AS ProductoStockUnitario,
-          v.CantidadVendidaCajas,
-          v.CantidadVendidaUnidades,
-          v.MontoVendido,
-          v.CostoVendido
+          v.vendida_cajas    AS CantidadVendidaCajas,
+          v.vendida_unidades AS CantidadVendidaUnidades,
+          v.monto_vendido    AS MontoVendido,
+          v.costo_vendido    AS CostoVendido
         FROM (
           SELECT
             vp.ProductoId,
             SUM(CASE WHEN vp.VentaProductoUnitario = 'U'
                      THEN 0 ELSE vp.VentaProductoCantidad END)
-              AS CantidadVendidaCajas,
+              AS vendida_cajas,
             SUM(CASE WHEN vp.VentaProductoUnitario = 'U'
                      THEN vp.VentaProductoCantidad ELSE 0 END)
-              AS CantidadVendidaUnidades,
-            SUM(COALESCE(vp.VentaProductoPrecioTotal, 0)) AS MontoVendido,
+              AS vendida_unidades,
+            SUM(COALESCE(vp.VentaProductoPrecioTotal, 0)) AS monto_vendido,
             SUM(COALESCE(vp.VentaProductoCantidad, 0)
-                * COALESCE(vp.VentaProductoPrecioPromedio, 0)) AS CostoVendido
+                * COALESCE(vp.VentaProductoPrecioPromedio, 0)) AS costo_vendido
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId
-        WHERE v.CantidadVendidaCajas <> 0 OR v.CantidadVendidaUnidades <> 0
+        WHERE v.vendida_cajas <> 0 OR v.vendida_unidades <> 0
       `;
       db.query(query, [fechaDesde, fechaHasta], (err, rows) => {
         if (err) return reject(err);

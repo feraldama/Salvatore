@@ -1,3 +1,23 @@
+/**
+ * Calcula el Dígito Verificador (DV) del RUC paraguayo.
+ * Algoritmo Módulo 11 del SET Paraguay.
+ * Retorna el DV como string, o "" si la cédula es inválida.
+ */
+export const calcularDV = (cedula: string): string => {
+  const num = cedula.replace(/\D/g, "");
+  if (!num || num === "0") return "";
+  const pesos = [2, 3, 4, 5, 6, 7, 8, 9];
+  let suma = 0;
+  for (let i = 0; i < num.length; i++) {
+    const peso = pesos[(num.length - 1 - i) % pesos.length];
+    suma += parseInt(num[i]) * peso;
+  }
+  const resto = suma % 11;
+  if (resto === 0) return "0";
+  if (resto === 1) return "1";
+  return String(11 - resto);
+};
+
 export const formatMiles = (value: number | string): string => {
   const parseToNumber = (value: number | string): number => {
     if (typeof value === "string") {

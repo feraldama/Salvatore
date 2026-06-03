@@ -42,6 +42,22 @@ exports.getById = async (req, res) => {
   }
 };
 
+// Almacén del local indicado (un almacén por local).
+exports.getByLocal = async (req, res) => {
+  try {
+    const almacen = await Almacen.getByLocal(req.params.localId);
+    if (!almacen) {
+      return res
+        .status(404)
+        .json({ message: "Este local no tiene almacén asignado" });
+    }
+    res.json(almacen);
+  } catch (error) {
+    console.error(error);
+    sendError(res, error, 500);
+  }
+};
+
 exports.create = async (req, res) => {
   try {
     const almacen = await Almacen.create(req.body);
@@ -50,6 +66,9 @@ exports.create = async (req, res) => {
       .json({ message: "Almacén creado exitosamente", data: almacen });
   } catch (error) {
     console.error(error);
+    if (error?.code === "23505" || /uq_almacen_local|duplicate/i.test(error?.message || "")) {
+      return res.status(400).json({ message: "Ese local ya tiene un almacén asignado" });
+    }
     sendError(res, error, 400);
   }
 };

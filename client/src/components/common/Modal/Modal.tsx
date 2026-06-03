@@ -57,12 +57,23 @@ export default function Modal({
   children,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // onClose puede ser una función nueva en cada render del padre (el POS
+  // re-renderiza seguido). La guardamos en un ref para que el efecto no se
+  // reinicie en cada render — eso causaba parpadeos y focus-stealing.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+  // El cierre por click en el backdrop solo debe ocurrir si el gesto EMPEZÓ
+  // sobre el backdrop. Sin esto, arrastrar (ej. seleccionar texto en un input)
+  // y soltar fuera del panel cerraba el modal por accidente.
+  const downOnOverlayRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && closeOnEscape) onClose();
+      if (e.key === "Escape" && closeOnEscape) onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
 
@@ -79,7 +90,7 @@ export default function Modal({
       document.body.style.overflow = prevOverflow;
       window.clearTimeout(t);
     };
-  }, [open, closeOnEscape, onClose, initialFocusRef]);
+  }, [open, closeOnEscape, initialFocusRef]);
 
   if (!open) return null;
 
@@ -87,12 +98,22 @@ export default function Modal({
   const descId = description ? "modal-desc" : undefined;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        aria-hidden="true"
-        onClick={closeOnOverlay ? onClose : undefined}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        downOnOverlayRef.current = e.target === e.currentTarget;
+      }}
+      onMouseUp={(e) => {
+        if (
+          closeOnOverlay &&
+          downOnOverlayRef.current &&
+          e.target === e.currentTarget
+        ) {
+          onClose();
+        }
+        downOnOverlayRef.current = false;
+      }}
+    >
       <div
         ref={panelRef}
         role="dialog"
@@ -100,6 +121,7 @@ export default function Modal({
         aria-labelledby={titleId}
         aria-describedby={descId}
         tabIndex={-1}
+        onMouseDown={(e) => e.stopPropagation()}
         className={`relative w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-surface rounded-xl shadow-modal border border-border focus:outline-none`}
       >
         {(title || showClose) && (

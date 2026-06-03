@@ -144,6 +144,9 @@ exports.login = async (req, res) => {
       });
     }
 
+    // La empresa del usuario se deriva del local al que pertenece.
+    const empresaIdEfectiva = usuario.LocalEmpresaId || usuario.EmpresaId || 1;
+
     // Crear payload seguro
     const payload = {
       id: usuario.UsuarioId,
@@ -151,6 +154,8 @@ exports.login = async (req, res) => {
       isAdmin: usuario.UsuarioIsAdmin,
       estado: usuario.UsuarioEstado,
       LocalId: usuario.LocalId,
+      AlmacenId: usuario.AlmacenId || null,
+      EmpresaId: empresaIdEfectiva,
     };
 
     // Generar token. Duración configurable vía JWT_EXPIRES_IN (ej: "4h", "1d").
@@ -186,6 +191,8 @@ exports.login = async (req, res) => {
         isAdmin: usuario.UsuarioIsAdmin,
         estado: usuario.UsuarioEstado,
         LocalId: usuario.LocalId,
+        AlmacenId: usuario.AlmacenId || null,
+        EmpresaId: empresaIdEfectiva,
       },
       permisos,
     });

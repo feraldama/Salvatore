@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import SearchButton from "../common/Input/SearchButton";
-import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
+import { Modal, Button, TextInput } from "../common/ui";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
+import { getEmpresasAccesibles, type Empresa } from "../../services/empresas.service";
 
 import type { Local } from "../../types";
 
@@ -55,7 +56,13 @@ export default function LocalesList({
     LocalTelefono: "",
     LocalCelular: "",
     LocalDireccion: "",
+    EmpresaId: 1,
   });
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+
+  useEffect(() => {
+    getEmpresasAccesibles().then(setEmpresas).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (currentLocal) {
@@ -66,6 +73,7 @@ export default function LocalesList({
         LocalTelefono: currentLocal.LocalTelefono || "",
         LocalCelular: currentLocal.LocalCelular || "",
         LocalDireccion: currentLocal.LocalDireccion || "",
+        EmpresaId: (currentLocal.EmpresaId as number) || 1,
       });
     } else {
       setFormData({
@@ -75,6 +83,7 @@ export default function LocalesList({
         LocalTelefono: "",
         LocalCelular: "",
         LocalDireccion: "",
+        EmpresaId: 1,
       });
     }
   }, [currentLocal]);
@@ -94,15 +103,10 @@ export default function LocalesList({
     onSubmit(formData);
   };
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onCloseModal();
-    }
-  };
-
   const columns = [
     { key: "LocalId", label: "ID" },
     { key: "LocalNombre", label: "Nombre" },
+    { key: "EmpresaNombre", label: "Empresa" },
     { key: "LocalTelefono", label: "Teléfono" },
     { key: "LocalCelular", label: "Celular" },
     { key: "LocalDireccion", label: "Dirección" },
@@ -121,15 +125,13 @@ export default function LocalesList({
           />
         </div>
         <div className="py-4">
-          <ActionButton
-            label="Nuevo Local"
-            onClick={onCreate}
-            icon={PlusIcon}
-          />
+          <Button leftIcon={PlusIcon} onClick={onCreate}>
+            Nuevo Local
+          </Button>
         </div>
       </div>
       <div className="flex justify-between items-center mb-4">
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-text-muted">
           Mostrando {formatMiles(locales.length)} de{" "}
           {formatMiles(pagination?.totalItems || 0)} locales
         </div>
@@ -144,137 +146,93 @@ export default function LocalesList({
         sortOrder={sortOrder}
         onSort={onSort}
       />
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={handleBackdropClick}
+      <Modal
+        open={isModalOpen}
+        onClose={onCloseModal}
+        size="2xl"
+        title={
+          currentLocal
+            ? `Editar local: ${currentLocal.LocalId}`
+            : "Crear nuevo local"
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={onCloseModal}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="local-form">
+              {currentLocal ? "Actualizar" : "Crear"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="local-form"
+          onSubmit={handleSubmit}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
-          <div className="absolute inset-0 bg-black opacity-50" />
-          <div className="relative w-full max-w-2xl max-h-full z-10">
-            <form
-              onSubmit={handleSubmit}
-              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
+          <TextInput
+            label="Nombre *"
+            name="LocalNombre"
+            value={formData.LocalNombre}
+            onChange={(e) =>
+              handleInputChange({
+                target: {
+                  name: "LocalNombre",
+                  value: e.target.value.toUpperCase(),
+                },
+              } as React.ChangeEvent<HTMLInputElement>)
+            }
+            className="uppercase"
+            required
+          />
+          <TextInput
+            label="Teléfono"
+            name="LocalTelefono"
+            value={formData.LocalTelefono}
+            onChange={handleInputChange}
+          />
+          <TextInput
+            label="Celular"
+            name="LocalCelular"
+            value={formData.LocalCelular}
+            onChange={handleInputChange}
+          />
+          <div>
+            <label
+              htmlFor="EmpresaId"
+              className="block text-xs font-medium text-text-muted mb-1"
             >
-              <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  {currentLocal
-                    ? `Editar local: ${currentLocal.LocalId}`
-                    : "Crear nuevo local"}
-                </h3>
-                <button
-                  type="button"
-                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
-                  onClick={onCloseModal}
-                >
-                  <svg
-                    className="w-3 h-3"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 14 14"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-6 gap-6">
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="LocalNombre"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Nombre <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="LocalNombre"
-                      id="LocalNombre"
-                      value={formData.LocalNombre}
-                      onChange={(e) => {
-                        const value = e.target.value.toUpperCase();
-                        handleInputChange({
-                          target: {
-                            name: "LocalNombre",
-                            value: value,
-                          },
-                        } as React.ChangeEvent<HTMLInputElement>);
-                      }}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required
-                    />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="LocalTelefono"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Teléfono
-                    </label>
-                    <input
-                      type="text"
-                      name="LocalTelefono"
-                      id="LocalTelefono"
-                      value={formData.LocalTelefono}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3">
-                    <label
-                      htmlFor="LocalCelular"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Celular
-                    </label>
-                    <input
-                      type="text"
-                      name="LocalCelular"
-                      id="LocalCelular"
-                      value={formData.LocalCelular}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    />
-                  </div>
-                  <div className="col-span-6 sm:col-span-6">
-                    <label
-                      htmlFor="LocalDireccion"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Dirección
-                    </label>
-                    <input
-                      type="text"
-                      name="LocalDireccion"
-                      id="LocalDireccion"
-                      value={formData.LocalDireccion}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
-                <ActionButton
-                  label={currentLocal ? "Actualizar" : "Crear"}
-                  type="submit"
-                />
-                <ActionButton
-                  label="Cancelar"
-                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10"
-                  onClick={onCloseModal}
-                />
-              </div>
-            </form>
+              Empresa *
+            </label>
+            <select
+              name="EmpresaId"
+              id="EmpresaId"
+              value={String(formData.EmpresaId ?? "")}
+              onChange={handleInputChange}
+              required
+              className="w-full bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
+            >
+              {empresas.map((e) => (
+                <option key={e.EmpresaId} value={e.EmpresaId}>
+                  {e.EmpresaNombre}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-text-muted">
+              Los usuarios de este local pertenecen a esta empresa.
+            </p>
           </div>
-        </div>
-      )}
+          <div className="sm:col-span-2">
+            <TextInput
+              label="Dirección"
+              name="LocalDireccion"
+              value={formData.LocalDireccion}
+              onChange={handleInputChange}
+            />
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

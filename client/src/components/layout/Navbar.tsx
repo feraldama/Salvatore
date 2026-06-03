@@ -11,6 +11,7 @@ import {
   UserCircleIcon,
   Cog6ToothIcon,
   BuildingStorefrontIcon,
+  CheckIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../contexts/useAuth";
 import { Link, useNavigate } from "react-router-dom";
@@ -24,6 +25,61 @@ function getInitials(name?: string | null): string {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+// Selector de empresa activa. Se muestra solo si el usuario tiene acceso a más de una.
+function EmpresaSwitcher() {
+  const { empresas, empresaActiva, setEmpresaActiva } = useAuth();
+  if (empresas.length <= 1) {
+    // Una sola empresa: mostrar como etiqueta estática, sin dropdown.
+    return empresaActiva ? (
+      <div className="hidden sm:flex items-center gap-2 rounded-lg border border-border bg-surface-muted px-3 py-1.5">
+        <BuildingStorefrontIcon className="h-4 w-4 text-brand-700" />
+        <span className="text-sm font-medium text-text">{empresaActiva.EmpresaNombre}</span>
+      </div>
+    ) : null;
+  }
+
+  return (
+    <Menu as="div" className="relative">
+      <MenuButton className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 hover:bg-surface-muted transition-colors duration-150 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30">
+        <BuildingStorefrontIcon className="h-4 w-4 text-brand-700 shrink-0" />
+        <span className="text-sm font-medium text-text max-w-[160px] truncate">
+          {empresaActiva?.EmpresaNombre ?? "Seleccionar empresa"}
+        </span>
+        <ChevronDownIcon className="h-4 w-4 text-text-muted shrink-0" />
+      </MenuButton>
+      <MenuItems
+        transition
+        anchor="bottom start"
+        className="z-50 mt-2 w-64 origin-top-left rounded-lg bg-surface border border-border py-1 shadow-lg focus:outline-none data-closed:scale-95 data-closed:opacity-0 transition duration-150 ease-out"
+      >
+        <div className="px-3 py-2 border-b border-border">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">
+            Empresa activa
+          </p>
+        </div>
+        {empresas.map((emp) => {
+          const isActive = empresaActiva?.EmpresaId === emp.EmpresaId;
+          return (
+            <MenuItem key={emp.EmpresaId}>
+              <button
+                onClick={() => setEmpresaActiva(emp.EmpresaId)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text data-focus:bg-surface-muted cursor-pointer"
+              >
+                <BuildingStorefrontIcon className="h-4 w-4 text-text-muted shrink-0" />
+                <span className="flex-1 text-left truncate">{emp.EmpresaNombre}</span>
+                <span className="text-[10px] uppercase text-text-muted">
+                  {emp.EmpresaTipo === "D" ? "Distrib." : "Minor."}
+                </span>
+                {isActive && <CheckIcon className="h-4 w-4 text-brand-700 shrink-0" />}
+              </button>
+            </MenuItem>
+          );
+        })}
+      </MenuItems>
+    </Menu>
+  );
 }
 
 export default function Navbar({ setMobileOpen }: NavbarProps) {
@@ -65,11 +121,12 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
               <span className="font-display block text-base font-semibold leading-tight text-text">
                 Salvatore
               </span>
-              <span className="block text-[11px] leading-tight text-text-muted">
-                Distribuidora
-              </span>
             </span>
           </Link>
+
+          <div className="ml-2 pl-2 sm:border-l sm:border-border">
+            <EmpresaSwitcher />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

@@ -8,6 +8,7 @@ router.use(authMiddleware);
 
 // Rutas para Almacen
 router.get("/search", authMiddleware, almacenController.searchAlmacenes);
+router.get("/by-local/:localId", authMiddleware, almacenController.getByLocal);
 router.get("/", authMiddleware, almacenController.getAll);
 router.get("/:id", authMiddleware, almacenController.getById);
 router.post("/", authMiddleware, almacenController.create);

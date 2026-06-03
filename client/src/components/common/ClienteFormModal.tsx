@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../contexts/useAuth";
 import { Modal, Button, TextInput } from "./ui";
+import { calcularDV } from "../../utils/utils";
+import { getVendedores, type Vendedor } from "../../services/vendedores.service";
 
 export interface Cliente {
   id?: string | number;
@@ -12,6 +14,7 @@ export interface Cliente {
   ClienteTelefono: string;
   ClienteTipo: string;
   UsuarioId: string;
+  VendedorId?: number | null;
   [key: string]: unknown;
 }
 
@@ -42,6 +45,14 @@ export default function ClienteFormModal({
 }: ClienteFormModalProps) {
   const { user } = useAuth();
   const [formData, setFormData] = useState<Cliente>(emptyForm(""));
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+
+  const { empresaActiva } = useAuth();
+
+  useEffect(() => {
+    // Carga vendedores de la empresa activa (el header X-Empresa-Id lo envía el interceptor)
+    getVendedores(empresaActiva?.EmpresaId).then((res) => setVendedores(res.data || [])).catch(() => {});
+  }, [empresaActiva?.EmpresaId]);
 
   useEffect(() => {
     if (currentCliente) {
@@ -96,12 +107,29 @@ export default function ClienteFormModal({
         onSubmit={handleSubmit}
         className="grid grid-cols-1 sm:grid-cols-2 gap-4"
       >
-        <TextInput
-          label="RUC"
-          name="ClienteRUC"
-          value={formData.ClienteRUC}
-          onChange={handleInputChange}
-        />
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">
+            Cédula / RUC
+          </label>
+          <div className="flex gap-2 items-center">
+            <input
+              name="ClienteRUC"
+              value={formData.ClienteRUC}
+              onChange={handleInputChange}
+              placeholder="Ej: 1234567"
+              className="flex-1 bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
+            />
+            <span className="text-text-muted text-sm select-none">-</span>
+            <div className="w-14 text-center bg-surface-sunken border border-border rounded-md px-2 py-2 text-sm font-semibold text-text">
+              {calcularDV(formData.ClienteRUC) || <span className="text-text-muted font-normal">DV</span>}
+            </div>
+          </div>
+          {formData.ClienteRUC && calcularDV(formData.ClienteRUC) && (
+            <p className="mt-1 text-xs text-text-muted">
+              RUC completo: {formData.ClienteRUC}-{calcularDV(formData.ClienteRUC)}
+            </p>
+          )}
+        </div>
         <TextInput
           label="Nombre *"
           name="ClienteNombre"
@@ -148,6 +176,35 @@ export default function ClienteFormModal({
             <option value="MA">Mayorista</option>
           </select>
         </div>
+        {formData.ClienteTipo === "MA" && (
+          <div>
+            <label
+              htmlFor="VendedorId"
+              className="block text-xs font-medium text-text-muted mb-1"
+            >
+              Vendedor asignado
+            </label>
+            <select
+              name="VendedorId"
+              id="VendedorId"
+              value={formData.VendedorId ?? ""}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  VendedorId: e.target.value ? Number(e.target.value) : null,
+                }))
+              }
+              className="w-full bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
+            >
+              <option value="">— Sin vendedor —</option>
+              {vendedores.map((v) => (
+                <option key={v.VendedorId} value={v.VendedorId}>
+                  {v.VendedorNombre} {v.VendedorApellido}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <TextInput
           label="Usuario ID"
           name="UsuarioId"

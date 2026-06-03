@@ -32,6 +32,8 @@ import Compras from "./pages/compras/Compras";
 import ComprasPage from "./pages/compras/ComprasPage";
 import Inventario from "./pages/inventario/Inventario";
 import DocumentTitle from "./components/common/DocumentTitle";
+import VendedoresPage from "./pages/vendedores/VendedoresPage";
+import EmpresasPage from "./pages/empresas/EmpresasPage";
 
 function App() {
   return (
@@ -99,6 +101,8 @@ function App() {
             <Route path="/credito-pagos" element={<CreditoPagosPage />} />
             <Route path="/reportes" element={<ReportesPage />} />
             <Route path="/facturas" element={<FacturasPage />} />
+            <Route path="/vendedores" element={<VendedoresPage />} />
+            <Route path="/empresas" element={<EmpresasPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

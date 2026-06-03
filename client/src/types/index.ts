@@ -22,6 +22,8 @@ export interface Almacen {
   id: string | number;
   AlmacenId: string | number;
   AlmacenNombre: string;
+  LocalId?: number | null;
+  LocalNombre?: string;
   [key: string]: unknown;
 }
 
@@ -32,6 +34,8 @@ export interface Local {
   LocalTelefono?: string;
   LocalCelular?: string;
   LocalDireccion?: string;
+  EmpresaId?: number;
+  EmpresaNombre?: string;
   [key: string]: unknown;
 }
 

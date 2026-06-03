@@ -20,14 +20,20 @@ import {
   LockClosedIcon,
   ChartBarIcon,
   ShoppingCartIcon,
+  TruckIcon,
+  UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import type { ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { Dispatch, SetStateAction } from "react";
+import { useAuth } from "../../contexts/useAuth";
 
 interface NavigationChild {
   name: string;
   href: string;
+  // Nombre del menú en RBAC. Si se define, el ítem solo se muestra si el
+  // usuario tiene permiso de lectura sobre ese menú (admin ve todo).
+  permiso?: string;
 }
 
 interface NavigationItem {
@@ -35,11 +41,15 @@ interface NavigationItem {
   href: string;
   icon: ComponentType<{ className?: string }>;
   children?: NavigationChild[];
+  permiso?: string;
 }
 
 interface NavigationSection {
   label: string;
   items: NavigationItem[];
+  // Tipos de empresa donde aplica esta sección. undefined = todas.
+  // 'M' = minorista, 'D' = distribuidora.
+  empresaTipos?: string[];
 }
 
 const sections: NavigationSection[] = [
@@ -51,39 +61,49 @@ const sections: NavigationSection[] = [
         name: "Apertura/Cierre de Caja",
         href: "/apertura-cierre-caja",
         icon: LockClosedIcon,
+        permiso: "APERTURACAJA",
       },
-      { name: "Ventas", href: "/ventas", icon: CurrencyDollarIcon },
-      { name: "Compras", href: "/compras", icon: ShoppingCartIcon },
+      { name: "Ventas", href: "/ventas", icon: CurrencyDollarIcon, permiso: "NUEVAVENTA" },
+      { name: "Compras", href: "/compras", icon: ShoppingCartIcon, permiso: "NUEVACOMPRA" },
       {
         name: "Cobro de Créditos",
         href: "/credito-pagos",
         icon: BanknotesIcon,
+        permiso: "COBROCREDITO",
       },
     ],
   },
   {
     label: "Catálogo",
     items: [
-      { name: "Productos", href: "/products", icon: CubeIcon },
-      { name: "Combos", href: "/combos", icon: RectangleGroupIcon },
-      { name: "Almacenes", href: "/almacenes", icon: ArchiveBoxIcon },
-      { name: "Clientes", href: "/customers", icon: UsersIcon },
+      { name: "Productos", href: "/products", icon: CubeIcon, permiso: "PRODUCTOS" },
+      { name: "Combos", href: "/combos", icon: RectangleGroupIcon, permiso: "COMBOS" },
+      { name: "Almacenes", href: "/almacenes", icon: ArchiveBoxIcon, permiso: "ALMACENES" },
+      { name: "Clientes", href: "/customers", icon: UsersIcon, permiso: "CLIENTES" },
     ],
   },
   {
     label: "Análisis",
     items: [
-      { name: "Reportes", href: "/reportes", icon: ChartBarIcon },
+      { name: "Reportes", href: "/reportes", icon: ChartBarIcon, permiso: "REPORTES" },
       {
         name: "Registro Diario",
         href: "/movements",
         icon: PencilSquareIcon,
         children: [
-          { name: "Cajas", href: "/movements/cajas" },
-          { name: "Tipos de Gasto", href: "/movements/tiposgasto" },
-          { name: "Registro Diario Caja", href: "/movements/summary" },
+          { name: "Cajas", href: "/movements/cajas", permiso: "CAJAS" },
+          { name: "Tipos de Gasto", href: "/movements/tiposgasto", permiso: "TIPOSGASTO" },
+          { name: "Registro Diario Caja", href: "/movements/summary", permiso: "REGISTRODIARIOCAJA" },
         ],
       },
+    ],
+  },
+  {
+    label: "Distribuidora",
+    empresaTipos: ["D"], // solo visible cuando la empresa activa es distribuidora
+    items: [
+      { name: "Vendedores", href: "/vendedores", icon: UserGroupIcon, permiso: "VENDEDORES" },
+      { name: "Rutas de Reparto", href: "/rutas", icon: TruckIcon },
     ],
   },
   {
@@ -94,10 +114,10 @@ const sections: NavigationSection[] = [
         href: "/modifications",
         icon: WrenchIcon,
         children: [
-          { name: "Facturas", href: "/facturas" },
-          { name: "Ventas", href: "/modifications/ventas" },
-          { name: "Compras", href: "/modifications/compras" },
-          { name: "Inventario", href: "/inventario" },
+          { name: "Facturas", href: "/facturas", permiso: "FACTURAS" },
+          { name: "Ventas", href: "/modifications/ventas", permiso: "VENTAS" },
+          { name: "Compras", href: "/modifications/compras", permiso: "COMPRAS" },
+          { name: "Inventario", href: "/inventario", permiso: "INVENTARIO" },
         ],
       },
       {
@@ -105,10 +125,11 @@ const sections: NavigationSection[] = [
         href: "/access-control",
         icon: KeyIcon,
         children: [
-          { name: "Locales", href: "/locales" },
-          { name: "Usuarios", href: "/users" },
-          { name: "Perfiles", href: "/perfiles" },
-          { name: "Menús", href: "/menus" },
+          { name: "Empresas", href: "/empresas", permiso: "LOCALES" },
+          { name: "Locales", href: "/locales", permiso: "LOCALES" },
+          { name: "Usuarios", href: "/users", permiso: "USUARIOS" },
+          { name: "Perfiles", href: "/perfiles", permiso: "PERFILES" },
+          { name: "Menús", href: "/menus", permiso: "MENUS" },
         ],
       },
     ],
@@ -232,10 +253,41 @@ interface SidebarContentProps {
 
 function SidebarContent({ onNavigate }: SidebarContentProps) {
   const location = useLocation();
+  const { empresaActiva, user, permisos } = useAuth();
+  const tipoActivo = empresaActiva?.EmpresaTipo;
+
+  // ¿El usuario puede ver un ítem? Sin permiso definido = visible (ej. Dashboard).
+  // El admin ve todo. Para el resto se exige permiso de lectura sobre el menú.
+  const puedeVer = (permiso?: string) => {
+    if (!permiso) return true;
+    if (user?.isAdmin === "S") return true;
+    return !!permisos?.[permiso]?.leer;
+  };
+
+  // Construye las secciones visibles: filtra por tipo de empresa, por permiso,
+  // y oculta grupos/secciones que queden sin ítems.
+  const seccionesVisibles = sections
+    .filter(
+      (s) => !s.empresaTipos || (tipoActivo != null && s.empresaTipos.includes(tipoActivo))
+    )
+    .map((section) => {
+      const items = section.items
+        .map((item) => {
+          if (item.children) {
+            const children = item.children.filter((c) => puedeVer(c.permiso));
+            return children.length ? { ...item, children } : null;
+          }
+          return puedeVer(item.permiso) ? item : null;
+        })
+        .filter((i): i is NavigationItem => i !== null);
+      return { ...section, items };
+    })
+    .filter((section) => section.items.length > 0);
 
   return (
-    <nav className="px-3 py-4 space-y-6" aria-label="Navegación principal">
-      {sections.map((section) => (
+    <nav className="py-4" aria-label="Navegación principal">
+      <div className="px-3 space-y-6">
+      {seccionesVisibles.map((section) => (
         <div key={section.label}>
           <div
             style={{
@@ -277,6 +329,7 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
           </ul>
         </div>
       ))}
+      </div>
     </nav>
   );
 }

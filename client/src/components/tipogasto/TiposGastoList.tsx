@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import SearchButton from "../common/Input/SearchButton";
-import ActionButton from "../common/Button/ActionButton";
 import DataTable from "../common/Table/DataTable";
+import { Modal, Button, TextInput } from "../common/ui";
 import {
   PlusIcon,
   PencilSquareIcon,
@@ -124,12 +124,6 @@ export default function TiposGastoList({
     onSubmit(formData);
   };
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onCloseModal();
-    }
-  };
-
   const columns = [
     { key: "TipoGastoId", label: "ID" },
     { key: "TipoGastoDescripcion", label: "Descripción" },
@@ -148,15 +142,13 @@ export default function TiposGastoList({
           />
         </div>
         <div className="py-4">
-          <ActionButton
-            label="Nuevo Tipo de Gasto"
-            onClick={onCreate}
-            icon={PlusIcon}
-          />
+          <Button leftIcon={PlusIcon} onClick={onCreate}>
+            Nuevo Tipo de Gasto
+          </Button>
         </div>
       </div>
       <div className="flex justify-between items-center mb-4">
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-text-muted">
           Mostrando {formatMiles(tiposGasto.length)} de{" "}
           {formatMiles(pagination?.totalItems || 0)} tipos de gasto
         </div>
@@ -171,82 +163,55 @@ export default function TiposGastoList({
         sortOrder={sortOrder}
         onSort={onSort}
       />
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onClick={handleBackdropClick}
+      <Modal
+        open={isModalOpen}
+        onClose={onCloseModal}
+        size="2xl"
+        title={
+          currentTipoGasto
+            ? `Editar tipo de gasto: ${currentTipoGasto.TipoGastoDescripcion}`
+            : "Crear nuevo tipo de gasto"
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={onCloseModal}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="tipogasto-form">
+              {currentTipoGasto ? "Actualizar" : "Crear"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="tipogasto-form"
+          onSubmit={handleSubmit}
+          className="space-y-6"
         >
-          <div className="absolute inset-0 bg-black opacity-50" />
-          <div className="relative w-full max-w-2xl max-h-full z-10">
-            <form
-              onSubmit={handleSubmit}
-              className="relative bg-white rounded-lg shadow max-h-[90vh] overflow-y-auto"
-            >
-              <div className="flex items-start justify-between p-4 border-b rounded-t">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  {currentTipoGasto
-                    ? `Editar tipo de gasto: ${currentTipoGasto.TipoGastoDescripcion}`
-                    : "Crear nuevo tipo de gasto"}
-                </h3>
-                <button
-                  type="button"
-                  className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center"
-                  onClick={onCloseModal}
-                >
-                  <svg
-                    className="w-3 h-3"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 14 14"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-6 gap-6">
-                  <div className="col-span-6 sm:col-span-4">
-                    <label
-                      htmlFor="TipoGastoDescripcion"
-                      className="block mb-2 text-sm font-medium text-gray-900"
-                    >
-                      Descripción
-                    </label>
-                    <input
-                      type="text"
-                      name="TipoGastoDescripcion"
-                      id="TipoGastoDescripcion"
-                      value={formData.TipoGastoDescripcion}
-                      onChange={handleInputChange}
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
-                      required
-                    />
-                  </div>
-                </div>
+          <TextInput
+            label="Descripción *"
+            name="TipoGastoDescripcion"
+            value={formData.TipoGastoDescripcion}
+            onChange={handleInputChange}
+            required
+          />
                 {/* Detalle de grupos de gasto asociados */}
                 {currentTipoGasto && (
                   <div className="mt-6">
-                    <h4 className="font-semibold mb-2 text-gray-800 text-base">
+                    <h4 className="font-semibold mb-2 text-text text-base">
                       Grupos asociados a este tipo de gasto
                     </h4>
                     {loadingGrupos ? (
-                      <div className="text-gray-500 text-sm">
+                      <div className="text-text-subtle text-sm">
                         Cargando grupos...
                       </div>
                     ) : (
                       <>
-                        <ul className="divide-y divide-gray-200 mb-2">
+                        <ul className="divide-y divide-border mb-2">
                           {grupos.map((g) => (
                             <li
                               key={g.TipoGastoGrupoId}
-                              className="py-2 px-1 flex items-center gap-2 hover:bg-gray-100 rounded"
+                              className="py-2 px-1 flex items-center gap-2 hover:bg-surface-muted rounded"
                             >
                               {editGrupoId === g.TipoGastoGrupoId ? (
                                 <>
@@ -259,7 +224,7 @@ export default function TiposGastoList({
                                   />
                                   <button
                                     type="button"
-                                    className="text-green-600 hover:underline text-xs cursor-pointer"
+                                    className="text-success-700 hover:underline text-xs cursor-pointer"
                                     onClick={async () => {
                                       try {
                                         await updateTipoGastoGrupo(
@@ -299,7 +264,7 @@ export default function TiposGastoList({
                                   </button>
                                   <button
                                     type="button"
-                                    className="text-gray-500 hover:underline text-xs ml-2 cursor-pointer"
+                                    className="text-text-subtle hover:underline text-xs ml-2 cursor-pointer"
                                     onClick={() => {
                                       setEditGrupoId(null);
                                       setEditGrupoDesc("");
@@ -310,13 +275,13 @@ export default function TiposGastoList({
                                 </>
                               ) : (
                                 <>
-                                  <span className="text-gray-700 flex-1">
+                                  <span className="text-text-muted flex-1">
                                     {g.TipoGastoGrupoId}-{" "}
                                     {g.TipoGastoGrupoDescripcion}
                                   </span>
                                   <button
                                     type="button"
-                                    className="text-blue-600 hover:underline text-xs cursor-pointer"
+                                    className="text-brand-700 hover:underline text-xs cursor-pointer"
                                     title="Editar"
                                     onClick={() => {
                                       setEditGrupoId(g.TipoGastoGrupoId);
@@ -329,7 +294,7 @@ export default function TiposGastoList({
                                   </button>
                                   <button
                                     type="button"
-                                    className="text-red-600 hover:underline text-xs ml-2 cursor-pointer"
+                                    className="text-danger-700 hover:underline text-xs ml-2 cursor-pointer"
                                     title="Eliminar"
                                     onClick={async () => {
                                       const confirm = await Swal.fire({
@@ -411,7 +376,7 @@ export default function TiposGastoList({
                           />
                           <button
                             type="button"
-                            className="text-white bg-blue-600 hover:bg-blue-700 rounded px-3 py-1 text-xs"
+                            className="text-white bg-brand-600 hover:bg-brand-800 rounded px-3 py-1 text-xs"
                             onClick={async () => {
                               if (!nuevoGrupo.trim()) return;
                               const res = await createTipoGastoGrupo({
@@ -451,7 +416,7 @@ export default function TiposGastoList({
                           </button>
                         </div>
                         {grupos.length === 0 && !loadingGrupos && (
-                          <div className="text-gray-500 text-sm mt-2">
+                          <div className="text-text-subtle text-sm mt-2">
                             No hay grupos asociados.
                           </div>
                         )}
@@ -459,22 +424,8 @@ export default function TiposGastoList({
                     )}
                   </div>
                 )}
-              </div>
-              <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b">
-                <ActionButton
-                  label={currentTipoGasto ? "Actualizar" : "Crear"}
-                  type="submit"
-                />
-                <ActionButton
-                  label="Cancelar"
-                  className="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10 cursor-pointer"
-                  onClick={onCloseModal}
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 }

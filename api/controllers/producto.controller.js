@@ -1,8 +1,10 @@
 const Producto = require("../models/producto.model");
 const { sendError } = require("../utils/errors");
 
-function extractProductoFilters(query) {
+function extractProductoFilters(query, empresaId) {
   const filters = {};
+  // Scope por empresa (autoritativo: viene de resolveEmpresa, no del query).
+  if (empresaId != null) filters.empresaId = Number(empresaId);
   if (query.localId !== undefined && query.localId !== "") {
     const local = parseInt(query.localId, 10);
     if (!isNaN(local)) filters.localId = local;
@@ -30,7 +32,7 @@ exports.getAllProductos = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "ProductoId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractProductoFilters(req.query);
+    const filters = extractProductoFilters(req.query, req.empresaId);
     const { productos, total } = await Producto.getAllPaginated(
       limit,
       offset,
@@ -63,7 +65,7 @@ exports.searchProductos = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "ProductoId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractProductoFilters(req.query);
+    const filters = extractProductoFilters(req.query, req.empresaId);
     if (!searchTerm || searchTerm.trim() === "") {
       return res
         .status(400)
@@ -112,11 +114,11 @@ exports.getProductoById = async (req, res) => {
 exports.createProducto = async (req, res) => {
   try {
     // Validación básica de campos requeridos
+    // LocalId ya no se exige: el catálogo se scopea por empresa (EmpresaId).
     const camposRequeridos = [
       "ProductoCodigo",
       "ProductoNombre",
       "ProductoPrecioVenta",
-      "LocalId",
     ];
     for (const campo of camposRequeridos) {
       if (
@@ -130,8 +132,11 @@ exports.createProducto = async (req, res) => {
         });
       }
     }
-    // Crear producto
-    const nuevoProducto = await Producto.create(req.body);
+    // Crear producto en la empresa activa (resuelta por resolveEmpresa).
+    const nuevoProducto = await Producto.create({
+      ...req.body,
+      EmpresaId: req.empresaId || req.body.EmpresaId || 1,
+    });
     res.status(201).json({
       success: true,
       data: nuevoProducto,
@@ -278,7 +283,7 @@ exports.getReporteStock = async (req, res) => {
 // Obtener todos los productos sin paginación
 exports.getAllProductosSinPaginacion = async (req, res) => {
   try {
-    const filters = extractProductoFilters(req.query);
+    const filters = extractProductoFilters(req.query, req.empresaId);
     const productos = await Producto.getAll(filters);
     convertirImagenes(productos);
     res.json({ data: productos });

@@ -384,7 +384,7 @@ export default function Compras() {
           ProductoId: Number(p.id),
           CompraProductoCantidad: Number(p.cantidad),
           CompraProductoPrecio: Number(p.precioUnitario),
-          AlmacenId: Number(user.LocalId || 1),
+          AlmacenId: Number(user.AlmacenId ?? user.LocalId ?? 1),
           Bonificacion: 0,
           CompraProductoCantidadUnidad: p.caja ? "C" : "U",
         })),

@@ -52,8 +52,18 @@ const Usuario = {
 
   findByUsuarioId: (email) => {
     return new Promise((resolve, reject) => {
+      // Resuelve el almacén del local del usuario (un almacén por local) y la
+      // empresa a la que pertenece ese local (fuente de verdad de la empresa
+      // del usuario: se deriva del local, no de una columna suelta).
       db.query(
-        "SELECT * FROM usuario WHERE UsuarioId = ? LIMIT 1",
+        `SELECT u.*,
+                a.AlmacenId AS AlmacenId,
+                l.EmpresaId AS LocalEmpresaId
+           FROM usuario u
+           LEFT JOIN almacen a ON a.LocalId = u.LocalId
+           LEFT JOIN local l ON l.LocalId = u.LocalId
+          WHERE u.UsuarioId = ?
+          LIMIT 1`,
         [email],
         (err, results) => {
           if (err) return reject(err);

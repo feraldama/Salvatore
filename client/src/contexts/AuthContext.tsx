@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { AuthContext } from "./AuthContextDef";
+import { getEmpresasAccesibles, type Empresa } from "../services/empresas.service";
 
-interface User {
-  // Define aquí las propiedades del usuario según tu modelo, por ejemplo:
+export interface User {
   id: string;
   nombre: string;
   email: string;
   LocalId?: number;
   LocalNombre?: string;
+  AlmacenId?: number | null;
   isAdmin?: string;
-  // Agrega más campos si es necesario
+  EmpresaId?: number;
 }
 
 interface Credentials {
@@ -31,6 +32,9 @@ interface PermisosPorMenu {
 interface AuthContextType {
   user: User | null;
   permisos: PermisosPorMenu;
+  empresas: Empresa[];
+  empresaActiva: Empresa | null;
+  setEmpresaActiva: (empresaId: number) => void;
   login: (credentials: Credentials) => Promise<void>;
   logout: () => void;
   loading: boolean;
@@ -40,17 +44,66 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+// Persiste el id de empresa activa para que el interceptor de axios lo lea.
+function persistEmpresaActivaId(id: number | null) {
+  if (id == null) {
+    localStorage.removeItem("empresaActivaId");
+  } else {
+    localStorage.setItem("empresaActivaId", String(id));
+  }
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(() => {
-    const storedUser = localStorage.getItem("user");
-    return storedUser ? JSON.parse(storedUser) : null;
+    const stored = localStorage.getItem("user");
+    return stored ? JSON.parse(stored) : null;
   });
   const [permisos, setPermisos] = useState<PermisosPorMenu>(() => {
-    const storedPerms = localStorage.getItem("permisos");
-    return storedPerms ? JSON.parse(storedPerms) : {};
+    const stored = localStorage.getItem("permisos");
+    return stored ? JSON.parse(stored) : {};
+  });
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empresaActivaId, setEmpresaActivaIdState] = useState<number | null>(() => {
+    const stored = localStorage.getItem("empresaActivaId");
+    return stored ? Number(stored) : null;
   });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  const empresaActiva =
+    empresas.find((e) => e.EmpresaId === empresaActivaId) ?? null;
+
+  // Carga las empresas accesibles cuando hay un usuario logueado.
+  const cargarEmpresas = useCallback(async (usuario: User | null) => {
+    if (!usuario) {
+      setEmpresas([]);
+      return;
+    }
+    try {
+      const lista = await getEmpresasAccesibles();
+      setEmpresas(lista);
+      // Resolver empresa activa: la guardada si sigue siendo válida, si no la primera.
+      setEmpresaActivaIdState((prev) => {
+        const sigueValida = prev != null && lista.some((e) => e.EmpresaId === prev);
+        const elegida = sigueValida ? prev : lista[0]?.EmpresaId ?? null;
+        persistEmpresaActivaId(elegida);
+        return elegida;
+      });
+    } catch {
+      setEmpresas([]);
+    }
+  }, []);
+
+  // Al montar (sesión persistida), cargar empresas si ya hay usuario.
+  useEffect(() => {
+    if (user) cargarEmpresas(user);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setEmpresaActiva = useCallback((empresaId: number) => {
+    setEmpresaActivaIdState(empresaId);
+    persistEmpresaActivaId(empresaId);
+  }, []);
 
   const login = async (credentials: Credentials) => {
     setLoading(true);
@@ -59,24 +112,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         import.meta.env.VITE_API_URL + "/usuarios/login",
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(credentials),
         }
       );
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Error al iniciar sesión");
-      }
+      if (!response.ok) throw new Error(data.message || "Error al iniciar sesión");
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       localStorage.setItem("permisos", JSON.stringify(data.permisos || {}));
+
       setUser(data.user);
       setPermisos(data.permisos || {});
+      await cargarEmpresas(data.user);
     } finally {
       setLoading(false);
     }
@@ -86,16 +135,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("permisos");
+    localStorage.removeItem("empresaActivaId");
     setUser(null);
     setPermisos({});
+    setEmpresas([]);
+    setEmpresaActivaIdState(null);
     navigate("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ user, permisos, login, logout, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        permisos,
+        empresas,
+        empresaActiva,
+        setEmpresaActiva,
+        login,
+        logout,
+        loading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export type { AuthContextType };
+export type { AuthContextType, PermisosPorMenu };

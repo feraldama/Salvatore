@@ -2,16 +2,18 @@ const express = require("express");
 const router = express.Router();
 const productoController = require("../controllers/producto.controller");
 const authMiddleware = require("../middlewares/auth");
+const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
 // Ruta pública: imagen binaria del producto. Sin auth para que los <img>
 // la puedan cargar directamente con el header Authorization del browser.
 router.get("/:id/imagen", productoController.getImagen);
 
-// Rutas protegidas (requieren autenticación)
-router.get("/", authMiddleware, productoController.getAllProductos);
+// Rutas protegidas (requieren autenticación + empresa activa)
+router.get("/", authMiddleware, resolveEmpresa, productoController.getAllProductos);
 router.get(
   "/all",
   authMiddleware,
+  resolveEmpresa,
   productoController.getAllProductosSinPaginacion
 );
 router.get(
@@ -29,9 +31,9 @@ router.get(
   authMiddleware,
   productoController.getReporteMasVendidos
 );
-router.get("/search", authMiddleware, productoController.searchProductos);
+router.get("/search", authMiddleware, resolveEmpresa, productoController.searchProductos);
 router.get("/:id", authMiddleware, productoController.getProductoById);
-router.post("/", authMiddleware, productoController.createProducto);
+router.post("/", authMiddleware, resolveEmpresa, productoController.createProducto);
 router.put("/:id", authMiddleware, productoController.updateProducto);
 router.delete("/:id", authMiddleware, productoController.deleteProducto);
 

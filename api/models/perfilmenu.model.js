@@ -44,10 +44,13 @@ const PerfilMenu = {
         [
           data.PerfilId,
           data.MenuId,
-          data.puedeCrear,
-          data.puedeEditar,
-          data.puedeEliminar,
-          data.puedeLeer,
+          // Columnas smallint NOT NULL. El front a veces omite estos flags
+          // (envía solo PerfilId+MenuId) o los manda como boolean. Postgres
+          // rechaza NULL y no castea boolean→smallint, así que normalizamos a 0/1.
+          data.puedeCrear ? 1 : 0,
+          data.puedeEditar ? 1 : 0,
+          data.puedeEliminar ? 1 : 0,
+          data.puedeLeer ? 1 : 0,
         ],
         (err, result) => {
           if (err) return reject(err);
@@ -61,10 +64,10 @@ const PerfilMenu = {
       db.query(
         "UPDATE perfilmenu SET puedeCrear=?, puedeEditar=?, puedeEliminar=?, puedeLeer=? WHERE PerfilId=? AND MenuId=?",
         [
-          data.puedeCrear,
-          data.puedeEditar,
-          data.puedeEliminar,
-          data.puedeLeer,
+          data.puedeCrear ? 1 : 0,
+          data.puedeEditar ? 1 : 0,
+          data.puedeEliminar ? 1 : 0,
+          data.puedeLeer ? 1 : 0,
           perfilId,
           menuId,
         ],

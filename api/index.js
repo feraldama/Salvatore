@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 // Importar rutas
 const usuarioRoutes = require("./routes/usuario.routes");
@@ -24,18 +25,13 @@ const ventaCreditoPagoRoutes = require("./routes/ventacreditopago.routes");
 const facturaRoutes = require("./routes/factura.routes");
 const compraRoutes = require("./routes/compra.routes");
 const proveedorRoutes = require("./routes/proveedor.routes");
-// Rutas para la app Mobile (contrato JWF): auth gen + módulo flota.
+const vendedorRoutes = require("./routes/vendedor.routes");
+const empresaRoutes = require("./routes/empresa.routes");
 const genAuthRoutes = require("./routes/genauth.routes");
 const flotaRoutes = require("./routes/flota.routes");
-const path = require("path");
-// const productoRoutes = require("./routes/producto.routes"); // Ejemplo adicional
 
 const app = express();
 
-// Configuración de CORS
-// Por defecto aceptamos la red local del POS. Para extender, definir
-// ALLOWED_ORIGINS en .env como lista separada por comas, o "*" para abrir
-// a todos los orígenes (útil solo en LAN cerrada).
 const defaultOrigins = [
   "http://localhost:3024",
   "http://127.0.0.1:3024",
@@ -50,19 +46,17 @@ const allowAny = corsOrigins.includes("*");
 
 const corsOptions = {
   origin: (origin, cb) => {
-    // Permitir tools (curl, Postman, server-to-server) sin header Origin
     if (!origin) return cb(null, true);
     if (allowAny) return cb(null, true);
     if (corsOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`Origin ${origin} no permitido por CORS`));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Empresa-Id"],
   credentials: true,
-  maxAge: 86400, // 24 horas
+  maxAge: 86400,
 };
 
-// Middlewares
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
@@ -89,19 +83,14 @@ app.use("/api/ventacreditopago", ventaCreditoPagoRoutes);
 app.use("/api/factura", facturaRoutes);
 app.use("/api/compras", compraRoutes);
 app.use("/api/proveedores", proveedorRoutes);
-// Rutas de la app Mobile (flota)
+app.use("/api/vendedores", vendedorRoutes);
+app.use("/api/empresas", empresaRoutes);
 app.use("/api/gen/auth", genAuthRoutes);
 app.use("/api/gen/flota", flotaRoutes);
-// Servir fotos subidas (combustible)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-// app.use("/api/productos", productoRoutes); // Ejemplo adicional
 
-// Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("API funcionando");
-});
+app.get("/", (req, res) => res.send("API funcionando"));
 
-// Manejo de errores (puedes mejorarlo)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send("Algo salió mal!");
