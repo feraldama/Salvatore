@@ -1,62 +1,81 @@
 const db = require("../config/db");
 
 const Caja = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("SELECT * FROM Caja", (err, results) => {
-        if (err) reject(err);
-        resolve(results);
-      });
+      db.query(
+        "SELECT * FROM Caja WHERE EmpresaId = ?",
+        [empresaId],
+        (err, results) => {
+          if (err) reject(err);
+          resolve(results);
+        }
+      );
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("SELECT * FROM Caja WHERE CajaId = ?", [id], (err, results) => {
-        if (err) return reject(err);
-        resolve(results.length > 0 ? results[0] : null);
-      });
+      db.query(
+        "SELECT * FROM Caja WHERE CajaId = ? AND EmpresaId = ?",
+        [id, empresaId],
+        (err, results) => {
+          if (err) return reject(err);
+          resolve(results.length > 0 ? results[0] : null);
+        }
+      );
     });
   },
 
   create: (cajaData) => {
     return new Promise((resolve, reject) => {
-      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto) VALUES (?, ?)`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto];
+      const empresaId = cajaData.EmpresaId || 1;
+      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto, EmpresaId) VALUES (?, ?, ?)`;
+      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, empresaId];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         // Obtener la caja recién creada
-        Caja.getById(result.insertId)
+        Caja.getById(result.insertId, empresaId)
           .then((caja) => resolve(caja))
           .catch((error) => reject(error));
       });
     });
   },
 
-  update: (id, cajaData) => {
+  update: (id, cajaData, empresaId) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ? WHERE CajaId = ?`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, id];
+      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ? WHERE CajaId = ? AND EmpresaId = ?`;
+      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, id, empresaId];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         if (result.affectedRows === 0) return resolve(null);
-        Caja.getById(id)
+        Caja.getById(id, empresaId)
           .then((caja) => resolve(caja))
           .catch((error) => reject(error));
       });
     });
   },
 
-  delete: (id) => {
+  delete: (id, empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("DELETE FROM Caja WHERE CajaId = ?", [id], (err, result) => {
-        if (err) return reject(err);
-        resolve(result.affectedRows > 0);
-      });
+      db.query(
+        "DELETE FROM Caja WHERE CajaId = ? AND EmpresaId = ?",
+        [id, empresaId],
+        (err, result) => {
+          if (err) return reject(err);
+          resolve(result.affectedRows > 0);
+        }
+      );
     });
   },
 
-  getAllPaginated: (limit, offset, sortBy = "CajaId", sortOrder = "ASC") => {
+  getAllPaginated: (
+    limit,
+    offset,
+    sortBy = "CajaId",
+    sortOrder = "ASC",
+    empresaId
+  ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = ["CajaId", "CajaDescripcion", "CajaMonto"];
       const allowedSortOrders = ["ASC", "DESC"];
@@ -66,25 +85,36 @@ const Caja = {
         : "ASC";
 
       db.query(
-        `SELECT * FROM Caja ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
-        [limit, offset],
+        `SELECT * FROM Caja WHERE EmpresaId = ? ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
+        [empresaId, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
-          db.query("SELECT COUNT(*) as total FROM Caja", (err, countResult) => {
-            if (err) return reject(err);
+          db.query(
+            "SELECT COUNT(*) as total FROM Caja WHERE EmpresaId = ?",
+            [empresaId],
+            (err, countResult) => {
+              if (err) return reject(err);
 
-            resolve({
-              cajas: results,
-              total: countResult[0].total,
-            });
-          });
+              resolve({
+                cajas: results,
+                total: countResult[0].total,
+              });
+            }
+          );
         }
       );
     });
   },
 
-  searchCajas: (term, limit, offset, sortBy = "CajaId", sortOrder = "ASC") => {
+  searchCajas: (
+    term,
+    limit,
+    offset,
+    sortBy = "CajaId",
+    sortOrder = "ASC",
+    empresaId
+  ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = ["CajaId", "CajaDescripcion", "CajaMonto"];
       const allowedSortOrders = ["ASC", "DESC"];
@@ -95,8 +125,9 @@ const Caja = {
 
       const searchQuery = `
         SELECT * FROM Caja
-        WHERE CajaDescripcion LIKE ?
-        OR CAST(CajaMonto AS CHAR) LIKE ?
+        WHERE EmpresaId = ?
+          AND (CajaDescripcion LIKE ?
+            OR CAST(CajaMonto AS CHAR) LIKE ?)
         ORDER BY ${sortField} ${order}
         LIMIT ? OFFSET ?
       `;
@@ -104,18 +135,19 @@ const Caja = {
 
       db.query(
         searchQuery,
-        [searchValue, searchValue, limit, offset],
+        [empresaId, searchValue, searchValue, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           const countQuery = `
             SELECT COUNT(*) as total FROM Caja
-            WHERE CajaDescripcion LIKE ?
-            OR CAST(CajaMonto AS CHAR) LIKE ?
+            WHERE EmpresaId = ?
+              AND (CajaDescripcion LIKE ?
+                OR CAST(CajaMonto AS CHAR) LIKE ?)
           `;
           db.query(
             countQuery,
-            [searchValue, searchValue],
+            [empresaId, searchValue, searchValue],
             (err, countResult) => {
               if (err) return reject(err);
               resolve({

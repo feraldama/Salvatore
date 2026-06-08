@@ -329,6 +329,57 @@ export const devolverVenta = async (payload: DevolucionVentaPayload) => {
   }
 };
 
+export interface VentaPorDia {
+  fecha: string; // YYYY-MM-DD
+  total: number;
+  cantidad: number;
+}
+
+// Totales de venta agrupados por día, para la tendencia del dashboard.
+// Devuelve solo los días con ventas (el cliente rellena los vacíos en 0).
+export const getVentasPorDia = async (
+  fechaDesde: string,
+  fechaHasta: string
+): Promise<VentaPorDia[]> => {
+  try {
+    const response = await api.get("/venta/ventas-por-dia", {
+      params: { fechaDesde, fechaHasta },
+    });
+    return response.data?.data ?? [];
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener ventas por día",
+      }
+    );
+  }
+};
+
+export interface DeudaCliente {
+  ClienteId: number;
+  Cliente: string;
+  TotalVentas: number;
+  TotalEntregado: number;
+  Saldo: number;
+}
+
+// Deudas pendientes agrupadas por cliente (cuentas corrientes con saldo > 0).
+// Usa GET /venta/pendientes (sin clienteId) -> getDeudasPendientesPorCliente.
+export const getDeudasPendientes = async (): Promise<DeudaCliente[]> => {
+  try {
+    const response = await api.get("/venta/pendientes");
+    return response.data?.data ?? [];
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener deudas pendientes",
+      }
+    );
+  }
+};
+
 export const getVentasPendientesPorCliente = async (
   clienteId: number,
   localId?: number

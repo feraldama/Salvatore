@@ -13,7 +13,8 @@ exports.getAllFacturas = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
     res.json({
       data: facturas,
@@ -33,7 +34,7 @@ exports.getAllFacturas = async (req, res) => {
 // getAllFacturasSinPaginacion
 exports.getAllFacturasSinPaginacion = async (req, res) => {
   try {
-    const facturas = await Factura.getAll();
+    const facturas = await Factura.getAll(req.empresaId);
     res.json(facturas);
   } catch (error) {
     console.error(error);
@@ -60,7 +61,8 @@ exports.searchFacturas = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
     res.json({
       data: facturas,
@@ -80,7 +82,7 @@ exports.searchFacturas = async (req, res) => {
 // getFacturaById
 exports.getFacturaById = async (req, res) => {
   try {
-    let factura = await Factura.getById(req.params.id);
+    let factura = await Factura.getById(req.params.id, req.empresaId);
     if (!factura) {
       return res.status(404).json({ message: "Factura no encontrada" });
     }
@@ -144,8 +146,11 @@ exports.createFactura = async (req, res) => {
       });
     }
 
-    const facturaId = await Factura.create(req.body);
-    const nuevaFactura = await Factura.getById(facturaId);
+    const facturaId = await Factura.create({
+      ...req.body,
+      EmpresaId: req.empresaId,
+    });
+    const nuevaFactura = await Factura.getById(facturaId, req.empresaId);
 
     res.status(201).json({
       success: true,
@@ -216,8 +221,8 @@ exports.updateFactura = async (req, res) => {
       });
     }
 
-    await Factura.update(id, req.body);
-    const facturaActualizada = await Factura.getById(id);
+    await Factura.update(id, req.body, req.empresaId);
+    const facturaActualizada = await Factura.getById(id, req.empresaId);
 
     res.json({
       success: true,
@@ -237,7 +242,7 @@ exports.updateFactura = async (req, res) => {
 exports.deleteFactura = async (req, res) => {
   try {
     const { id } = req.params;
-    await Factura.delete(id);
+    await Factura.delete(id, req.empresaId);
     res.json({
       success: true,
       message: "Factura eliminada exitosamente",
@@ -254,7 +259,7 @@ exports.deleteFactura = async (req, res) => {
 // getNextAvailableNumber
 exports.getNextAvailableNumber = async (req, res) => {
   try {
-    const nextNumber = await Factura.getNextAvailableNumber();
+    const nextNumber = await Factura.getNextAvailableNumber(req.empresaId);
     res.json({
       success: true,
       data: { nextNumber },
@@ -269,7 +274,7 @@ exports.getNextAvailableNumber = async (req, res) => {
 exports.getCurrentFactura = async (req, res) => {
   try {
     const { numeroFactura } = req.params;
-    const factura = await Factura.getCurrentFactura(numeroFactura);
+    const factura = await Factura.getCurrentFactura(numeroFactura, req.empresaId);
     if (!factura) {
       return res.status(404).json({
         success: false,

@@ -79,6 +79,49 @@ const Producto = {
     });
   },
 
+  // Productos bajo el mínimo de stock (en cajas). Híbrido:
+  //   - si ProductoStockMinimo > 0  -> se usa ese mínimo por producto
+  //   - si está en 0 / no cargado   -> se usa el umbralGlobal de respaldo
+  // Un producto se marca cuando ProductoStock (cajas) < umbral efectivo.
+  // Si umbralGlobal es 0, los productos sin mínimo propio nunca se marcan.
+  getStockBajo: (umbralGlobal = 0, filters = {}) => {
+    return new Promise((resolve, reject) => {
+      const g = Number(umbralGlobal) || 0;
+      const empresaId =
+        filters.empresaId != null && filters.empresaId !== ""
+          ? Number(filters.empresaId)
+          : null;
+      // CASE del umbral efectivo, repetido en SELECT/WHERE/ORDER BY. Los `?`
+      // se sustituyen por posición, por eso `params` respeta el orden textual.
+      const umbralCase =
+        "(CASE WHEN COALESCE(p.ProductoStockMinimo, 0) > 0 THEN p.ProductoStockMinimo ELSE ? END)";
+
+      let sql = `
+        SELECT p.ProductoId, p.ProductoCodigo, p.ProductoNombre,
+               COALESCE(p.ProductoStock, 0) AS ProductoStock,
+               COALESCE(p.ProductoStockUnitario, 0) AS ProductoStockUnitario,
+               p.ProductoCantidadCaja,
+               COALESCE(p.ProductoStockMinimo, 0) AS ProductoStockMinimo
+        FROM producto p
+        WHERE COALESCE(p.ProductoStock, 0) < ${umbralCase}`;
+      const params = [g]; // ? del WHERE
+
+      if (empresaId != null) {
+        sql += " AND p.EmpresaId = ?";
+        params.push(empresaId);
+      }
+
+      // Más urgente primero (mayor faltante respecto al umbral).
+      sql += ` ORDER BY (${umbralCase} - COALESCE(p.ProductoStock, 0)) DESC, p.ProductoNombre ASC`;
+      params.push(g); // ? del ORDER BY
+
+      db.query(sql, params, (err, results) => {
+        if (err) return reject(err);
+        resolve(results || []);
+      });
+    });
+  },
+
   getById: (id) => {
     return new Promise((resolve, reject) => {
       db.query(
@@ -485,7 +528,7 @@ const Producto = {
    *
    * Ganancia y margen se calculan en el frontend (Ganancia = Monto - Costo).
    */
-  getReporteMovimientosPorRango: (fechaDesde, fechaHasta) => {
+  getReporteMovimientosPorRango: (fechaDesde, fechaHasta, empresaId) => {
     return new Promise((resolve, reject) => {
       const query = `
         SELECT
@@ -535,15 +578,16 @@ const Producto = {
           WHERE DATE(cc.CompraFecha) BETWEEN ? AND ?
           GROUP BY cp.ProductoId
         ) c ON c.ProductoId = p.ProductoId
-        WHERE COALESCE(v.vendida_cajas,     0) <> 0
-           OR COALESCE(v.vendida_unidades,  0) <> 0
-           OR COALESCE(c.comprada_cajas,    0) <> 0
-           OR COALESCE(c.comprada_unidades, 0) <> 0
+        WHERE p.EmpresaId = ?
+          AND (COALESCE(v.vendida_cajas,     0) <> 0
+            OR COALESCE(v.vendida_unidades,  0) <> 0
+            OR COALESCE(c.comprada_cajas,    0) <> 0
+            OR COALESCE(c.comprada_unidades, 0) <> 0)
         ORDER BY p.ProductoNombre ASC
       `;
       db.query(
         query,
-        [fechaDesde, fechaHasta, fechaDesde, fechaHasta],
+        [fechaDesde, fechaHasta, fechaDesde, fechaHasta, empresaId],
         (err, rows) => {
           if (err) return reject(err);
           const productos = rows.map((r) => ({
@@ -580,7 +624,7 @@ const Producto = {
    *
    * Ordena DESC por total de unidades vendidas.
    */
-  getReporteMasVendidos: (fechaDesde, fechaHasta) => {
+  getReporteMasVendidos: (fechaDesde, fechaHasta, empresaId) => {
     return new Promise((resolve, reject) => {
       // La agregación va en subquery por ProductoId y recién después se
       // cruza con producto. Si se hacía GROUP BY sobre producto directo,
@@ -625,9 +669,10 @@ const Producto = {
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId
-        WHERE v.vendida_cajas <> 0 OR v.vendida_unidades <> 0
+        WHERE p.EmpresaId = ?
+          AND (v.vendida_cajas <> 0 OR v.vendida_unidades <> 0)
       `;
-      db.query(query, [fechaDesde, fechaHasta], (err, rows) => {
+      db.query(query, [fechaDesde, fechaHasta, empresaId], (err, rows) => {
         if (err) return reject(err);
         const productos = rows
           .map((r) => {
@@ -666,7 +711,7 @@ const Producto = {
     });
   },
 
-  getReporteStock: () => {
+  getReporteStock: (empresaId) => {
     return new Promise((resolve, reject) => {
       // Incluye precio de costo por caja (ProductoPrecioPromedio) y la
       // cantidad por caja para que el frontend calcule el valor del stock
@@ -688,9 +733,10 @@ const Producto = {
         FROM producto p
         LEFT JOIN productoalmacen pa ON p.ProductoId = pa.ProductoId
         LEFT JOIN Almacen a ON pa.AlmacenId = a.AlmacenId
+        WHERE p.EmpresaId = ?
         ORDER BY p.ProductoNombre, a.AlmacenNombre
       `;
-      db.query(query, [], (err, rows) => {
+      db.query(query, [empresaId], (err, rows) => {
         if (err) return reject(err);
         const byProduct = {};
         rows.forEach((row) => {

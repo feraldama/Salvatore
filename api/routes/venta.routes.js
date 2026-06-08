@@ -2,8 +2,12 @@ const express = require("express");
 const router = express.Router();
 const ventaController = require("../controllers/venta.controller");
 const authMiddleware = require("../middlewares/auth");
+const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
 router.use(authMiddleware);
+// Toda venta queda scopeada a la empresa activa (req.empresaId): admin elige
+// vía header X-Empresa-Id, usuario regular hereda la de su JWT.
+router.use(resolveEmpresa);
 
 router.get(
   "/pendientes/:clienteId",
@@ -19,6 +23,11 @@ router.get(
   "/reporte",
   authMiddleware,
   ventaController.getReporteVentasPorCliente
+);
+router.get(
+  "/ventas-por-dia",
+  authMiddleware,
+  ventaController.getVentasPorDia
 );
 router.post("/confirmar", authMiddleware, ventaController.confirmar);
 router.post("/devolucion", authMiddleware, ventaController.devolucion);

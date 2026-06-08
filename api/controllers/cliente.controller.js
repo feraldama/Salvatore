@@ -1,9 +1,10 @@
 const Cliente = require("../models/cliente.model");
 const { sendError } = require("../utils/errors");
 
-function extractClienteFilters(query) {
+function extractClienteFilters(query, empresaId) {
   const allowedTipos = ["MI", "MA"];
   const filters = {};
+  if (empresaId) filters.empresaId = empresaId;
   if (query.tipo && allowedTipos.includes(query.tipo))
     filters.tipo = query.tipo;
   return filters;
@@ -17,7 +18,7 @@ exports.getAllClientes = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "ClienteId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractClienteFilters(req.query);
+    const filters = extractClienteFilters(req.query, req.empresaId);
 
     const { clientes, total } = await Cliente.getAllPaginated(
       limit,
@@ -57,7 +58,7 @@ exports.searchClientes = async (req, res) => {
         .json({ error: "El término de búsqueda no puede estar vacío" });
     }
 
-    const filters = extractClienteFilters(req.query);
+    const filters = extractClienteFilters(req.query, req.empresaId);
 
     const { clientes, total } = await Cliente.search(
       searchTerm,
@@ -85,7 +86,7 @@ exports.searchClientes = async (req, res) => {
 
 exports.getClienteById = async (req, res) => {
   try {
-    const cliente = await Cliente.getById(req.params.id);
+    const cliente = await Cliente.getById(req.params.id, req.empresaId);
     if (!cliente) {
       return res.status(404).json({ message: "Cliente no encontrado" });
     }
@@ -114,6 +115,8 @@ exports.createCliente = async (req, res) => {
       ClienteTelefono: req.body.ClienteTelefono || null,
       ClienteTipo: req.body.ClienteTipo,
       UsuarioId: req.body.UsuarioId ? String(req.body.UsuarioId).trim() : "",
+      EmpresaId: req.empresaId,
+      VendedorId: req.body.VendedorId || null,
     });
     res.status(201).json({
       success: true,
@@ -139,7 +142,7 @@ exports.updateCliente = async (req, res) => {
         message: "ClienteNombre es un campo requerido",
       });
     }
-    const updatedCliente = await Cliente.update(id, clienteData);
+    const updatedCliente = await Cliente.update(id, clienteData, req.empresaId);
     if (!updatedCliente) {
       return res.status(404).json({
         success: false,
@@ -163,7 +166,7 @@ exports.updateCliente = async (req, res) => {
 exports.deleteCliente = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await Cliente.delete(id);
+    const deleted = await Cliente.delete(id, req.empresaId);
     if (!deleted) {
       return res.status(404).json({
         success: false,
@@ -197,7 +200,7 @@ exports.deleteCliente = async (req, res) => {
 // Obtener todos los clientes sin paginación
 exports.getAllClientesSinPaginacion = async (req, res) => {
   try {
-    const clientes = await Cliente.getAll();
+    const clientes = await Cliente.getAll(req.empresaId);
     res.json({ data: clientes });
   } catch (error) {
     console.error(error);

@@ -2,9 +2,12 @@ const express = require("express");
 const router = express.Router();
 const almacenController = require("../controllers/almacen.controller");
 const authMiddleware = require("../middlewares/auth");
+const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
-// Aplicar middleware de autenticación a todas las rutas
+// Aplicar autenticación + empresa activa a todas las rutas. Cada empresa ve
+// solo sus almacenes (donde vive su stock físico).
 router.use(authMiddleware);
+router.use(resolveEmpresa);
 
 // Rutas para Almacen
 router.get("/search", authMiddleware, almacenController.searchAlmacenes);

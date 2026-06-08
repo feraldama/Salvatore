@@ -1,10 +1,11 @@
 const db = require("../config/db");
 
 const Factura = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT * FROM factura ORDER BY FacturaId DESC",
+        "SELECT * FROM factura WHERE EmpresaId = ? ORDER BY FacturaId DESC",
+        [empresaId],
         (err, results) => {
           if (err) reject(err);
           resolve(results);
@@ -13,11 +14,11 @@ const Factura = {
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT * FROM factura WHERE FacturaId = ?",
-        [id],
+        "SELECT * FROM factura WHERE FacturaId = ? AND EmpresaId = ?",
+        [id, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);
@@ -30,7 +31,8 @@ const Factura = {
     limit,
     offset,
     sortBy = "FacturaId",
-    sortOrder = "DESC"
+    sortOrder = "DESC",
+    empresaId
   ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
@@ -48,13 +50,14 @@ const Factura = {
         : "DESC";
 
       db.query(
-        `SELECT * FROM factura ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
-        [limit, offset],
+        `SELECT * FROM factura WHERE EmpresaId = ? ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
+        [empresaId, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           db.query(
-            "SELECT COUNT(*) as total FROM factura",
+            "SELECT COUNT(*) as total FROM factura WHERE EmpresaId = ?",
+            [empresaId],
             (err, countResult) => {
               if (err) return reject(err);
 
@@ -69,7 +72,14 @@ const Factura = {
     });
   },
 
-  search: (term, limit, offset, sortBy = "FacturaId", sortOrder = "DESC") => {
+  search: (
+    term,
+    limit,
+    offset,
+    sortBy = "FacturaId",
+    sortOrder = "DESC",
+    empresaId
+  ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
         "FacturaId",
@@ -86,33 +96,35 @@ const Factura = {
         : "DESC";
 
       const searchQuery = `
-        SELECT * FROM factura 
-        WHERE FacturaId LIKE ? 
-        OR FacturaTimbrado LIKE ? 
-        OR FacturaDesde LIKE ? 
-        OR FacturaHasta LIKE ?
-        ORDER BY ${sortField} ${order} 
+        SELECT * FROM factura
+        WHERE EmpresaId = ?
+          AND (FacturaId LIKE ?
+          OR FacturaTimbrado LIKE ?
+          OR FacturaDesde LIKE ?
+          OR FacturaHasta LIKE ?)
+        ORDER BY ${sortField} ${order}
         LIMIT ? OFFSET ?
       `;
       const searchTerm = `%${term}%`;
 
       db.query(
         searchQuery,
-        [searchTerm, searchTerm, searchTerm, searchTerm, limit, offset],
+        [empresaId, searchTerm, searchTerm, searchTerm, searchTerm, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           const countQuery = `
-            SELECT COUNT(*) as total FROM factura 
-            WHERE FacturaId LIKE ? 
-            OR FacturaTimbrado LIKE ? 
-            OR FacturaDesde LIKE ? 
-            OR FacturaHasta LIKE ?
+            SELECT COUNT(*) as total FROM factura
+            WHERE EmpresaId = ?
+              AND (FacturaId LIKE ?
+              OR FacturaTimbrado LIKE ?
+              OR FacturaDesde LIKE ?
+              OR FacturaHasta LIKE ?)
           `;
 
           db.query(
             countQuery,
-            [searchTerm, searchTerm, searchTerm, searchTerm],
+            [empresaId, searchTerm, searchTerm, searchTerm, searchTerm],
             (err, countResult) => {
               if (err) return reject(err);
 
@@ -130,6 +142,7 @@ const Factura = {
   create: (facturaData) => {
     return new Promise((resolve, reject) => {
       const { FacturaTimbrado, FacturaDesde, FacturaHasta } = facturaData;
+      const empresaId = facturaData.EmpresaId || 1;
 
       // Validaciones
       if (!FacturaTimbrado || FacturaTimbrado.toString().length > 8) {
@@ -156,23 +169,27 @@ const Factura = {
         );
       }
 
-      // Verificar si ya existe una factura con el mismo timbrado
+      // Unicidad de timbrado y superposición de rangos se evalúan DENTRO de la
+      // empresa: dos empresas (RUCs distintos) pueden tener timbrados/rangos
+      // independientes que para el fisco no colisionan.
       db.query(
-        "SELECT COUNT(*) as count FROM factura WHERE FacturaTimbrado = ?",
-        [FacturaTimbrado],
+        "SELECT COUNT(*) as count FROM factura WHERE FacturaTimbrado = ? AND EmpresaId = ?",
+        [FacturaTimbrado, empresaId],
         (err, results) => {
           if (err) return reject(err);
           if (results[0].count > 0) {
             return reject(new Error("Ya existe una factura con este timbrado"));
           }
 
-          // Verificar si hay superposición de rangos
+          // Verificar si hay superposición de rangos (dentro de la empresa)
           db.query(
-            `SELECT COUNT(*) as count FROM factura 
-             WHERE (FacturaDesde <= ? AND FacturaHasta >= ?) 
-             OR (FacturaDesde <= ? AND FacturaHasta >= ?) 
-             OR (FacturaDesde >= ? AND FacturaHasta <= ?)`,
+            `SELECT COUNT(*) as count FROM factura
+             WHERE EmpresaId = ?
+             AND ((FacturaDesde <= ? AND FacturaHasta >= ?)
+             OR (FacturaDesde <= ? AND FacturaHasta >= ?)
+             OR (FacturaDesde >= ? AND FacturaHasta <= ?))`,
             [
+              empresaId,
               FacturaDesde,
               FacturaDesde,
               FacturaHasta,
@@ -190,8 +207,8 @@ const Factura = {
 
               // Insertar la nueva factura
               db.query(
-                "INSERT INTO factura (FacturaTimbrado, FacturaDesde, FacturaHasta) VALUES (?, ?, ?)",
-                [FacturaTimbrado, FacturaDesde, FacturaHasta],
+                "INSERT INTO factura (FacturaTimbrado, FacturaDesde, FacturaHasta, EmpresaId) VALUES (?, ?, ?, ?)",
+                [FacturaTimbrado, FacturaDesde, FacturaHasta, empresaId],
                 (err, result) => {
                   if (err) return reject(err);
                   resolve(result.insertId);
@@ -204,7 +221,7 @@ const Factura = {
     });
   },
 
-  update: (id, facturaData) => {
+  update: (id, facturaData, empresaId) => {
     return new Promise((resolve, reject) => {
       const { FacturaTimbrado, FacturaDesde, FacturaHasta } = facturaData;
 
@@ -233,10 +250,10 @@ const Factura = {
         );
       }
 
-      // Verificar si ya existe una factura con el mismo timbrado (excluyendo la actual)
+      // Unicidad/superposición dentro de la empresa, excluyendo la fila actual.
       db.query(
-        "SELECT COUNT(*) as count FROM factura WHERE FacturaTimbrado = ? AND FacturaId != ?",
-        [FacturaTimbrado, id],
+        "SELECT COUNT(*) as count FROM factura WHERE FacturaTimbrado = ? AND EmpresaId = ? AND FacturaId != ?",
+        [FacturaTimbrado, empresaId, id],
         (err, results) => {
           if (err) return reject(err);
           if (results[0].count > 0) {
@@ -245,12 +262,13 @@ const Factura = {
 
           // Verificar si hay superposición de rangos (excluyendo la actual)
           db.query(
-            `SELECT COUNT(*) as count FROM factura 
-             WHERE FacturaId != ? 
-             AND ((FacturaDesde <= ? AND FacturaHasta >= ?) 
-             OR (FacturaDesde <= ? AND FacturaHasta >= ?) 
+            `SELECT COUNT(*) as count FROM factura
+             WHERE EmpresaId = ? AND FacturaId != ?
+             AND ((FacturaDesde <= ? AND FacturaHasta >= ?)
+             OR (FacturaDesde <= ? AND FacturaHasta >= ?)
              OR (FacturaDesde >= ? AND FacturaHasta <= ?))`,
             [
+              empresaId,
               id,
               FacturaDesde,
               FacturaDesde,
@@ -267,10 +285,10 @@ const Factura = {
                 );
               }
 
-              // Actualizar la factura
+              // Actualizar la factura (scopeada por empresa)
               db.query(
-                "UPDATE factura SET FacturaTimbrado = ?, FacturaDesde = ?, FacturaHasta = ? WHERE FacturaId = ?",
-                [FacturaTimbrado, FacturaDesde, FacturaHasta, id],
+                "UPDATE factura SET FacturaTimbrado = ?, FacturaDesde = ?, FacturaHasta = ? WHERE FacturaId = ? AND EmpresaId = ?",
+                [FacturaTimbrado, FacturaDesde, FacturaHasta, id, empresaId],
                 (err, result) => {
                   if (err) return reject(err);
                   if (result.affectedRows === 0) {
@@ -286,11 +304,11 @@ const Factura = {
     });
   },
 
-  delete: (id) => {
+  delete: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "DELETE FROM factura WHERE FacturaId = ?",
-        [id],
+        "DELETE FROM factura WHERE FacturaId = ? AND EmpresaId = ?",
+        [id, empresaId],
         (err, result) => {
           if (err) return reject(err);
           if (result.affectedRows === 0) {
@@ -302,10 +320,11 @@ const Factura = {
     });
   },
 
-  getNextAvailableNumber: () => {
+  getNextAvailableNumber: (empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT FacturaHasta FROM factura ORDER BY FacturaHasta DESC LIMIT 1",
+        "SELECT FacturaHasta FROM factura WHERE EmpresaId = ? ORDER BY FacturaHasta DESC LIMIT 1",
+        [empresaId],
         (err, results) => {
           if (err) return reject(err);
           if (results.length === 0) {
@@ -321,11 +340,11 @@ const Factura = {
     });
   },
 
-  getCurrentFactura: (numeroFactura) => {
+  getCurrentFactura: (numeroFactura, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT * FROM factura WHERE FacturaDesde <= ? AND FacturaHasta >= ?",
-        [numeroFactura, numeroFactura],
+        "SELECT * FROM factura WHERE FacturaDesde <= ? AND FacturaHasta >= ? AND EmpresaId = ?",
+        [numeroFactura, numeroFactura, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);

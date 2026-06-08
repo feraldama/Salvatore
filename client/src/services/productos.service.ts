@@ -35,6 +35,49 @@ export const getProductos = async (params = {}) => {
   return res.data;
 };
 
+export interface ProductoStockBajoRow {
+  ProductoId: number;
+  ProductoCodigo: string | number;
+  ProductoNombre: string;
+  ProductoStock: number;
+  ProductoStockUnitario: number;
+  ProductoCantidadCaja: number;
+  ProductoStockMinimo: number;
+}
+
+export interface StockBajoResult {
+  productos: ProductoStockBajoRow[];
+  umbralGlobal: number;
+  total: number;
+}
+
+// Productos bajo el mínimo de stock (alerta de reposición), scopeados por la
+// empresa activa. `umbral` (cajas) es el respaldo global para productos sin
+// mínimo propio; con umbral=0 solo se listan los que tienen mínimo cargado o
+// stock negativo (anomalías) — la señal más limpia para el dashboard.
+export const getProductosStockBajo = async (
+  umbral = 0
+): Promise<StockBajoResult> => {
+  try {
+    const response = await api.get("/productos/stock-bajo", {
+      params: { umbral },
+    });
+    const data = response.data?.data ?? {};
+    return {
+      productos: data.productos ?? [],
+      umbralGlobal: data.umbralGlobal ?? umbral,
+      total: data.total ?? (data.productos?.length ?? 0),
+    };
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener productos con stock bajo",
+      }
+    );
+  }
+};
+
 // Traer productos paginados
 export const getProductosPaginated = async (
   page = 1,

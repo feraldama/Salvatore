@@ -18,6 +18,12 @@ function buildVentaFiltersWhere(filters = {}) {
   const conditions = [];
   const params = [];
 
+  // Scope por empresa: minorista (1) vs distribuidora (2). Si no se pasa
+  // empresaId la query no se filtra — los controllers SIEMPRE deben pasarlo.
+  if (filters.empresaId) {
+    conditions.push("v.EmpresaId = ?");
+    params.push(Number(filters.empresaId));
+  }
   if (filters.tipo) {
     conditions.push("v.VentaTipo = ?");
     params.push(filters.tipo);
@@ -71,19 +77,23 @@ function normalizeVentaFecha(value) {
 }
 
 const Venta = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("SELECT * FROM venta", (err, results) => {
-        if (err) reject(err);
-        resolve(results);
-      });
+      db.query(
+        "SELECT * FROM venta WHERE EmpresaId = ?",
+        [empresaId],
+        (err, results) => {
+          if (err) reject(err);
+          resolve(results);
+        }
+      );
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT v.*, 
+        `SELECT v.*,
           c.ClienteNombre, c.ClienteApellido,
           a.AlmacenNombre,
           u.UsuarioNombre
@@ -91,8 +101,8 @@ const Venta = {
         LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
         LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-        WHERE v.VentaId = ?`,
-        [id],
+        WHERE v.VentaId = ? AND v.EmpresaId = ?`,
+        [id, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);
@@ -103,6 +113,7 @@ const Venta = {
 
   create: (data) => {
     return new Promise((resolve, reject) => {
+      const empresaId = data.EmpresaId || 1;
       const query = `INSERT INTO venta (
         VentaFecha,
         ClienteId,
@@ -112,8 +123,9 @@ const Venta = {
         VentaCantidadProductos,
         VentaUsuario,
         Total,
-        VentaEntrega
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        VentaEntrega,
+        EmpresaId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       const values = [
         normalizeVentaFecha(data.VentaFecha),
@@ -125,20 +137,21 @@ const Venta = {
         data.VentaUsuario,
         data.Total,
         data.VentaEntrega,
+        empresaId,
       ];
 
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
-        Venta.getById(result.insertId)
+        Venta.getById(result.insertId, empresaId)
           .then((venta) => resolve(venta))
           .catch((error) => reject(error));
       });
     });
   },
 
-  update: (id, data) => {
+  update: (id, data, empresaId) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE venta SET 
+      const query = `UPDATE venta SET
         VentaFecha = ?,
         ClienteId = ?,
         AlmacenId = ?,
@@ -148,7 +161,7 @@ const Venta = {
         VentaUsuario = ?,
         Total = ?,
         VentaEntrega = ?
-        WHERE VentaId = ?`;
+        WHERE VentaId = ? AND EmpresaId = ?`;
 
       const values = [
         normalizeVentaFecha(data.VentaFecha),
@@ -161,12 +174,13 @@ const Venta = {
         data.Total,
         data.VentaEntrega,
         id,
+        empresaId,
       ];
 
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         if (result.affectedRows === 0) return resolve(null);
-        Venta.getById(id)
+        Venta.getById(id, empresaId)
           .then((venta) => resolve(venta))
           .catch((error) => reject(error));
       });
@@ -457,10 +471,10 @@ const Venta = {
   },
 
   // Obtener ventas pendientes por cliente
-  getVentasPendientesPorCliente: (clienteId, localId) => {
+  getVentasPendientesPorCliente: (clienteId, localId, empresaId) => {
     return new Promise((resolve, reject) => {
       let query = `
-        SELECT 
+        SELECT
           v.VentaId,
           v.VentaFecha,
           CAST(v.Total AS DECIMAL(10,2)) as Total,
@@ -468,11 +482,12 @@ const Venta = {
           CAST((v.Total - COALESCE(v.VentaEntrega, 0)) AS DECIMAL(10,2)) as Saldo
         FROM venta v
         JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-        WHERE v.ClienteId = ? 
+        WHERE v.ClienteId = ?
         AND v.VentaTipo = 'CR'
+        AND v.EmpresaId = ?
       `;
 
-      const params = [clienteId];
+      const params = [clienteId, empresaId];
 
       // Si se proporciona localId, filtrar por el local del usuario que realizó la venta
       if (localId) {
@@ -480,7 +495,9 @@ const Venta = {
         params.push(localId);
       }
 
-      query += ` HAVING Saldo > 0 ORDER BY v.VentaFecha ASC`;
+      // Sin GROUP BY: el saldo es un filtro de fila, va en WHERE (PG no
+      // admite alias del SELECT en HAVING, y aquí HAVING no corresponde).
+      query += ` AND (v.Total - COALESCE(v.VentaEntrega, 0)) > 0 ORDER BY v.VentaFecha ASC`;
 
       db.query(query, params, (err, results) => {
         if (err) {
@@ -500,10 +517,10 @@ const Venta = {
   },
 
   // Obtener deudas pendientes agrupadas por cliente
-  getDeudasPendientesPorCliente: () => {
+  getDeudasPendientesPorCliente: (empresaId) => {
     return new Promise((resolve, reject) => {
       const query = `
-        SELECT 
+        SELECT
           c.ClienteId,
           CONCAT(TRIM(c.ClienteNombre), ' ', TRIM(c.ClienteApellido)) AS Cliente,
           SUM(v.Total) AS TotalVentas,
@@ -512,26 +529,49 @@ const Venta = {
         FROM venta v
         JOIN clientes c ON v.ClienteId = c.ClienteId
         WHERE v.VentaTipo = 'CR'
+        AND v.EmpresaId = ?
         GROUP BY c.ClienteId, c.ClienteNombre, c.ClienteApellido
-        HAVING Saldo > 0
-        ORDER BY Cliente
+        HAVING SUM(v.Total - COALESCE(v.VentaEntrega, 0)) > 0
+        ORDER BY CONCAT(TRIM(c.ClienteNombre), ' ', TRIM(c.ClienteApellido))
       `;
-      db.query(query, (err, results) => {
+      db.query(query, [empresaId], (err, results) => {
         if (err) return reject(err);
         resolve(results);
       });
     });
   },
 
+  // Totales de venta agrupados por día (para la tendencia del dashboard).
+  // Suma el Total facturado y cuenta las ventas por fecha. Devuelve solo los
+  // días con ventas; el frontend rellena los días sin movimiento en 0.
+  getVentasPorDia: (fechaDesde, fechaHasta, empresaId) => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT TO_CHAR(DATE(v.VentaFecha), 'YYYY-MM-DD') AS Fecha,
+               COALESCE(SUM(v.Total), 0) AS Total,
+               COUNT(*) AS Cantidad
+        FROM venta v
+        WHERE DATE(v.VentaFecha) BETWEEN ? AND ?
+        AND v.EmpresaId = ?
+        GROUP BY DATE(v.VentaFecha)
+        ORDER BY DATE(v.VentaFecha) ASC
+      `;
+      db.query(sql, [fechaDesde, fechaHasta, empresaId], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      });
+    });
+  },
+
   // Obtener reporte de ventas por cliente y rango de fechas
   // Si clienteId es "TODOS", devuelve ventas de todos los clientes
-  getReporteVentasPorCliente: (clienteId, fechaDesde, fechaHasta) => {
+  getReporteVentasPorCliente: (clienteId, fechaDesde, fechaHasta, empresaId) => {
     return new Promise((resolve, reject) => {
       const esTodos = String(clienteId).toUpperCase() === "TODOS";
 
       const ejecutarVentas = (cliente) => {
         const ventasQuery = `
-          SELECT 
+          SELECT
             v.*,
             c.ClienteNombre,
             c.ClienteApellido,
@@ -544,11 +584,14 @@ const Venta = {
           LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
           WHERE DATE(v.VentaFecha) BETWEEN ? AND ?
+          AND v.EmpresaId = ?
           ${esTodos ? "" : "AND v.ClienteId = ?"}
           ORDER BY v.VentaFecha ASC, v.VentaId ASC
         `;
 
-        const ventasParams = esTodos ? [fechaDesde, fechaHasta] : [fechaDesde, fechaHasta, clienteId];
+        const ventasParams = esTodos
+          ? [fechaDesde, fechaHasta, empresaId]
+          : [fechaDesde, fechaHasta, empresaId, clienteId];
 
         db.query(ventasQuery, ventasParams, (err, ventasResults) => {
           if (err) return reject(err);

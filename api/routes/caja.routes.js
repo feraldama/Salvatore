@@ -2,9 +2,12 @@ const express = require("express");
 const router = express.Router();
 const cajaController = require("../controllers/caja.controller");
 const authMiddleware = require("../middlewares/auth");
+const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
-// Aplicar middleware de autenticación a todas las rutas
+// Aplicar autenticación + empresa activa a todas las rutas. Las cajas de cada
+// empresa quedan aisladas.
 router.use(authMiddleware);
+router.use(resolveEmpresa);
 
 // Rutas para Caja
 router.get("/search", authMiddleware, cajaController.searchCajas);

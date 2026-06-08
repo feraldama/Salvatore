@@ -229,7 +229,8 @@ exports.getReporteMovimientos = async (req, res) => {
     }
     const { productos } = await Producto.getReporteMovimientosPorRango(
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      req.empresaId
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {
@@ -260,9 +261,27 @@ exports.getReporteMasVendidos = async (req, res) => {
     }
     const { productos } = await Producto.getReporteMasVendidos(
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      req.empresaId
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
+  } catch (error) {
+    console.error(error);
+    sendError(res, error, 500);
+  }
+};
+
+// Productos bajo el mínimo de stock (alerta de reposición). Híbrido:
+// usa el mínimo por producto cuando está cargado, y un umbral global de
+// respaldo (query ?umbral=N, en cajas) para los que estén en 0.
+exports.getStockBajo = async (req, res) => {
+  try {
+    const umbral = parseInt(req.query.umbral, 10);
+    const umbralGlobal = !isNaN(umbral) && umbral > 0 ? umbral : 0;
+    const filters = {};
+    if (req.empresaId != null) filters.empresaId = Number(req.empresaId);
+    const productos = await Producto.getStockBajo(umbralGlobal, filters);
+    res.json({ data: { productos, umbralGlobal, total: productos.length } });
   } catch (error) {
     console.error(error);
     sendError(res, error, 500);
@@ -272,7 +291,7 @@ exports.getReporteMasVendidos = async (req, res) => {
 // Reporte de stock total y por almacén de todos los productos
 exports.getReporteStock = async (req, res) => {
   try {
-    const { productos } = await Producto.getReporteStock();
+    const { productos } = await Producto.getReporteStock(req.empresaId);
     res.json({ data: { productos } });
   } catch (error) {
     console.error(error);

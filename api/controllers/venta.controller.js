@@ -22,7 +22,7 @@ function parseFecha(s) {
 
 exports.getAll = async (req, res) => {
   try {
-    const ventas = await Venta.getAll();
+    const ventas = await Venta.getAll(req.empresaId);
     res.json(ventas);
   } catch (error) {
     console.error(error);
@@ -30,10 +30,11 @@ exports.getAll = async (req, res) => {
   }
 };
 
-function extractVentaFilters(query) {
+function extractVentaFilters(query, empresaId) {
   const allowedTipos = ["CO", "CR", "PO", "TR"];
   const allowedEstados = ["P", "C"];
   const filters = {};
+  if (empresaId) filters.empresaId = empresaId;
   if (query.tipo && allowedTipos.includes(query.tipo)) filters.tipo = query.tipo;
   if (query.almacenId) filters.almacenId = query.almacenId;
   if (query.fechaDesde) filters.fechaDesde = query.fechaDesde;
@@ -50,7 +51,7 @@ exports.getAllPaginated = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "VentaId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractVentaFilters(req.query);
+    const filters = extractVentaFilters(req.query, req.empresaId);
 
     const result = await Venta.getAllPaginated(
       limit,
@@ -77,7 +78,7 @@ exports.getAllPaginated = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const venta = await Venta.getById(req.params.id);
+    const venta = await Venta.getById(req.params.id, req.empresaId);
     if (!venta) {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
@@ -90,7 +91,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const venta = await Venta.create(req.body);
+    const venta = await Venta.create({ ...req.body, EmpresaId: req.empresaId });
     res.status(201).json({
       message: "Venta creada exitosamente",
       data: venta,
@@ -103,7 +104,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const venta = await Venta.update(req.params.id, req.body);
+    const venta = await Venta.update(req.params.id, req.body, req.empresaId);
     if (!venta) {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
@@ -132,10 +133,11 @@ exports.delete = async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // Verificar existencia y traer almacen.
+    // Verificar existencia y traer almacen. Scopeado por empresa: un usuario
+    // no puede borrar ventas de otra empresa (devuelve 404).
     const [ventaRows] = await conn.query(
-      `SELECT VentaId, AlmacenId FROM venta WHERE VentaId = ?`,
-      [ventaId]
+      `SELECT VentaId, AlmacenId FROM venta WHERE VentaId = ? AND EmpresaId = ?`,
+      [ventaId, req.empresaId]
     );
     if (!ventaRows.length) {
       await conn.rollback();
@@ -314,7 +316,7 @@ exports.searchVentas = async (req, res) => {
       });
     }
 
-    const filters = extractVentaFilters(req.query);
+    const filters = extractVentaFilters(req.query, req.empresaId);
 
     const result = await Venta.searchVentas(
       searchTerm,
@@ -355,7 +357,8 @@ exports.getVentasPendientesPorCliente = async (req, res) => {
 
     const ventas = await Venta.getVentasPendientesPorCliente(
       clienteId,
-      localId
+      localId,
+      req.empresaId
     );
     res.json({
       success: true,
@@ -373,7 +376,7 @@ exports.getVentasPendientesPorCliente = async (req, res) => {
 // Obtener deudas pendientes agrupadas por cliente
 exports.getDeudasPendientesPorCliente = async (req, res) => {
   try {
-    const deudas = await Venta.getDeudasPendientesPorCliente();
+    const deudas = await Venta.getDeudasPendientesPorCliente(req.empresaId);
     res.json({ success: true, data: deudas });
   } catch (error) {
     console.error("Error al obtener deudas pendientes por cliente:", error);
@@ -381,6 +384,42 @@ exports.getDeudasPendientesPorCliente = async (req, res) => {
       success: false,
       message: "Error al obtener deudas pendientes por cliente",
     });
+  }
+};
+
+// Totales de venta por día para la tendencia del dashboard.
+// GET /venta/ventas-por-dia?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+exports.getVentasPorDia = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fechaDesde || !fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "Debe enviar fechaDesde y fechaHasta" });
+    }
+    if (!isoRegex.test(fechaDesde) || !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "Las fechas deben tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const rows = await Venta.getVentasPorDia(fechaDesde, fechaHasta, req.empresaId);
+    // El adapter PG/Pascal puede dejar claves desconocidas en minúscula;
+    // normalizamos a un shape estable para el frontend.
+    const data = rows.map((r) => ({
+      fecha: r.Fecha ?? r.fecha,
+      total: Number(r.Total ?? r.total ?? 0),
+      cantidad: Number(r.Cantidad ?? r.cantidad ?? 0),
+    }));
+    res.json({ data });
+  } catch (error) {
+    console.error(error);
+    sendError(res, error, 500);
   }
 };
 
@@ -449,13 +488,14 @@ exports.confirmar = async (req, res) => {
     const ventaEntrega = efectivo + banco + voucher + transferencia;
     const total = efectivo + banco + cuentaCliente + voucher + transferencia;
 
-    // 3. Cabecera de venta.
+    // 3. Cabecera de venta. EmpresaId scopea la venta a minorista/distribuidora
+    // (req.empresaId lo resuelve el middleware resolveEmpresa).
     await conn.query(
       `INSERT INTO venta (
          VentaId, VentaFecha, ClienteId, AlmacenId, VentaTipo, VentaPagoTipo,
          VentaCantidadProductos, VentaUsuario, VentaNroFactura, VentaTimbrado,
-         Total, VentaEntrega, VentaNroPOS
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         Total, VentaEntrega, VentaNroPOS, EmpresaId
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ultorden,
         ventaFecha,
@@ -470,6 +510,7 @@ exports.confirmar = async (req, res) => {
         total,
         ventaEntrega,
         VentaNroPOS,
+        req.empresaId || 1,
       ]
     );
 
@@ -862,7 +903,8 @@ exports.getReporteVentasPorCliente = async (req, res) => {
     const reporte = await Venta.getReporteVentasPorCliente(
       clienteId,
       fechaDesde,
-      fechaHasta
+      fechaHasta,
+      req.empresaId
     );
 
     res.json({

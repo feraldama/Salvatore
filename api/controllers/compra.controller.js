@@ -82,8 +82,8 @@ exports.confirmar = async (req, res) => {
     const [headerInsert] = await conn.query(
       `INSERT INTO compra (
          CompraFecha, ProveedorId, UsuarioId, CompraFactura, CompraTipo,
-         CompraPagoCompleto, CompraEntrega, CompraCantidadProductos
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         CompraPagoCompleto, CompraEntrega, CompraCantidadProductos, EmpresaId
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         compraFecha,
         proveedorId,
@@ -93,6 +93,7 @@ exports.confirmar = async (req, res) => {
         compraPagoCompleto,
         entregado,
         Productos.length,
+        req.empresaId || 1,
       ]
     );
     const ultorden = headerInsert.insertId;
@@ -297,9 +298,10 @@ exports.confirmar = async (req, res) => {
   }
 };
 
-function extractCompraFilters(query) {
+function extractCompraFilters(query, empresaId) {
   const allowedTipos = ["CO", "CR"];
   const filters = {};
+  if (empresaId) filters.empresaId = empresaId;
   if (query.tipo && allowedTipos.includes(query.tipo)) filters.tipo = query.tipo;
   if (query.proveedorId) filters.proveedorId = query.proveedorId;
   if (query.almacenId) filters.almacenId = query.almacenId;
@@ -316,7 +318,7 @@ exports.getAllCompras = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "CompraId";
     const sortOrder = req.query.sortOrder || "DESC";
-    const filters = extractCompraFilters(req.query);
+    const filters = extractCompraFilters(req.query, req.empresaId);
 
     const { compras, total } = await Compra.getAllPaginated(
       limit,
@@ -357,7 +359,7 @@ exports.searchCompras = async (req, res) => {
         .json({ error: "El término de búsqueda no puede estar vacío" });
     }
 
-    const filters = extractCompraFilters(req.query);
+    const filters = extractCompraFilters(req.query, req.empresaId);
 
     const { compras, total } = await Compra.search(
       searchTerm,
@@ -385,7 +387,7 @@ exports.searchCompras = async (req, res) => {
 
 exports.getCompraById = async (req, res) => {
   try {
-    const compra = await Compra.getById(req.params.id);
+    const compra = await Compra.getById(req.params.id, req.empresaId);
     if (!compra) {
       return res.status(404).json({ message: "Compra no encontrada" });
     }
@@ -432,6 +434,7 @@ exports.createCompra = async (req, res) => {
       CompraTipo: req.body.CompraTipo,
       CompraPagoCompleto: req.body.CompraPagoCompleto || false,
       CompraEntrega: req.body.CompraEntrega || 0,
+      EmpresaId: req.empresaId,
     });
 
     // Crear los productos de la compra si se proporcionan
@@ -478,7 +481,7 @@ exports.updateCompra = async (req, res) => {
     const { id } = req.params;
     const compraData = req.body;
 
-    const updatedCompra = await Compra.update(id, compraData);
+    const updatedCompra = await Compra.update(id, compraData, req.empresaId);
     if (!updatedCompra) {
       return res.status(404).json({
         success: false,
@@ -547,8 +550,8 @@ exports.deleteCompra = async (req, res) => {
     await conn.beginTransaction();
 
     const [compraRows] = await conn.query(
-      `SELECT CompraId FROM compra WHERE CompraId = ?`,
-      [compraId]
+      `SELECT CompraId FROM compra WHERE CompraId = ? AND EmpresaId = ?`,
+      [compraId, req.empresaId]
     );
     if (!compraRows.length) {
       await conn.rollback();
@@ -683,7 +686,7 @@ exports.deleteCompra = async (req, res) => {
 // Obtener todas las compras sin paginación
 exports.getAllComprasSinPaginacion = async (req, res) => {
   try {
-    const compras = await Compra.getAll();
+    const compras = await Compra.getAll(req.empresaId);
     res.json({ data: compras });
   } catch (error) {
     console.error(error);

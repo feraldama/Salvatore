@@ -14,6 +14,11 @@ function buildCompraFiltersWhere(filters = {}) {
   const conditions = [];
   const params = [];
 
+  // Scope por empresa: compras de la minorista (1) vs la distribuidora (2).
+  if (filters.empresaId) {
+    conditions.push("c.EmpresaId = ?");
+    params.push(Number(filters.empresaId));
+  }
   if (filters.tipo) {
     conditions.push("c.CompraTipo = ?");
     params.push(filters.tipo);
@@ -41,17 +46,19 @@ function buildCompraFiltersWhere(filters = {}) {
 }
 
 const Compra = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
         `SELECT c.*, p.ProveedorNombre, p.ProveedorRUC,
          COALESCE(SUM(cp.CompraProductoPrecio * cp.CompraProductoCantidad), 0) as Total,
          (SELECT AlmacenOrigenId FROM compraproducto WHERE CompraId = c.CompraId LIMIT 1) as AlmacenId
-         FROM compra c 
-         LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId 
+         FROM compra c
+         LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId
          LEFT JOIN compraproducto cp ON c.CompraId = cp.CompraId
+         WHERE c.EmpresaId = ?
          GROUP BY c.CompraId, p.ProveedorId, p.ProveedorId
          ORDER BY c.CompraFecha DESC`,
+        [empresaId],
         (err, results) => {
           if (err) reject(err);
           resolve(results);
@@ -60,18 +67,18 @@ const Compra = {
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
         `SELECT c.*, p.ProveedorNombre, p.ProveedorRUC,
          COALESCE(SUM(cp.CompraProductoPrecio * cp.CompraProductoCantidad), 0) as Total,
          (SELECT AlmacenOrigenId FROM compraproducto WHERE CompraId = c.CompraId LIMIT 1) as AlmacenId
-         FROM compra c 
-         LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId 
+         FROM compra c
+         LEFT JOIN proveedor p ON c.ProveedorId = p.ProveedorId
          LEFT JOIN compraproducto cp ON c.CompraId = cp.CompraId
-         WHERE c.CompraId = ?
+         WHERE c.CompraId = ? AND c.EmpresaId = ?
          GROUP BY c.CompraId, p.ProveedorId, p.ProveedorId`,
-        [id],
+        [id, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);
@@ -240,8 +247,9 @@ const Compra = {
           CompraFactura,
           CompraTipo,
           CompraPagoCompleto,
-          CompraEntrega
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          CompraEntrega,
+          EmpresaId
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
         compraData.CompraFecha || new Date(),
@@ -251,6 +259,7 @@ const Compra = {
         compraData.CompraTipo,
         compraData.CompraPagoCompleto || false,
         compraData.CompraEntrega,
+        compraData.EmpresaId || 1,
       ];
 
       db.query(query, values, (err, result) => {
@@ -263,7 +272,7 @@ const Compra = {
     });
   },
 
-  update: (id, compraData) => {
+  update: (id, compraData, empresaId) => {
     return new Promise((resolve, reject) => {
       let updateFields = [];
       let values = [];
@@ -286,11 +295,11 @@ const Compra = {
         return resolve(null);
       }
 
-      values.push(id);
+      values.push(id, empresaId);
       const query = `
-        UPDATE compra 
+        UPDATE compra
         SET ${updateFields.join(", ")}
-        WHERE CompraId = ?
+        WHERE CompraId = ? AND EmpresaId = ?
       `;
 
       db.query(query, values, async (err, result) => {
@@ -299,17 +308,21 @@ const Compra = {
           return resolve(null);
         }
         // Obtener la compra actualizada
-        Compra.getById(id).then(resolve).catch(reject);
+        Compra.getById(id, empresaId).then(resolve).catch(reject);
       });
     });
   },
 
-  delete: (id) => {
+  delete: (id, empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("DELETE FROM compra WHERE CompraId = ?", [id], (err, result) => {
-        if (err) return reject(err);
-        resolve(result.affectedRows > 0);
-      });
+      db.query(
+        "DELETE FROM compra WHERE CompraId = ? AND EmpresaId = ?",
+        [id, empresaId],
+        (err, result) => {
+          if (err) return reject(err);
+          resolve(result.affectedRows > 0);
+        }
+      );
     });
   },
 };

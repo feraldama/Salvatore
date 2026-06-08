@@ -9,7 +9,13 @@ exports.getAll = async (req, res) => {
   const sortBy = req.query.sortBy || "CajaId";
   const sortOrder = req.query.sortOrder || "ASC";
   try {
-    const result = await Caja.getAllPaginated(limit, offset, sortBy, sortOrder);
+    const result = await Caja.getAllPaginated(
+      limit,
+      offset,
+      sortBy,
+      sortOrder,
+      req.empresaId
+    );
     res.json({
       data: result.cajas,
       pagination: {
@@ -27,7 +33,7 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const caja = await Caja.getById(req.params.id);
+    const caja = await Caja.getById(req.params.id, req.empresaId);
     if (!caja) {
       return res.status(404).json({ message: "Caja no encontrada" });
     }
@@ -40,7 +46,7 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const caja = await Caja.create(req.body);
+    const caja = await Caja.create({ ...req.body, EmpresaId: req.empresaId });
     res.status(201).json({ message: "Caja creada exitosamente", data: caja });
   } catch (error) {
     console.error(error);
@@ -50,7 +56,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const caja = await Caja.update(req.params.id, req.body);
+    const caja = await Caja.update(req.params.id, req.body, req.empresaId);
     if (!caja) {
       return res.status(404).json({ message: "Caja no encontrada" });
     }
@@ -63,7 +69,7 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const success = await Caja.delete(req.params.id);
+    const success = await Caja.delete(req.params.id, req.empresaId);
     if (!success) {
       return res.status(404).json({ message: "Caja no encontrada" });
     }
@@ -104,7 +110,8 @@ exports.searchCajas = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
 
     res.json({
@@ -129,13 +136,14 @@ exports.updateMonto = async (req, res) => {
     if (typeof CajaMonto !== "number") {
       return res.status(400).json({ message: "Monto inválido" });
     }
-    await db.query("UPDATE Caja SET CajaMonto = ? WHERE CajaId = ?", [
-      CajaMonto,
-      id,
-    ]);
-    const updatedCaja = await db.query("SELECT * FROM Caja WHERE CajaId = ?", [
-      id,
-    ]);
+    await db.query(
+      "UPDATE Caja SET CajaMonto = ? WHERE CajaId = ? AND EmpresaId = ?",
+      [CajaMonto, id, req.empresaId]
+    );
+    const updatedCaja = await db.query(
+      "SELECT * FROM Caja WHERE CajaId = ? AND EmpresaId = ?",
+      [id, req.empresaId]
+    );
     res.json(updatedCaja[0]);
   } catch (error) {
     console.error(error);

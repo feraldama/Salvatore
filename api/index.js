@@ -1,7 +1,18 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const path = require("path");
+const { loginLimiter, apiLimiter } = require("./middlewares/rateLimit");
+
+// Fail-fast: sin JWT_SECRET el login y la verificación de tokens son inseguros
+// (jwt firmaría/verificaría con `undefined`). Mejor no arrancar.
+if (!process.env.JWT_SECRET) {
+  console.error(
+    "FATAL: falta la variable de entorno JWT_SECRET. Defínala en api/.env antes de iniciar."
+  );
+  process.exit(1);
+}
 
 // Importar rutas
 const usuarioRoutes = require("./routes/usuario.routes");
@@ -27,6 +38,7 @@ const compraRoutes = require("./routes/compra.routes");
 const proveedorRoutes = require("./routes/proveedor.routes");
 const vendedorRoutes = require("./routes/vendedor.routes");
 const empresaRoutes = require("./routes/empresa.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 const genAuthRoutes = require("./routes/genauth.routes");
 const flotaRoutes = require("./routes/flota.routes");
 
@@ -57,11 +69,23 @@ const corsOptions = {
   maxAge: 86400,
 };
 
+// helmet: cabeceras de seguridad. crossOriginResourcePolicy en cross-origin
+// para que /uploads (imágenes de flota) siga sirviéndose al frontend en otro origen.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
+// Rate limiting: techo general para toda la API.
+app.use("/api", apiLimiter);
+
 // Rutas
+// Limitador estricto antes del login (anti fuerza bruta).
+app.use("/api/gen/auth/login", loginLimiter);
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/registrodiariocaja", registroDiarioCajaRoutes);
 app.use("/api/caja", cajaRoutes);
@@ -85,15 +109,34 @@ app.use("/api/compras", compraRoutes);
 app.use("/api/proveedores", proveedorRoutes);
 app.use("/api/vendedores", vendedorRoutes);
 app.use("/api/empresas", empresaRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/gen/auth", genAuthRoutes);
 app.use("/api/gen/flota", flotaRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (req, res) => res.send("API funcionando"));
 
+// 404 para rutas de API no encontradas (respuesta JSON consistente).
+app.use("/api", (req, res) => {
+  res.status(404).json({ success: false, message: "Recurso no encontrado" });
+});
+
+// Manejador de errores central. No filtra el stack al cliente; lo registra en
+// el servidor con contexto (método + ruta) para diagnóstico.
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send("Algo salió mal!");
+  if (res.headersSent) return next(err);
+
+  // Origen rechazado por CORS.
+  if (err && /no permitido por CORS/.test(err.message || "")) {
+    return res.status(403).json({ success: false, message: "Origen no permitido" });
+  }
+  // JSON malformado en el body.
+  if (err && err.type === "entity.parse.failed") {
+    return res.status(400).json({ success: false, message: "JSON inválido en la solicitud" });
+  }
+
+  console.error(`[${req.method} ${req.originalUrl}]`, err.stack || err);
+  res.status(500).json({ success: false, message: "Error interno del servidor" });
 });
 
 const PORT = process.env.PORT || 3001;

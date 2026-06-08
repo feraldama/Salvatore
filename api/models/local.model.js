@@ -1,20 +1,24 @@
 const db = require("../config/db");
 
 const Local = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("SELECT * FROM local", (err, results) => {
-        if (err) reject(err);
-        resolve(results);
-      });
+      db.query(
+        "SELECT * FROM local WHERE EmpresaId = ?",
+        [empresaId],
+        (err, results) => {
+          if (err) reject(err);
+          resolve(results);
+        }
+      );
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT * FROM local WHERE LocalId = ?",
-        [id],
+        "SELECT * FROM local WHERE LocalId = ? AND EmpresaId = ?",
+        [id, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);
@@ -23,7 +27,13 @@ const Local = {
     });
   },
 
-  getAllPaginated: (limit, offset, sortBy = "LocalId", sortOrder = "ASC") => {
+  getAllPaginated: (
+    limit,
+    offset,
+    sortBy = "LocalId",
+    sortOrder = "ASC",
+    empresaId
+  ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
         "LocalId",
@@ -42,13 +52,15 @@ const Local = {
         `SELECT l.*, e.EmpresaNombre
            FROM local l
            LEFT JOIN empresa e ON l.EmpresaId = e.EmpresaId
+          WHERE l.EmpresaId = ?
           ORDER BY l.${sortField} ${order} LIMIT ? OFFSET ?`,
-        [limit, offset],
+        [empresaId, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           db.query(
-            "SELECT COUNT(*) as total FROM local",
+            "SELECT COUNT(*) as total FROM local WHERE EmpresaId = ?",
+            [empresaId],
             (err, countResult) => {
               if (err) return reject(err);
 
@@ -63,7 +75,14 @@ const Local = {
     });
   },
 
-  search: (term, limit, offset, sortBy = "LocalId", sortOrder = "ASC") => {
+  search: (
+    term,
+    limit,
+    offset,
+    sortBy = "LocalId",
+    sortOrder = "ASC",
+    empresaId
+  ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = [
         "LocalId",
@@ -79,12 +98,13 @@ const Local = {
         : "ASC";
 
       const searchQuery = `
-      SELECT * FROM local 
-      WHERE LocalNombre LIKE ? 
-      OR LocalTelefono LIKE ? 
-      OR LocalCelular LIKE ? 
-      OR LocalDireccion LIKE ?
-      OR LocalId LIKE ?
+      SELECT * FROM local
+      WHERE EmpresaId = ?
+        AND (LocalNombre LIKE ?
+        OR LocalTelefono LIKE ?
+        OR LocalCelular LIKE ?
+        OR LocalDireccion LIKE ?
+        OR LocalId LIKE ?)
       ORDER BY ${sortField} ${order}
       LIMIT ? OFFSET ?
     `;
@@ -93,6 +113,7 @@ const Local = {
       db.query(
         searchQuery,
         [
+          empresaId,
           searchValue,
           searchValue,
           searchValue,
@@ -105,17 +126,25 @@ const Local = {
           if (err) return reject(err);
 
           const countQuery = `
-          SELECT COUNT(*) as total FROM local 
-          WHERE LocalNombre LIKE ? 
-          OR LocalTelefono LIKE ? 
-          OR LocalCelular LIKE ? 
-          OR LocalDireccion LIKE ?
-          OR LocalId LIKE ?
+          SELECT COUNT(*) as total FROM local
+          WHERE EmpresaId = ?
+            AND (LocalNombre LIKE ?
+            OR LocalTelefono LIKE ?
+            OR LocalCelular LIKE ?
+            OR LocalDireccion LIKE ?
+            OR LocalId LIKE ?)
         `;
 
           db.query(
             countQuery,
-            [searchValue, searchValue, searchValue, searchValue, searchValue],
+            [
+              empresaId,
+              searchValue,
+              searchValue,
+              searchValue,
+              searchValue,
+              searchValue,
+            ],
             (err, countResult) => {
               if (err) return reject(err);
 
@@ -160,7 +189,7 @@ const Local = {
     });
   },
 
-  update: (id, localData) => {
+  update: (id, localData, empresaId) => {
     return new Promise((resolve, reject) => {
       let updateFields = [];
       let values = [];
@@ -180,29 +209,41 @@ const Local = {
       if (updateFields.length === 0) {
         return resolve(null);
       }
-      values.push(id);
+      values.push(id, empresaId);
       const query = `
-        UPDATE local 
+        UPDATE local
         SET ${updateFields.join(", ")}
-        WHERE LocalId = ?
+        WHERE LocalId = ? AND EmpresaId = ?
       `;
-      db.query(query, values, async (err, result) => {
+      db.query(query, values, (err, result) => {
         if (err) return reject(err);
         if (result.affectedRows === 0) {
           return resolve(null);
         }
-        const updatedLocal = await Local.getById(id);
-        resolve(updatedLocal);
+        // Re-leer por id (el admin pudo reasignar EmpresaId vía el selector,
+        // así que no filtramos por empresa en la re-lectura).
+        db.query(
+          "SELECT * FROM local WHERE LocalId = ?",
+          [id],
+          (err2, rows) => {
+            if (err2) return reject(err2);
+            resolve(rows.length > 0 ? rows[0] : null);
+          }
+        );
       });
     });
   },
 
-  delete: (id) => {
+  delete: (id, empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("DELETE FROM local WHERE LocalId = ?", [id], (err, result) => {
-        if (err) return reject(err);
-        resolve(result.affectedRows > 0);
-      });
+      db.query(
+        "DELETE FROM local WHERE LocalId = ? AND EmpresaId = ?",
+        [id, empresaId],
+        (err, result) => {
+          if (err) return reject(err);
+          resolve(result.affectedRows > 0);
+        }
+      );
     });
   },
 };

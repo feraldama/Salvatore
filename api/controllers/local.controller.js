@@ -13,7 +13,8 @@ exports.getAllLocales = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
 
     res.json({
@@ -50,7 +51,8 @@ exports.searchLocales = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
 
     res.json({
@@ -70,7 +72,7 @@ exports.searchLocales = async (req, res) => {
 
 exports.getLocalById = async (req, res) => {
   try {
-    const local = await Local.getById(req.params.id);
+    const local = await Local.getById(req.params.id, req.empresaId);
     if (!local) {
       return res.status(404).json({ message: "Local no encontrado" });
     }
@@ -94,6 +96,9 @@ exports.createLocal = async (req, res) => {
       LocalTelefono: req.body.LocalTelefono || "",
       LocalCelular: req.body.LocalCelular || "",
       LocalDireccion: req.body.LocalDireccion || "",
+      // El form trae un selector de empresa (admin asigna la empresa al local);
+      // si no viene, default a la empresa activa.
+      EmpresaId: req.body.EmpresaId || req.empresaId,
     });
     res.status(201).json({
       success: true,
@@ -119,7 +124,7 @@ exports.updateLocal = async (req, res) => {
         message: "LocalNombre es un campo requerido",
       });
     }
-    const updatedLocal = await Local.update(id, localData);
+    const updatedLocal = await Local.update(id, localData, req.empresaId);
     if (!updatedLocal) {
       return res.status(404).json({
         success: false,
@@ -143,7 +148,7 @@ exports.updateLocal = async (req, res) => {
 exports.deleteLocal = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await Local.delete(id);
+    const deleted = await Local.delete(id, req.empresaId);
     if (!deleted) {
       return res.status(404).json({
         success: false,

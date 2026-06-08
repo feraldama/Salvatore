@@ -12,7 +12,8 @@ exports.getAll = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
     res.json({
       data: result.almacenes,
@@ -31,7 +32,7 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const almacen = await Almacen.getById(req.params.id);
+    const almacen = await Almacen.getById(req.params.id, req.empresaId);
     if (!almacen) {
       return res.status(404).json({ message: "Almacén no encontrado" });
     }
@@ -45,7 +46,7 @@ exports.getById = async (req, res) => {
 // Almacén del local indicado (un almacén por local).
 exports.getByLocal = async (req, res) => {
   try {
-    const almacen = await Almacen.getByLocal(req.params.localId);
+    const almacen = await Almacen.getByLocal(req.params.localId, req.empresaId);
     if (!almacen) {
       return res
         .status(404)
@@ -60,7 +61,7 @@ exports.getByLocal = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const almacen = await Almacen.create(req.body);
+    const almacen = await Almacen.create({ ...req.body, EmpresaId: req.empresaId });
     res
       .status(201)
       .json({ message: "Almacén creado exitosamente", data: almacen });
@@ -75,7 +76,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const almacen = await Almacen.update(req.params.id, req.body);
+    const almacen = await Almacen.update(req.params.id, req.body, req.empresaId);
     if (!almacen) {
       return res.status(404).json({ message: "Almacén no encontrado" });
     }
@@ -88,7 +89,7 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const success = await Almacen.delete(req.params.id);
+    const success = await Almacen.delete(req.params.id, req.empresaId);
     if (!success) {
       return res.status(404).json({ message: "Almacén no encontrado" });
     }
@@ -119,7 +120,8 @@ exports.searchAlmacenes = async (req, res) => {
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      req.empresaId
     );
 
     res.json({

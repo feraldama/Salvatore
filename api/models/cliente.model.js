@@ -4,6 +4,11 @@ function buildClienteFiltersWhere(filters = {}) {
   const conditions = [];
   const params = [];
 
+  // Scope por empresa: clientes minoristas (1) vs B2B de la distribuidora (2).
+  if (filters.empresaId) {
+    conditions.push("EmpresaId = ?");
+    params.push(Number(filters.empresaId));
+  }
   if (filters.tipo) {
     conditions.push("ClienteTipo = ?");
     params.push(filters.tipo);
@@ -13,20 +18,24 @@ function buildClienteFiltersWhere(filters = {}) {
 }
 
 const Cliente = {
-  getAll: () => {
+  getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
-      db.query("SELECT * FROM clientes", (err, results) => {
-        if (err) reject(err);
-        resolve(results);
-      });
+      db.query(
+        "SELECT * FROM clientes WHERE EmpresaId = ?",
+        [empresaId],
+        (err, results) => {
+          if (err) reject(err);
+          resolve(results);
+        }
+      );
     });
   },
 
-  getById: (id) => {
+  getById: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "SELECT * FROM clientes WHERE ClienteId = ?",
-        [id],
+        "SELECT * FROM clientes WHERE ClienteId = ? AND EmpresaId = ?",
+        [id, empresaId],
         (err, results) => {
           if (err) return reject(err);
           resolve(results.length > 0 ? results[0] : null);
@@ -195,7 +204,7 @@ const Cliente = {
     });
   },
 
-  update: (id, clienteData) => {
+  update: (id, clienteData, empresaId) => {
     return new Promise((resolve, reject) => {
       let updateFields = [];
       let values = [];
@@ -224,11 +233,11 @@ const Cliente = {
       if (updateFields.length === 0) {
         return resolve(null);
       }
-      values.push(id);
+      values.push(id, empresaId);
       const query = `
-        UPDATE clientes 
+        UPDATE clientes
         SET ${updateFields.join(", ")}
-        WHERE ClienteId = ?
+        WHERE ClienteId = ? AND EmpresaId = ?
       `;
       db.query(query, values, async (err, result) => {
         if (err) return reject(err);
@@ -247,11 +256,11 @@ const Cliente = {
     });
   },
 
-  delete: (id) => {
+  delete: (id, empresaId) => {
     return new Promise((resolve, reject) => {
       db.query(
-        "DELETE FROM clientes WHERE ClienteId = ?",
-        [id],
+        "DELETE FROM clientes WHERE ClienteId = ? AND EmpresaId = ?",
+        [id, empresaId],
         (err, result) => {
           if (err) return reject(err);
           resolve(result.affectedRows > 0);

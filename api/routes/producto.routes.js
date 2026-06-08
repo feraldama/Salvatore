@@ -19,17 +19,26 @@ router.get(
 router.get(
   "/reporte-stock",
   authMiddleware,
+  resolveEmpresa,
   productoController.getReporteStock
 );
 router.get(
   "/reporte-movimientos",
   authMiddleware,
+  resolveEmpresa,
   productoController.getReporteMovimientos
 );
 router.get(
   "/reporte-mas-vendidos",
   authMiddleware,
+  resolveEmpresa,
   productoController.getReporteMasVendidos
+);
+router.get(
+  "/stock-bajo",
+  authMiddleware,
+  resolveEmpresa,
+  productoController.getStockBajo
 );
 router.get("/search", authMiddleware, resolveEmpresa, productoController.searchProductos);
 router.get("/:id", authMiddleware, productoController.getProductoById);

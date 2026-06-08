@@ -54,6 +54,12 @@ Ejemplos INCORRECTOS (en inglés - NO usar):
 3. **Verbos**: Usar infinitivo (añadir, corregir, actualizar, mejorar, etc.)
 4. **Claridad**: Ser específico sobre qué se cambió
 
+## 🚫 TESTS
+
+**NO escribir tests automatizados en este proyecto** (unit, integration ni e2e).
+No crear frameworks de testing, archivos de test ni scripts `test`. Verificar
+los cambios por otros medios (arranque real, `node --check`, pruebas manuales).
+
 ## ⚠️ RECORDATORIO FINAL
 
 **NUNCA generes mensajes de commit en inglés. SIEMPRE en español.**
