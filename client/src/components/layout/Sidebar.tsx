@@ -289,17 +289,7 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
       <div className="px-3 space-y-6">
       {seccionesVisibles.map((section) => (
         <div key={section.label}>
-          <div
-            style={{
-              color: "#fbbf24",
-              fontSize: "11px",
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              padding: "0 12px",
-              marginBottom: "8px",
-            }}
-          >
+          <div className="px-3 mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-sidebar-section">
             {section.label}
           </div>
           <ul className="space-y-0.5">

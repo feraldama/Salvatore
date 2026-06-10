@@ -1,6 +1,25 @@
 import api from "./api";
 import type { AxiosError } from "axios";
 
+export interface LocalSucursal {
+  LocalId: number;
+  LocalNombre: string;
+  EmpresaId?: number;
+}
+
+// Sucursales de la empresa activa (el backend ya scopea /locales por empresa).
+// Excluye el pseudo-local "TODOS" (LocalId 0). Trae hasta 100 (suficiente para
+// el selector de sucursal del navbar).
+export const getLocalesAccesibles = async (): Promise<LocalSucursal[]> => {
+  try {
+    const response = await api.get("/locales", { params: { page: 1, limit: 100 } });
+    const lista: LocalSucursal[] = response.data?.data || [];
+    return lista.filter((l) => Number(l.LocalId) !== 0);
+  } catch {
+    return [];
+  }
+};
+
 export const getLocales = async (
   page = 1,
   limit = 10,

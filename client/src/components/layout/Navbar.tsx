@@ -12,6 +12,7 @@ import {
   Cog6ToothIcon,
   BuildingStorefrontIcon,
   CheckIcon,
+  MapPinIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../contexts/useAuth";
 import { Link, useNavigate } from "react-router-dom";
@@ -82,6 +83,63 @@ function EmpresaSwitcher() {
   );
 }
 
+// Selector de sucursal activa (solo admins). null = todas las sucursales de la
+// empresa. Se oculta si la empresa activa no tiene sucursales reales cargadas.
+function LocalSwitcher() {
+  const { locales, localActiva, setLocalActiva } = useAuth();
+  if (locales.length === 0) return null;
+
+  return (
+    <Menu as="div" className="relative">
+      <MenuButton className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 hover:bg-surface-muted transition-colors duration-150 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30">
+        <MapPinIcon className="h-4 w-4 text-brand-700 shrink-0" />
+        <span className="text-sm font-medium text-text max-w-[160px] truncate">
+          {localActiva?.LocalNombre ?? "Todas las sucursales"}
+        </span>
+        <ChevronDownIcon className="h-4 w-4 text-text-muted shrink-0" />
+      </MenuButton>
+      <MenuItems
+        transition
+        anchor="bottom start"
+        className="z-50 mt-2 w-64 origin-top-left rounded-lg bg-surface border border-border py-1 shadow-lg focus:outline-none data-closed:scale-95 data-closed:opacity-0 transition duration-150 ease-out"
+      >
+        <div className="px-3 py-2 border-b border-border">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">
+            Sucursal activa
+          </p>
+        </div>
+        <MenuItem>
+          <button
+            onClick={() => setLocalActiva(null)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text data-focus:bg-surface-muted cursor-pointer"
+          >
+            <MapPinIcon className="h-4 w-4 text-text-muted shrink-0" />
+            <span className="flex-1 text-left truncate">Todas las sucursales</span>
+            {localActiva == null && (
+              <CheckIcon className="h-4 w-4 text-brand-700 shrink-0" />
+            )}
+          </button>
+        </MenuItem>
+        {locales.map((loc) => {
+          const isActive = localActiva?.LocalId === loc.LocalId;
+          return (
+            <MenuItem key={loc.LocalId}>
+              <button
+                onClick={() => setLocalActiva(loc.LocalId)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text data-focus:bg-surface-muted cursor-pointer"
+              >
+                <MapPinIcon className="h-4 w-4 text-text-muted shrink-0" />
+                <span className="flex-1 text-left truncate">{loc.LocalNombre}</span>
+                {isActive && <CheckIcon className="h-4 w-4 text-brand-700 shrink-0" />}
+              </button>
+            </MenuItem>
+          );
+        })}
+      </MenuItems>
+    </Menu>
+  );
+}
+
 export default function Navbar({ setMobileOpen }: NavbarProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -124,8 +182,9 @@ export default function Navbar({ setMobileOpen }: NavbarProps) {
             </span>
           </Link>
 
-          <div className="ml-2 pl-2 sm:border-l sm:border-border">
+          <div className="ml-2 pl-2 sm:border-l sm:border-border flex items-center gap-2">
             <EmpresaSwitcher />
+            <LocalSwitcher />
           </div>
         </div>
 

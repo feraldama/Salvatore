@@ -61,3 +61,8 @@ coverage/
 
 # Datos iniciales con credenciales por defecto — solo local
 salvatore_datos_iniciales.sql
+
+# Backups / dumps de base de datos — datos reales, archivos grandes, NO subir
+backups/
+*.dump
+*.bak

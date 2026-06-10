@@ -30,8 +30,11 @@ const Caja = {
   create: (cajaData) => {
     return new Promise((resolve, reject) => {
       const empresaId = cajaData.EmpresaId || 1;
-      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto, EmpresaId) VALUES (?, ?, ?)`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, empresaId];
+      // La caja pertenece a la sucursal activa. Si no se resuelve local (admin
+      // sin sucursal elegida), queda NULL = caja a nivel empresa.
+      const localId = cajaData.LocalId != null ? cajaData.LocalId : null;
+      const query = `INSERT INTO Caja (CajaDescripcion, CajaMonto, EmpresaId, LocalId) VALUES (?, ?, ?, ?)`;
+      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, empresaId, localId];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         // Obtener la caja recién creada
@@ -74,7 +77,8 @@ const Caja = {
     offset,
     sortBy = "CajaId",
     sortOrder = "ASC",
-    empresaId
+    empresaId,
+    localId = null
   ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = ["CajaId", "CajaDescripcion", "CajaMonto"];
@@ -84,15 +88,20 @@ const Caja = {
         ? sortOrder.toUpperCase()
         : "ASC";
 
+      // Scope por sucursal: si hay local activo, solo sus cajas. null = todas
+      // las cajas de la empresa (admin con vista agregada).
+      const localSql = localId != null ? " AND LocalId = ?" : "";
+      const localParam = localId != null ? [localId] : [];
+
       db.query(
-        `SELECT * FROM Caja WHERE EmpresaId = ? ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
-        [empresaId, limit, offset],
+        `SELECT * FROM Caja WHERE EmpresaId = ?${localSql} ORDER BY ${sortField} ${order} LIMIT ? OFFSET ?`,
+        [empresaId, ...localParam, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           db.query(
-            "SELECT COUNT(*) as total FROM Caja WHERE EmpresaId = ?",
-            [empresaId],
+            `SELECT COUNT(*) as total FROM Caja WHERE EmpresaId = ?${localSql}`,
+            [empresaId, ...localParam],
             (err, countResult) => {
               if (err) return reject(err);
 
@@ -113,7 +122,8 @@ const Caja = {
     offset,
     sortBy = "CajaId",
     sortOrder = "ASC",
-    empresaId
+    empresaId,
+    localId = null
   ) => {
     return new Promise((resolve, reject) => {
       const allowedSortFields = ["CajaId", "CajaDescripcion", "CajaMonto"];
@@ -123,9 +133,12 @@ const Caja = {
         ? sortOrder.toUpperCase()
         : "ASC";
 
+      const localSql = localId != null ? " AND LocalId = ?" : "";
+      const localParam = localId != null ? [localId] : [];
+
       const searchQuery = `
         SELECT * FROM Caja
-        WHERE EmpresaId = ?
+        WHERE EmpresaId = ?${localSql}
           AND (CajaDescripcion LIKE ?
             OR CAST(CajaMonto AS CHAR) LIKE ?)
         ORDER BY ${sortField} ${order}
@@ -135,19 +148,19 @@ const Caja = {
 
       db.query(
         searchQuery,
-        [empresaId, searchValue, searchValue, limit, offset],
+        [empresaId, ...localParam, searchValue, searchValue, limit, offset],
         (err, results) => {
           if (err) return reject(err);
 
           const countQuery = `
             SELECT COUNT(*) as total FROM Caja
-            WHERE EmpresaId = ?
+            WHERE EmpresaId = ?${localSql}
               AND (CajaDescripcion LIKE ?
                 OR CAST(CajaMonto AS CHAR) LIKE ?)
           `;
           db.query(
             countQuery,
-            [empresaId, searchValue, searchValue],
+            [empresaId, ...localParam, searchValue, searchValue],
             (err, countResult) => {
               if (err) return reject(err);
               resolve({

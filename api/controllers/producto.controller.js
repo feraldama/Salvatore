@@ -1,10 +1,14 @@
 const Producto = require("../models/producto.model");
 const { sendError } = require("../utils/errors");
 
-function extractProductoFilters(query, empresaId) {
+function extractProductoFilters(query, empresaId, almacenId) {
   const filters = {};
   // Scope por empresa (autoritativo: viene de resolveEmpresa, no del query).
   if (empresaId != null) filters.empresaId = Number(empresaId);
+  // Almacén activo (sucursal del usuario): el stock mostrado será el de este
+  // almacén. No filtra qué productos se ven (el catálogo es por empresa), solo
+  // de qué almacén se lee el stock.
+  if (almacenId != null) filters.almacenId = Number(almacenId);
   if (query.localId !== undefined && query.localId !== "") {
     const local = parseInt(query.localId, 10);
     if (!isNaN(local)) filters.localId = local;
@@ -32,7 +36,7 @@ exports.getAllProductos = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "ProductoId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractProductoFilters(req.query, req.empresaId);
+    const filters = extractProductoFilters(req.query, req.empresaId, req.almacenId);
     const { productos, total } = await Producto.getAllPaginated(
       limit,
       offset,
@@ -65,7 +69,7 @@ exports.searchProductos = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "ProductoId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractProductoFilters(req.query, req.empresaId);
+    const filters = extractProductoFilters(req.query, req.empresaId, req.almacenId);
     if (!searchTerm || searchTerm.trim() === "") {
       return res
         .status(400)
@@ -302,7 +306,7 @@ exports.getReporteStock = async (req, res) => {
 // Obtener todos los productos sin paginación
 exports.getAllProductosSinPaginacion = async (req, res) => {
   try {
-    const filters = extractProductoFilters(req.query, req.empresaId);
+    const filters = extractProductoFilters(req.query, req.empresaId, req.almacenId);
     const productos = await Producto.getAll(filters);
     convertirImagenes(productos);
     res.json({ data: productos });

@@ -161,7 +161,7 @@ export default function CajasList({
           className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
           <TextInput
-            label="Descripción *"
+            label="Descripción"
             name="CajaDescripcion"
             value={formData.CajaDescripcion}
             onChange={(e) =>
@@ -176,7 +176,7 @@ export default function CajasList({
             required
           />
           <TextInput
-            label="Monto *"
+            label="Monto"
             name="CajaMonto"
             numeric
             value={formData.CajaMonto ? formatMiles(formData.CajaMonto) : "0"}

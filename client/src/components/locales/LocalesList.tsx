@@ -172,7 +172,7 @@ export default function LocalesList({
           className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
           <TextInput
-            label="Nombre *"
+            label="Nombre"
             name="LocalNombre"
             value={formData.LocalNombre}
             onChange={(e) =>

@@ -16,6 +16,12 @@ api.interceptors.request.use((config) => {
   if (empresaId) {
     config.headers["X-Empresa-Id"] = empresaId;
   }
+  // Sucursal activa (solo la usa el backend para admins; los usuarios regulares
+  // quedan fijos a su local del JWT). Ausente = todas las sucursales.
+  const localId = localStorage.getItem("localActivoId");
+  if (localId) {
+    config.headers["X-Local-Id"] = localId;
+  }
   return config;
 });
 

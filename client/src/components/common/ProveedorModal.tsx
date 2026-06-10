@@ -149,7 +149,7 @@ const ProveedorModal: React.FC<ProveedorModalProps> = ({
           className="space-y-4"
         >
           <TextInput
-            label="Nombre *"
+            label="Nombre"
             value={newProveedor.ProveedorNombre}
             onChange={(e) =>
               setNewProveedor({

@@ -6,16 +6,46 @@ const db = require("../config/db");
  * `HasImagen` como booleano para que el cliente sepa si pedir la URL o
  * mostrar el logo por defecto.
  */
-const PRODUCTO_LIST_COLS = `
+// Id de almacén entero y seguro para inlinear en SQL (evita correr placeholders
+// de las queries que ya tienen su propio orden de params). null si no aplica.
+function safeAlmacenId(almacenId) {
+  const n = Number(almacenId);
+  return Number.isInteger(n) ? n : null;
+}
+
+/**
+ * Columnas "livianas" de producto para listados/búsqueda.
+ * Si se pasa un almacén activo (sucursal del usuario), el stock mostrado es el
+ * de ESE almacén (productoalmacen). Si no, se usa el stock global de `producto`
+ * (total de la empresa). Así un cajero ve el stock real de su bodega.
+ */
+function productoListCols(almacenId) {
+  const aId = safeAlmacenId(almacenId);
+  const stockCols =
+    aId != null
+      ? `COALESCE(pa.ProductoAlmacenStock, 0) AS ProductoStock,
+         COALESCE(pa.ProductoAlmacenStockUnitario, 0) AS ProductoStockUnitario`
+      : `p.ProductoStock, p.ProductoStockUnitario`;
+  return `
   p.ProductoId, p.ProductoCodigo, p.ProductoNombre,
   p.ProductoPrecioVenta, p.ProductoPrecioVentaMayorista,
   p.ProductoPrecioUnitario, p.ProductoPrecioPromedio,
-  p.ProductoStock, p.ProductoStockUnitario,
+  ${stockCols},
   p.ProductoCantidadCaja, p.ProductoIVA,
   p.ProductoStockMinimo, p.ProductoImagen_GXI,
   p.LocalId, p.EmpresaId,
   (LENGTH(p.ProductoImagen) > 0) AS HasImagen
 `;
+}
+
+// JOIN al stock del almacén activo (a lo sumo una fila por producto, sin
+// multiplicar). Vacío si no hay almacén activo.
+function productoAlmacenJoin(almacenId) {
+  const aId = safeAlmacenId(almacenId);
+  return aId != null
+    ? `LEFT JOIN productoalmacen pa ON pa.ProductoId = p.ProductoId AND pa.AlmacenId = ${aId}`
+    : "";
+}
 
 /**
  * Construye la cláusula WHERE para filtros de productos.
@@ -69,7 +99,9 @@ const Producto = {
         ? `WHERE ${conditions.join(" AND ")}`
         : "";
       db.query(
-        `SELECT ${PRODUCTO_LIST_COLS} FROM producto p ${whereSql}`,
+        `SELECT ${productoListCols(filters.almacenId)} FROM producto p ${productoAlmacenJoin(
+          filters.almacenId
+        )} ${whereSql}`,
         filterParams,
         (err, results) => {
           if (err) reject(err);
@@ -194,9 +226,10 @@ const Producto = {
         : "";
 
       const queryPaginated = `
-        SELECT ${PRODUCTO_LIST_COLS}, l.LocalNombre
+        SELECT ${productoListCols(filters.almacenId)}, l.LocalNombre
         FROM producto p
         LEFT JOIN local l ON p.LocalId = l.LocalId
+        ${productoAlmacenJoin(filters.almacenId)}
         ${whereSql}
         ORDER BY ${orderByField} ${order}
         LIMIT ? OFFSET ?
@@ -273,9 +306,10 @@ const Producto = {
         : "";
 
       const searchQuery = `
-        SELECT ${PRODUCTO_LIST_COLS}, l.LocalNombre
+        SELECT ${productoListCols(filters.almacenId)}, l.LocalNombre
         FROM producto p
         LEFT JOIN local l ON p.LocalId = l.LocalId
+        ${productoAlmacenJoin(filters.almacenId)}
         WHERE (p.ProductoNombre LIKE ?
           OR p.ProductoCodigo LIKE ?
           OR l.LocalNombre LIKE ?)${filtersAndClause}

@@ -72,7 +72,10 @@ export default function Badge({
           .filter(Boolean)
           .join(" ")}
       >
-        <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotColor[tone]}`} />
+        <span
+          aria-hidden="true"
+          className={`inline-block w-1.5 h-1.5 rounded-full ${dotColor[tone]}`}
+        />
         {children}
       </span>
     );

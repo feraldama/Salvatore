@@ -142,7 +142,7 @@ export default function MenusList({
           className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         >
           <TextInput
-            label="ID *"
+            label="ID"
             name="MenuId"
             value={formData.MenuId}
             onChange={handleInputChange}
@@ -150,7 +150,7 @@ export default function MenusList({
             disabled={!!currentMenu}
           />
           <TextInput
-            label="Nombre *"
+            label="Nombre"
             name="MenuNombre"
             value={formData.MenuNombre}
             onChange={handleInputChange}

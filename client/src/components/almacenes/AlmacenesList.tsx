@@ -161,7 +161,7 @@ export default function AlmacenesList({
       >
         <form id="almacen-form" onSubmit={handleSubmit} className="space-y-4">
           <TextInput
-            label="Nombre *"
+            label="Nombre"
             name="AlmacenNombre"
             value={formData.AlmacenNombre}
             onChange={(e) =>

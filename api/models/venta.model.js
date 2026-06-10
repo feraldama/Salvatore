@@ -32,6 +32,14 @@ function buildVentaFiltersWhere(filters = {}) {
     conditions.push("v.AlmacenId = ?");
     params.push(Number(filters.almacenId));
   }
+  // Scope por sucursal: las ventas del local son las de sus almacenes. null =
+  // todas las sucursales de la empresa (admin con vista agregada).
+  if (filters.localId) {
+    conditions.push(
+      "v.AlmacenId IN (SELECT a.AlmacenId FROM almacen a WHERE a.LocalId = ?)"
+    );
+    params.push(Number(filters.localId));
+  }
   if (filters.fechaDesde) {
     conditions.push("DATE(v.VentaFecha) >= ?");
     params.push(filters.fechaDesde);

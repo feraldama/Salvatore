@@ -2,7 +2,8 @@ import React, { useState, useMemo } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import ClienteFormModal from "./ClienteFormModal";
 import type { Cliente } from "./ClienteFormModal";
-import { Button, TextInput, Badge, Modal } from "./ui";
+import { Button, TextInput, Badge, Modal, EmptyState } from "./ui";
+import Pagination from "./Pagination";
 import { formatMiles } from "../../utils/utils";
 
 interface ClienteModalProps {
@@ -128,8 +129,12 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
             <tbody>
               {paginatedClientes.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center py-4 text-text-subtle">
-                    No hay clientes
+                  <td colSpan={5}>
+                    <EmptyState
+                      fullPage={false}
+                      title="No hay clientes"
+                      description="Ajustá los filtros o creá uno nuevo."
+                    />
                   </td>
                 </tr>
               )}
@@ -161,56 +166,23 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between mt-4">
-          <div className="text-sm text-text-muted font-num">
-            {clientesFiltrados.length === 0
-              ? "0"
-              : `${formatMiles((page - 1) * rowsPerPage + 1)} a ${formatMiles(
-                  Math.min(page * rowsPerPage, clientesFiltrados.length),
-                )} de ${formatMiles(clientesFiltrados.length)}`}
-          </div>
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="cliente-modal-rows"
-              className="text-sm text-text-muted"
-            >
-              Filas por página:
-            </label>
-            <select
-              id="cliente-modal-rows"
-              className="bg-surface border border-border rounded-md px-2 py-1 text-sm text-text focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600"
-              value={rowsPerPage}
-              onChange={(e) => {
-                setRowsPerPage(Number(e.target.value));
-                setPage(1);
-              }}
-            >
-              {[5, 10, 20, 50].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages || totalPages === 0}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
+        <p className="mt-3 text-sm text-text-muted font-num" aria-live="polite">
+          {clientesFiltrados.length === 0
+            ? "0 resultados"
+            : `${formatMiles((page - 1) * rowsPerPage + 1)} a ${formatMiles(
+                Math.min(page * rowsPerPage, clientesFiltrados.length),
+              )} de ${formatMiles(clientesFiltrados.length)}`}
+        </p>
+        <Pagination
+          currentPage={page}
+          totalPages={Math.max(1, totalPages)}
+          onPageChange={setPage}
+          itemsPerPage={rowsPerPage}
+          onItemsPerPageChange={(n) => {
+            setRowsPerPage(n);
+            setPage(1);
+          }}
+        />
 
         {/* Modal para crear cliente */}
         <ClienteFormModal

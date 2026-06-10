@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useId } from "react";
 import type { ComponentType, InputHTMLAttributes, ReactNode } from "react";
 
 /**
@@ -42,11 +42,15 @@ const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInpu
     className = "",
     id,
     disabled,
+    required,
     ...rest
   },
   ref
 ) {
-  const autoId = id ?? `ti-${Math.random().toString(36).slice(2, 9)}`;
+  // id estable entre renders (antes usaba Math.random, que rompía la
+  // asociación label↔input y el aria-describedby en cada render).
+  const reactId = useId();
+  const autoId = id ?? reactId;
   const describedBy = error
     ? `${autoId}-error`
     : helperText
@@ -70,6 +74,11 @@ const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInpu
           className="block text-xs font-medium text-text-muted mb-1"
         >
           {label}
+          {required && (
+            <span className="text-danger-600 ml-0.5" aria-hidden="true">
+              *
+            </span>
+          )}
         </label>
       )}
       <div className="relative">
@@ -80,6 +89,8 @@ const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInpu
           ref={ref}
           id={autoId}
           disabled={disabled}
+          required={required}
+          aria-required={required || undefined}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
           className={[

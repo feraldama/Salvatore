@@ -1,4 +1,9 @@
 import type { ComponentType, ReactNode } from "react";
+import {
+  ArrowUpIcon,
+  ArrowDownIcon,
+  MinusIcon,
+} from "@heroicons/react/24/solid";
 
 /**
  * StatCard — Technow Design System
@@ -77,8 +82,12 @@ export default function StatCard({
       ? "text-danger-600"
       : "text-text-subtle";
 
-  const trendSymbol =
-    trend?.direction === "up" ? "▲" : trend?.direction === "down" ? "▼" : "•";
+  const TrendIcon =
+    trend?.direction === "up"
+      ? ArrowUpIcon
+      : trend?.direction === "down"
+      ? ArrowDownIcon
+      : MinusIcon;
 
   const isInteractive = Boolean(onClick);
   const Wrapper = isInteractive ? "button" : "div";
@@ -89,7 +98,7 @@ export default function StatCard({
       className={[
         "relative text-left w-full bg-surface rounded-lg border border-border shadow-card overflow-hidden",
         isInteractive
-          ? "transition-colors hover:border-border-strong hover:shadow-elevated cursor-pointer"
+          ? "transition-colors hover:border-border-strong hover:shadow-elevated cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
           : "",
         className,
       ]
@@ -110,8 +119,9 @@ export default function StatCard({
           {(hint || trend) && (
             <div className="mt-2 flex items-center gap-2 text-xs">
               {trend && (
-                <span className={`font-medium ${trendColor}`}>
-                  {trendSymbol} {trend.label}
+                <span className={`inline-flex items-center gap-1 font-medium ${trendColor}`}>
+                  <TrendIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {trend.label}
                 </span>
               )}
               {hint && <span className="text-text-subtle">{hint}</span>}

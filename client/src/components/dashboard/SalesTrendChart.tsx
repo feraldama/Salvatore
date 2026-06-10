@@ -119,7 +119,7 @@ export default function SalesTrendChart({
           width={width}
           height={height}
           role="img"
-          aria-label="Tendencia de ventas diarias"
+          aria-label={`Tendencia de ventas diarias de los últimos ${data.length} días`}
         >
           {/* Grilla + etiquetas Y */}
           {gridLines.map((g, i) => (
@@ -211,6 +211,28 @@ export default function SalesTrendChart({
           })}
         </svg>
       )}
+
+      {/* Fallback accesible: tabla de datos para lectores de pantalla.
+          El SVG es decorativo para AT; esta tabla expone los valores reales. */}
+      <table className="sr-only">
+        <caption>Ventas diarias de los últimos {data.length} días</caption>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Total (Gs.)</th>
+            <th scope="col">Ventas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((d) => (
+            <tr key={d.fecha}>
+              <th scope="row">{formatFechaCorta(d.fecha)}</th>
+              <td>{formatMiles(d.total)}</td>
+              <td>{d.cantidad}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {/* Tooltip (HTML, posicionado sobre el punto) */}
       {hovered && hoverIdx != null && width > 0 && (

@@ -13,7 +13,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
  *   - portal a document.body para evitar problemas de z-index/overflow
  */
 
-type Size = "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
+type Size = "sm" | "md" | "lg" | "xl" | "2xl" | "4xl" | "6xl";
 
 export interface ModalProps {
   open: boolean;
@@ -41,6 +41,7 @@ const sizeClasses: Record<Size, string> = {
   xl: "max-w-xl",
   "2xl": "max-w-2xl",
   "4xl": "max-w-4xl",
+  "6xl": "max-w-6xl",
 };
 
 export default function Modal({
@@ -72,8 +73,44 @@ export default function Modal({
   useEffect(() => {
     if (!open) return;
 
+    // Elemento que tenía el foco antes de abrir, para restaurarlo al cerrar.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    // Lista de elementos enfocables dentro del panel (para el focus-trap).
+    const getFocusable = (): HTMLElement[] => {
+      const panel = panelRef.current;
+      if (!panel) return [];
+      return Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+    };
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && closeOnEscape) onCloseRef.current();
+      if (e.key === "Escape" && closeOnEscape) {
+        onCloseRef.current();
+        return;
+      }
+      // Focus-trap: el Tab nunca debe salir del modal.
+      if (e.key === "Tab") {
+        const focusable = getFocusable();
+        if (focusable.length === 0) {
+          e.preventDefault();
+          panelRef.current?.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || active === panelRef.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener("keydown", onKey);
 
@@ -89,6 +126,8 @@ export default function Modal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
       window.clearTimeout(t);
+      // Devolver el foco al disparador (si sigue en el DOM).
+      previouslyFocused?.focus?.();
     };
   }, [open, closeOnEscape, initialFocusRef]);
 

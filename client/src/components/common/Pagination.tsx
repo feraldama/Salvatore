@@ -62,14 +62,20 @@ const Pagination = ({
 
   const pageNumbers = getPageNumbers();
 
+  const itemBtn =
+    "px-3 py-1.5 border-t border-b border-border bg-surface text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 whitespace-nowrap";
+
   return (
     <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-4">
       <div className="flex items-center order-2 sm:order-1">
-        <label className="mr-2 text-sm text-gray-600">Mostrar:</label>
+        <label htmlFor="items-per-page" className="mr-2 text-sm text-text-muted">
+          Mostrar:
+        </label>
         <select
+          id="items-per-page"
           value={itemsPerPage}
           onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-          className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+          className="border border-border rounded-md px-2 py-1 text-sm bg-surface text-text cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
         >
           <option value={10}>10</option>
           <option value={25}>25</option>
@@ -78,39 +84,55 @@ const Pagination = ({
         </select>
       </div>
 
-      <nav className="inline-flex rounded-md shadow order-1 sm:order-2 w-full sm:w-auto overflow-x-auto sm:overflow-visible">
+      <nav
+        aria-label="Paginación"
+        className="inline-flex rounded-md shadow-card order-1 sm:order-2 w-full sm:w-auto overflow-x-auto sm:overflow-visible"
+      >
         <div className="flex">
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
-            className="px-3 py-1 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+            aria-label="Página anterior"
+            className="px-3 py-1.5 rounded-l-md border border-border bg-surface text-sm font-medium text-text-muted hover:bg-surface-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 whitespace-nowrap cursor-pointer"
           >
             Anterior
           </button>
 
-          {pageNumbers.map((number, index) => (
-            <button
-              key={number === "..." ? `ellipsis-${index}` : number}
-              onClick={() => {
-                if (typeof number === "number") onPageChange(number);
-              }}
-              disabled={number === "..."}
-              className={`px-3 py-1 border-t border-b border-gray-300 bg-white text-sm font-medium ${
-                currentPage === number
-                  ? "text-blue-600 bg-blue-50"
-                  : "text-gray-700 hover:bg-gray-50"
-              } ${
-                number === "..." ? "cursor-default" : "cursor-pointer"
-              } whitespace-nowrap`}
-            >
-              {number}
-            </button>
-          ))}
+          {pageNumbers.map((number, index) => {
+            if (typeof number !== "number") {
+              return (
+                <span
+                  key={`ellipsis-${index}`}
+                  aria-hidden="true"
+                  className={`${itemBtn} text-text-subtle cursor-default`}
+                >
+                  …
+                </span>
+              );
+            }
+            const isCurrent = currentPage === number;
+            return (
+              <button
+                key={number}
+                onClick={() => onPageChange(number)}
+                aria-label={`Página ${number}`}
+                aria-current={isCurrent ? "page" : undefined}
+                className={`${itemBtn} cursor-pointer ${
+                  isCurrent
+                    ? "text-brand-700 bg-brand-50"
+                    : "text-text-muted hover:bg-surface-muted"
+                }`}
+              >
+                {number}
+              </button>
+            );
+          })}
 
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
-            className="px-3 py-1 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+            aria-label="Página siguiente"
+            className="px-3 py-1.5 rounded-r-md border border-border bg-surface text-sm font-medium text-text-muted hover:bg-surface-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 whitespace-nowrap cursor-pointer"
           >
             Siguiente
           </button>

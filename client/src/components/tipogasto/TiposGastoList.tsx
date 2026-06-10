@@ -189,7 +189,7 @@ export default function TiposGastoList({
           className="space-y-6"
         >
           <TextInput
-            label="Descripción *"
+            label="Descripción"
             name="TipoGastoDescripcion"
             value={formData.TipoGastoDescripcion}
             onChange={handleInputChange}

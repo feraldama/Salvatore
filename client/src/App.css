@@ -1,87 +1,85 @@
 @import "tailwindcss";
 
 /* =========================================================================
-   Technow — Design System (POS / gestión de ventas)
-   Paleta: TRUST NAVY (banking / fintech grade).
-   Referencias visuales: Toast, Square, Verifone, Quickbooks.
+   Salvatore — Design System (ui-ux-pro-max skill)
+   Sistema: DATA-DENSE DASHBOARD (admin panel / POS / operaciones).
+   Paleta: azul data (#1E40AF) + ámbar de acento (#D97706). Status green/amber/red.
+   Tipografía: Fira Code (display/num) + Fira Sans (UI). Mood: dashboard, data, técnico.
+   Fuente de verdad: design-system/salvatore-distribuidora/MASTER.md
    Base: Tailwind 4 @theme. Las variables expuestas aquí se usan como utilidades
-   (ej. --color-brand-600 → bg-brand-600 / text-brand-600 / border-brand-600).
+   (ej. --color-brand-700 → bg-brand-700 / text-brand-700 / border-brand-700).
 
-   Decisiones clave vs paleta anterior (Indigo SaaS):
-   - Brand pasó a azul navy (-700) — más conservador, banking-grade.
-   - Sidebar navy con tinte cálido (#0b1426) en lugar de slate puro.
-   - Status colors a -700 (desaturados) para reducir fatiga visual en jornadas largas.
-   - +1 nivel de superficie (surface-sunken) para tablas densas.
-   - +1 token de texto (text-strong) para totales/montos críticos.
-   - Bordes con leve tinte azul (#d6dee9) en vez de slate puro.
+   Principios del estilo Data-Dense Dashboard:
+   - Densidad: tablas/KPI compactos, padding mínimo, grid eficiente.
+   - Sin ornamento: nada de glow, gradientes hero ni sombras complejas.
+   - Status semántico inequívoco para dinero/operativa (nunca hex crudo).
+   - Números tabulares (.font-num) para que columnas de montos se alineen.
    ========================================================================= */
 
 @theme {
   /* -----------------------------------------------------------------------
-     1. BRAND (Indigo) — primary actions, enlaces, foco, ítems activos.
-        Paleta refrescada 2026: indigo moderno en lugar de royal blue clásico.
+     1. BRAND (Blue / data) — acciones primarias, enlaces, foco, ítems activos.
+        Primary #1E40AF (brand-800) · Secondary #3B82F6 (brand-500).
+        Default de acción: brand-700 (#1d4ed8, AA sobre blanco).
      ----------------------------------------------------------------------- */
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5; /* DEFAULT alterno — buttons en lg                       */
-  --color-brand-700: #4338ca; /* DEFAULT — botones primarios, links                    */
-  --color-brand-800: #3730a3; /* hover primario                                        */
-  --color-brand-900: #312e81; /* sidebar item hover                                    */
-  --color-brand-950: #1e1b4b;
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6; /* secondary                                    */
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8; /* DEFAULT — botones primarios, links, foco     */
+  --color-brand-800: #1e40af; /* primary / hover primario                     */
+  --color-brand-900: #1e3a8a; /* sidebar active alterno / énfasis              */
+  --color-brand-950: #172554;
 
-  /* Alias primary: mismos valores que brand. Mantenemos `--color-primary`
-     para compat con código legacy (Dashboard usaba text-primary-900). */
-  --color-primary: #4338ca;
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-200: #c7d2fe;
-  --color-primary-300: #a5b4fc;
-  --color-primary-400: #818cf8;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
-  --color-primary-800: #3730a3;
-  --color-primary-900: #312e81;
-  --color-primary-950: #1e1b4b;
+  /* Alias primary: mismos valores que brand (compat con código legacy
+     que usaba text-primary-900, etc.). */
+  --color-primary: #1d4ed8;
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+  --color-primary-950: #172554;
 
   /* -----------------------------------------------------------------------
-     2. NEUTRAL / Surface — fondos, texto, bordes.
-        Usamos slate con tinte cálido + bordes blue-tint (más fintech).
+     2. NEUTRAL / Surface — fondos, texto, bordes (blue-tinted, fintech crisp).
      ----------------------------------------------------------------------- */
-  --color-surface: #ffffff;        /* Cards, modales                       */
-  --color-surface-alt: #f7f9fc;    /* Fondo de página (warm slate)         */
-  --color-surface-sunken: #eef2f7; /* Filas alternas, secciones anidadas   */
-  --color-surface-muted: #f1f5f9;  /* Bloques secundarios / secondary btn  */
+  --color-surface: #ffffff;        /* Cards, modales                          */
+  --color-surface-alt: #f8fafc;    /* Fondo de página (skill background)       */
+  --color-surface-sunken: #eef2f7; /* Filas alternas, secciones anidadas       */
+  --color-surface-muted: #e9eef6;  /* Bloques secundarios / secondary btn      */
 
-  --color-border: #d6dee9;         /* Borde default — blue-tinted          */
-  --color-border-strong: #b8c4d2;  /* Hover/focus borders                  */
+  --color-border: #d6dee9;         /* Borde default — blue-tinted              */
+  --color-border-strong: #b8c4d2;  /* Hover/focus borders                      */
 
-  --color-text-strong: #020617;    /* Totales, montos críticos (max contrast) */
-  --color-text: #0f172a;           /* Texto primario                        */
-  --color-text-muted: #475569;     /* Texto secundario, labels              */
-  --color-text-subtle: #94a3b8;    /* Placeholders / disabled / hints       */
-  --color-text-inverse: #ffffff;   /* Sobre fondos oscuros                  */
+  --color-text-strong: #020617;    /* Totales, montos críticos (max contrast)  */
+  --color-text: #0f172a;           /* Texto primario                           */
+  --color-text-muted: #475569;     /* Texto secundario, labels                 */
+  --color-text-subtle: #94a3b8;    /* Placeholders / disabled / hints          */
+  --color-text-inverse: #ffffff;   /* Sobre fondos oscuros                     */
 
-  /* Sidebar — slate/charcoal con acento emerald.
-     Patrón "Linear / Vercel": el sidebar es contenedor neutro,
-     el emerald del item activo es el único color saturado → atrae la mirada. */
-  --color-sidebar: #0f172a;        /* slate-950 — base                       */
-  --color-sidebar-hover: #1e293b;  /* slate-800 — hover sutil                */
-  --color-sidebar-active: #10b981; /* emerald-500 — item activo (pop fuerte)*/
-  --color-sidebar-text: #cbd5e1;   /* slate-300 — body items                 */
+  /* Sidebar — slate oscuro neutro con item activo en brand (azul),
+     y labels de sección en ámbar (color de acento del sistema). */
+  --color-sidebar: #0f172a;        /* slate-950 — base                         */
+  --color-sidebar-hover: #1e293b;  /* slate-800 — hover sutil                  */
+  --color-sidebar-active: #2563eb; /* brand-600 — item activo                  */
+  --color-sidebar-text: #cbd5e1;   /* slate-300 — body items                   */
   --color-sidebar-text-active: #ffffff;
-  --color-sidebar-section: #f59e0b; /* amber-500 — labels de sección (complementario)*/
+  --color-sidebar-section: #f59e0b; /* amber-500 — labels de sección (acento)  */
 
   /* -----------------------------------------------------------------------
      3. SEMÁNTICA DE ESTADO — ventas, créditos, stock, validaciones.
         Status -700 (desaturados) por defecto: menos fatiga en uso prolongado.
      ----------------------------------------------------------------------- */
-  /* Éxito — venta aprobada, cobro confirmado, apertura de caja OK.
-     Paleta emerald (más fresca y moderna que green forest). */
+  /* Éxito — venta aprobada, cobro confirmado, apertura de caja OK. */
   --color-success-50: #ecfdf5;
   --color-success-100: #d1fae5;
   --color-success-200: #a7f3d0;
@@ -90,11 +88,12 @@
   --color-success-700: #047857; /* DEFAULT */
   --color-success-800: #065f46; /* hover    */
 
-  /* Advertencia — crédito pendiente, stock bajo, por vencer */
+  /* Advertencia / ACENTO (amber) — crédito pendiente, stock bajo, CTA highlight.
+     Accent del skill = #D97706 (warning-600). */
   --color-warning-50: #fffbeb;
   --color-warning-100: #fef3c7;
   --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
+  --color-warning-600: #d97706; /* accent / CTA highlight */
   --color-warning-700: #b45309; /* DEFAULT */
   --color-warning-800: #92400e; /* hover    */
 
@@ -116,18 +115,19 @@
   --color-info-800: #075985; /* hover    */
 
   /* -----------------------------------------------------------------------
-     4. TIPOGRAFÍA
-        - font-display (Baloo 2): encabezados, brand, números grandes de venta
-        - font-ui (Inter):        body, tablas, forms, datos densos
-        - font-baloo:             alias legacy (se mantiene para no romper)
+     4. TIPOGRAFÍA (skill: Fira Code + Fira Sans, mood dashboard/data/técnico)
+        - font-display (Fira Code): encabezados, brand, números grandes de venta
+        - font-ui (Fira Sans):      body, tablas, forms, datos densos
+        - font-num (Fira Code):     montos/cantidades con tabular-nums (mono)
+        - font-baloo:               alias legacy → mapea a display (no romper)
      ----------------------------------------------------------------------- */
-  --font-display: "Baloo 2", ui-sans-serif, system-ui, sans-serif;
-  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+  --font-display: "Fira Code", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  --font-ui: "Fira Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     sans-serif;
-  --font-baloo: "Baloo 2", sans-serif;
+  --font-baloo: "Fira Code", ui-monospace, monospace;
 
-  /* Monto/numeric — habilita tabular-nums en cualquier elemento con font-num */
-  --font-num: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* Monto/numeric — Fira Code (monospace) + tabular-nums para alinear columnas */
+  --font-num: "Fira Code", ui-monospace, "SFMono-Regular", "Menlo", monospace;
 
   /* -----------------------------------------------------------------------
      5. RADIOS  (aplican a bg-*, border-*, card, button)
@@ -140,15 +140,15 @@
   --radius-2xl: 16px;
 
   /* -----------------------------------------------------------------------
-     6. SOMBRAS — sutiles, sin "glow" decorativo.
-        Ajustadas al nuevo navy: tono base de la sombra es navy-tint, no slate.
+     6. SOMBRAS — sutiles, sin "glow" decorativo (estilo data-dense).
+        Tono base slate-tint.
      ----------------------------------------------------------------------- */
-  --shadow-card: 0 1px 2px 0 rgba(11, 20, 38, 0.04),
-    0 1px 3px 0 rgba(11, 20, 38, 0.06);
-  --shadow-elevated: 0 4px 6px -1px rgba(11, 20, 38, 0.08),
-    0 2px 4px -2px rgba(11, 20, 38, 0.06);
-  --shadow-modal: 0 20px 25px -5px rgba(11, 20, 38, 0.14),
-    0 10px 10px -5px rgba(11, 20, 38, 0.06);
+  --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.04),
+    0 1px 3px 0 rgba(15, 23, 42, 0.06);
+  --shadow-elevated: 0 4px 6px -1px rgba(15, 23, 42, 0.08),
+    0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --shadow-modal: 0 20px 25px -5px rgba(15, 23, 42, 0.14),
+    0 10px 10px -5px rgba(15, 23, 42, 0.06);
   --shadow-focus: 0 0 0 3px rgba(29, 78, 216, 0.25); /* brand-700 alpha */
 }
 
@@ -172,7 +172,7 @@ body {
   font-feature-settings: "tnum" 1;
 }
 
-/* Headings por defecto con la display font.
+/* Headings por defecto con la display font (Fira Code).
    :where() mantiene la especificidad en 0, para que cualquier utilidad
    (text-warning-500, text-white, etc.) pueda sobrescribir sin !important. */
 :where(h1, h2, h3, h4) {

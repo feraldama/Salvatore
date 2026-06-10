@@ -46,7 +46,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-2 font-medium rounded-md transition-colors duration-150 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap select-none";
+  "inline-flex items-center justify-center gap-2 font-medium rounded-md transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap select-none";
 
 const sizes: Record<Size, string> = {
   sm: "text-xs px-3 py-1.5",
@@ -56,19 +56,19 @@ const sizes: Record<Size, string> = {
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900 shadow-sm cursor-pointer",
+    "bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900 shadow-sm cursor-pointer focus-visible:ring-brand-500",
   secondary:
-    "bg-surface-muted text-text hover:bg-border active:bg-border-strong cursor-pointer",
+    "bg-surface-muted text-text hover:bg-border active:bg-border-strong cursor-pointer focus-visible:ring-brand-500",
   ghost:
-    "bg-transparent text-brand-700 hover:bg-brand-50 active:bg-brand-100 cursor-pointer",
+    "bg-transparent text-brand-700 hover:bg-brand-50 active:bg-brand-100 cursor-pointer focus-visible:ring-brand-500",
   success:
-    "bg-success-700 text-white hover:bg-success-800 active:bg-success-800 shadow-sm cursor-pointer",
+    "bg-success-700 text-white hover:bg-success-800 active:bg-success-800 shadow-sm cursor-pointer focus-visible:ring-success-600",
   danger:
-    "bg-danger-700 text-white hover:bg-danger-800 active:bg-danger-800 shadow-sm cursor-pointer",
+    "bg-danger-700 text-white hover:bg-danger-800 active:bg-danger-800 shadow-sm cursor-pointer focus-visible:ring-danger-600",
   warning:
-    "bg-warning-700 text-white hover:bg-warning-800 active:bg-warning-800 shadow-sm cursor-pointer",
+    "bg-warning-700 text-white hover:bg-warning-800 active:bg-warning-800 shadow-sm cursor-pointer focus-visible:ring-warning-600",
   outline:
-    "bg-surface text-text border border-border hover:bg-surface-muted hover:border-border-strong cursor-pointer",
+    "bg-surface text-text border border-border hover:bg-surface-muted hover:border-border-strong cursor-pointer focus-visible:ring-brand-500",
 };
 
 const iconSizeByButtonSize: Record<Size, string> = {

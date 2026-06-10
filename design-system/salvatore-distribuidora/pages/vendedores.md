@@ -1,50 +1,32 @@
-# Vendedores Page Overrides
+# Vendedores — Page Overrides
 
 > **PROJECT:** Salvatore Distribuidora
-> **Generated:** 2026-06-03 15:19:26
-> **Page Type:** Dashboard / Data View
+> **Page Type:** Dashboard / Data View (lista de vendedores + comisiones)
 
-> ⚠️ **IMPORTANT:** Rules in this file **override** the Master file (`design-system/MASTER.md`).
-> Only deviations from the Master are documented here. For all other rules, refer to the Master.
+> ⚠️ Rules here **override** [the Master file](../MASTER.md). Only deviations are documented; for everything else use the Master (Data-Dense Dashboard).
 
 ---
 
 ## Page-Specific Rules
 
-### Layout Overrides
+### Layout
 
-- **Max Width:** 1200px (standard)
-- **Layout:** Full-width sections, centered content
-- **Sections:** 1. Hero, 2. Problem intro, 3. Comparison table (product vs competitors), 4. Pricing (optional), 5. CTA
+- Data table as the primary surface: alternating rows (`surface` / `surface-sunken`), sticky header.
+- Filters/search row above the table; KPI cards (total vendedores, comisiones del período) on top.
+- Max content width follows the app shell; table scrolls horizontally on < 768px (or switches to card rows).
 
-### Spacing Overrides
+### Color
 
-- No overrides — use Master spacing
+- Row hover highlight: `surface-sunken`.
+- Comisiones / amounts: `.font-num` (tabular), `text-strong` for totals.
+- Estados de cobro: `success` (al día) / `warning` (pendiente) / `danger` (vencido) — never color-only, pair with label/icon.
 
-### Typography Overrides
+### Components
 
-- No overrides — use Master typography
-
-### Color Overrides
-
-- **Strategy:** Table: Alternating rows (white/light grey). Your product: Highlight #FFFACD (light yellow) or green. Text: Dark
-
-### Component Overrides
-
-- Avoid: Wide tables breaking layout
-- Avoid: Use arbitrary large z-index values
-
----
-
-## Page-Specific Components
-
-- No unique components for this page
-
----
+- Use the shared `StatCard`, `Badge`, `Card`, table primitives — do not introduce page-local color/spacing.
+- Avoid: wide tables breaking the layout, arbitrary large z-index (use the app z-index scale 10/20/40/100).
 
 ## Recommendations
 
-- Effects: Deal movement animations, metric updates, leaderboard ranking changes, gauge needle movements, status change highlights
-- Responsive: Use horizontal scroll or card layout
-- Layout: Define z-index scale system (10 20 30 50)
-- CTA Placement: Table: Right column. CTA: Below table
+- Effects: row highlight on hover, metric updates, status-change highlights (150–300ms, respect reduced-motion).
+- Responsive: horizontal scroll or card layout for the table on small screens.

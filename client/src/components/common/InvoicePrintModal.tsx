@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Swal from "sweetalert2";
 import {
+  PrinterIcon,
+  MagnifyingGlassIcon,
+} from "@heroicons/react/24/outline";
+import {
   getVentasPaginated,
   searchVentas,
   type Venta,
@@ -8,6 +12,7 @@ import {
 } from "../../services/venta.service";
 import { getClienteById } from "../../services/clientes.service";
 import { calcularDV } from "../../utils/utils";
+import { Modal, Button, TextInput, LoadingState, EmptyState } from "./ui";
 
 interface VentaProducto {
   VentaId: number;
@@ -718,216 +723,209 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     return numero.toLocaleString("es-PY") + " GUARANÍES";
   };
 
-  if (!show) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black opacity-50" />
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-6xl p-6 relative max-h-[90vh] overflow-y-auto">
-        <button
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl cursor-pointer"
-          onClick={onClose}
-        >
-          &times;
-        </button>
-
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-semibold text-gray-800">
-            Imprimir Factura
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Panel izquierdo - Búsqueda y lista de ventas */}
-          <div className="lg:col-span-2">
-            <div className="mb-4">
-              <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  placeholder="Buscar ventas..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={handleSearch}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
-                >
-                  Buscar
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {loading ? (
-                <div className="text-center py-8 text-gray-500">
-                  Cargando ventas...
-                </div>
-              ) : ventas.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No se encontraron ventas
-                </div>
-              ) : (
-                ventas.map((venta) => (
-                  <div
-                    key={venta.VentaId}
-                    className={`p-3 border rounded-lg cursor-pointer transition ${
-                      ventaSeleccionada?.VentaId === venta.VentaId
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    onClick={() => cargarProductosVenta(venta)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold">Venta #{venta.VentaId}</p>
-                        <p className="text-sm text-gray-600">
-                          {formatearFecha(venta.VentaFecha)}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Cliente: {venta.ClienteRazonSocial || "N/A"}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-green-600">
-                          {formatearNumero(venta.Total || 0)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {venta.VentaCantidadProductos || 0} productos
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Paginación */}
-            {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-2 mt-4">
-                <button
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  Anterior
-                </button>
-                <span className="px-3 py-1 text-sm text-gray-600">
-                  Página {currentPage} de {totalPages}
-                </span>
-                <button
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  Siguiente
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Panel derecho - Vista previa */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Vista Previa</h3>
-            {ventaSeleccionada ? (
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <div className="space-y-2">
-                  <p>
-                    <strong>N° Factura:</strong>{" "}
-                    {calcularNroFactura(ventaSeleccionada)}
-                  </p>
-                  <p>
-                    <strong>Fecha:</strong>{" "}
-                    {formatearFecha(ventaSeleccionada.VentaFecha)}
-                  </p>
-                  <p>
-                    <strong>Cliente:</strong>{" "}
-                    {ventaSeleccionada.ClienteRazonSocial || "N/A"}
-                  </p>
-                  <p>
-                    <strong>RUC:</strong>{" "}
-                    {ventaSeleccionada.ClienteRUC || "N/A"}
-                  </p>
-                  <p>
-                    <strong>Dirección:</strong>{" "}
-                    {ventaSeleccionada.ClienteDireccion ||
-                      "Sin dirección registrada"}
-                  </p>
-                  <p>
-                    <strong>Total:</strong>{" "}
-                    {formatearNumero(ventaSeleccionada.Total || 0)}
-                  </p>
-                  <p>
-                    <strong>IVA 10%:</strong>{" "}
-                    {formatearNumero(calcularIVA(ventaSeleccionada.Total || 0))}
-                  </p>
-                  <p>
-                    <strong>Productos:</strong>{" "}
-                    {ventaSeleccionada.VentaProductos?.length || 0}
-                  </p>
-
-                  {ventaSeleccionada.VentaProductos &&
-                    ventaSeleccionada.VentaProductos.length > 0 && (
-                      <div className="mt-3">
-                        <p className="font-semibold mb-2">Productos:</p>
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                          {ventaSeleccionada.VentaProductos.slice(0, 5).map(
-                            (producto, index) => (
-                              <div
-                                key={index}
-                                className="text-sm text-gray-600"
-                              >
-                                {producto.VentaProductoCantidad}x{" "}
-                                {producto.ProductoNombre ||
-                                  producto.ProductoCodigo}
-                              </div>
-                            )
-                          )}
-                          {ventaSeleccionada.VentaProductos.length > 5 && (
-                            <p className="text-xs text-gray-500">
-                              ... y{" "}
-                              {ventaSeleccionada.VentaProductos.length - 5}{" "}
-                              productos más
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                </div>
-              </div>
-            ) : (
-              <div className="border rounded-lg p-4 bg-gray-50 text-center text-gray-500">
-                Seleccione una venta para ver la vista previa
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Botones de acción */}
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-          <button
-            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-            onClick={onClose}
-          >
+    <Modal
+      open={show}
+      onClose={onClose}
+      title="Imprimir Factura"
+      size="6xl"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
             Cancelar
-          </button>
-          <button
-            className={`px-6 py-2 rounded-lg transition ${
-              ventaSeleccionada
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-gray-300 text-gray-500 cursor-not-allowed"
-            }`}
+          </Button>
+          <Button
+            leftIcon={PrinterIcon}
             onClick={imprimirFactura}
             disabled={!ventaSeleccionada}
           >
             Imprimir Factura
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Panel izquierdo - Búsqueda y lista de ventas */}
+        <div className="lg:col-span-2">
+          <div className="flex gap-2 mb-4">
+            <TextInput
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={handleKeyPress}
+              placeholder="Buscar ventas..."
+              aria-label="Buscar ventas"
+              leftIcon={MagnifyingGlassIcon}
+            />
+            <Button variant="outline" onClick={handleSearch}>
+              Buscar
+            </Button>
+          </div>
+
+          <div
+            className="space-y-3 max-h-96 overflow-y-auto"
+            aria-live="polite"
+            aria-busy={loading || undefined}
+          >
+            {loading ? (
+              <LoadingState fullPage={false} message="Cargando ventas..." />
+            ) : ventas.length === 0 ? (
+              <EmptyState
+                fullPage={false}
+                title="No se encontraron ventas"
+                description="Probá con otro término de búsqueda."
+              />
+            ) : (
+              ventas.map((venta) => {
+                const activa = ventaSeleccionada?.VentaId === venta.VentaId;
+                return (
+                  <button
+                    key={venta.VentaId}
+                    type="button"
+                    onClick={() => cargarProductosVenta(venta)}
+                    aria-pressed={activa}
+                    className={`w-full text-left p-3 border rounded-lg cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
+                      activa
+                        ? "border-brand-500 bg-brand-50"
+                        : "border-border hover:border-border-strong"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-text">
+                          Venta #{venta.VentaId}
+                        </p>
+                        <p className="text-sm text-text-muted">
+                          {formatearFecha(venta.VentaFecha)}
+                        </p>
+                        <p className="text-sm text-text-muted truncate">
+                          Cliente: {venta.ClienteRazonSocial || "N/A"}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-semibold text-success-700 tabular-nums">
+                          {formatearNumero(venta.Total || 0)}
+                        </p>
+                        <p className="text-xs text-text-subtle">
+                          {venta.VentaCantidadProductos || 0} productos
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+              >
+                Anterior
+              </Button>
+              <span
+                className="px-3 py-1 text-sm text-text-muted"
+                aria-live="polite"
+              >
+                Página {currentPage} de {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setCurrentPage(Math.min(totalPages, currentPage + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                Siguiente
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Panel derecho - Vista previa */}
+        <div>
+          <h3 className="text-lg font-semibold mb-4 text-text">Vista Previa</h3>
+          {ventaSeleccionada ? (
+            <div className="border border-border rounded-lg p-4 bg-surface-sunken">
+              <div className="space-y-2 text-text">
+                <p>
+                  <strong>N° Factura:</strong>{" "}
+                  {calcularNroFactura(ventaSeleccionada)}
+                </p>
+                <p>
+                  <strong>Fecha:</strong>{" "}
+                  {formatearFecha(ventaSeleccionada.VentaFecha)}
+                </p>
+                <p>
+                  <strong>Cliente:</strong>{" "}
+                  {ventaSeleccionada.ClienteRazonSocial || "N/A"}
+                </p>
+                <p>
+                  <strong>RUC:</strong> {ventaSeleccionada.ClienteRUC || "N/A"}
+                </p>
+                <p>
+                  <strong>Dirección:</strong>{" "}
+                  {ventaSeleccionada.ClienteDireccion ||
+                    "Sin dirección registrada"}
+                </p>
+                <p>
+                  <strong>Total:</strong>{" "}
+                  <span className="tabular-nums">
+                    {formatearNumero(ventaSeleccionada.Total || 0)}
+                  </span>
+                </p>
+                <p>
+                  <strong>IVA 10%:</strong>{" "}
+                  <span className="tabular-nums">
+                    {formatearNumero(calcularIVA(ventaSeleccionada.Total || 0))}
+                  </span>
+                </p>
+                <p>
+                  <strong>Productos:</strong>{" "}
+                  {ventaSeleccionada.VentaProductos?.length || 0}
+                </p>
+
+                {ventaSeleccionada.VentaProductos &&
+                  ventaSeleccionada.VentaProductos.length > 0 && (
+                    <div className="mt-3">
+                      <p className="font-semibold mb-2">Productos:</p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {ventaSeleccionada.VentaProductos.slice(0, 5).map(
+                          (producto, index) => (
+                            <div
+                              key={index}
+                              className="text-sm text-text-muted"
+                            >
+                              {producto.VentaProductoCantidad}x{" "}
+                              {producto.ProductoNombre ||
+                                producto.ProductoCodigo}
+                            </div>
+                          )
+                        )}
+                        {ventaSeleccionada.VentaProductos.length > 5 && (
+                          <p className="text-xs text-text-subtle">
+                            ... y {ventaSeleccionada.VentaProductos.length - 5}{" "}
+                            productos más
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+              </div>
+            </div>
+          ) : (
+            <div className="border border-border rounded-lg p-4 bg-surface-sunken text-center text-text-muted">
+              Seleccione una venta para ver la vista previa
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

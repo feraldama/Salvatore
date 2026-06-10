@@ -58,7 +58,7 @@ export default function EmpresaFormModal({
     >
       <form id="empresa-form" onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <TextInput
-          label="Nombre *"
+          label="Nombre"
           name="EmpresaNombre"
           value={formData.EmpresaNombre}
           onChange={handleChange}

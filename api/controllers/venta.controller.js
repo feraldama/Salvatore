@@ -30,11 +30,12 @@ exports.getAll = async (req, res) => {
   }
 };
 
-function extractVentaFilters(query, empresaId) {
+function extractVentaFilters(query, empresaId, localId) {
   const allowedTipos = ["CO", "CR", "PO", "TR"];
   const allowedEstados = ["P", "C"];
   const filters = {};
   if (empresaId) filters.empresaId = empresaId;
+  if (localId) filters.localId = localId; // scope por sucursal activa
   if (query.tipo && allowedTipos.includes(query.tipo)) filters.tipo = query.tipo;
   if (query.almacenId) filters.almacenId = query.almacenId;
   if (query.fechaDesde) filters.fechaDesde = query.fechaDesde;
@@ -51,7 +52,7 @@ exports.getAllPaginated = async (req, res) => {
     const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || "VentaId";
     const sortOrder = req.query.sortOrder || "ASC";
-    const filters = extractVentaFilters(req.query, req.empresaId);
+    const filters = extractVentaFilters(req.query, req.empresaId, req.localId);
 
     const result = await Venta.getAllPaginated(
       limit,
@@ -316,7 +317,7 @@ exports.searchVentas = async (req, res) => {
       });
     }
 
-    const filters = extractVentaFilters(req.query, req.empresaId);
+    const filters = extractVentaFilters(req.query, req.empresaId, req.localId);
 
     const result = await Venta.searchVentas(
       searchTerm,

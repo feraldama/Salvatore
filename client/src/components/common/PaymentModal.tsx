@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { BanknotesIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
+import { Modal, Button } from "./ui";
 
 interface PaymentModalProps {
   show: boolean;
@@ -244,604 +246,331 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
     ["00", 0, "000"],
   ];
 
-  if (!show) return null;
+  // Clases del input de monto según el método activo (resalta el seleccionado).
+  const moneyInputCls = (active: boolean, invalid = false) =>
+    [
+      "w-32 rounded-md border px-2.5 py-1.5 text-base text-right font-num text-text",
+      "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
+      invalid
+        ? "border-danger-500 bg-surface"
+        : active
+        ? "border-brand-500 bg-brand-50"
+        : "border-border bg-surface hover:border-border-strong",
+    ].join(" ");
+  const rowCls = "flex items-center gap-2 mb-2.5";
+  const labelCls = "flex-1 text-right text-sm text-text-muted";
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        background: "rgba(0,0,0,0.15)",
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-      onKeyPress={handleKeyPress}
-      tabIndex={0}
-    >
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 12,
-          width: 800,
-          maxWidth: "98vw",
-          boxShadow: "0 8px 32px #0002",
-          padding: 32,
-          position: "relative",
-        }}
-      >
-        <button
-          onClick={handleClose}
-          style={{
-            position: "absolute",
-            top: 16,
-            right: 20,
-            fontSize: 28,
-            color: "#888",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          ×
-        </button>
-        <h2
-          style={{
-            fontWeight: 700,
-            fontSize: 26,
-            marginBottom: 24,
-            color: "#2d3748",
-          }}
-        >
-          Seleccione un método de pago
-        </h2>
-        <div style={{ display: "flex", gap: 24 }}>
-          {/* Columna izquierda */}
-          <div style={{ flex: 1 }}>
-            {/* TOTAL */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 18,
-              }}
-            >
-              <div
-                style={{
-                  background: "#e9eef7",
-                  borderRadius: 6,
-                  padding: "8px 22px",
-                  fontWeight: 700,
-                  fontSize: 22,
-                  color: "#3b4256",
-                  marginRight: 8,
-                }}
-              >
-                Total
-              </div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  fontSize: 28,
-                  color: "#2ecc40",
-                  background: "#f7fafc",
-                  borderRadius: 6,
-                  padding: "8px 22px",
-                }}
-              >
-                Gs. {formatMiles(totalCost)}
-              </div>
-            </div>
-            {/* Efectivo */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Efectivo:
-              </label>
-              <input
-                id="efectivo-input"
-                type="text"
-                value={efectivo ? formatMiles(efectivo) : ""}
-                onFocus={(e) => {
-                  setPagoTipoLocal("E");
-                  // if (efectivo == 0) {
-                  //   setEfectivo(totalRest);
-                  // setTotalRest(0);
-                  // }
-                  e.target.select();
-                }}
-                onChange={(e) => {
-                  const newValue = Number(e.target.value.replace(/\D/g, ""));
-                  setEfectivo(newValue);
-                  const totalResto =
-                    totalCost -
-                    newValue -
-                    banco -
-                    bancoDebito -
-                    bancoCredito -
-                    cuentaCliente -
-                    voucher;
-                  setTotalRest(totalResto);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "E"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "E" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Transferencia */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Transferencia:
-              </label>
-              <input
-                type="text"
-                value={banco ? formatMiles(banco) : ""}
-                onFocus={(e) => {
-                  setPagoTipoLocal("B");
-                  if (banco === 0) {
-                    setBanco(totalRest);
-                    setTotalRest(0);
-                  }
-                  e.target.select();
-                }}
-                onChange={(e) => {
-                  const newValue = Number(e.target.value.replace(/\D/g, ""));
-                  setBanco(newValue);
-                  const totalResto =
-                    totalCost -
-                    efectivo -
-                    newValue -
-                    bancoDebito -
-                    bancoCredito -
-                    cuentaCliente -
-                    voucher;
-                  setTotalRest(totalResto);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "B"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "B" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Tarjeta Débito */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Tarjeta Débito (3% adicional):
-              </label>
-              <input
-                type="text"
-                readOnly
-                value={formatMiles(bancoDebito)}
-                onFocus={(e) => {
-                  setPagoTipoLocal("D");
-                  if (bancoDebito === 0) {
-                    setBancoDebito(Number((totalRest * 1.03).toFixed(0)));
-                    setTotalRest(0);
-                  }
-                  e.target.select();
-                  setTimeout(() => {
-                    document.getElementById("venta-nro-pos-input")?.focus();
-                  }, 100);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "D"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "D" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Tarjeta Crédito */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Tarjeta Crédito (5% adicional):
-              </label>
-              <input
-                type="text"
-                readOnly
-                value={formatMiles(bancoCredito)}
-                onFocus={(e) => {
-                  setPagoTipoLocal("CR");
-                  if (bancoCredito === 0) {
-                    setBancoCredito(Number((totalRest * 1.05).toFixed(0)));
-                    setTotalRest(0);
-                  }
-                  e.target.select();
-                  setTimeout(() => {
-                    document.getElementById("venta-nro-pos-input")?.focus();
-                  }, 100);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "CR"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "CR" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Nro. POS - solo cuando hay pago con tarjeta débito o crédito */}
-            {pagoConTarjeta && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  marginBottom: 10,
-                }}
-              >
-                <label
-                  style={{
-                    flex: 1,
-                    fontSize: 16,
-                    color: "#444",
-                    textAlign: "right",
-                    marginRight: 8,
-                  }}
-                >
-                  Nro. POS (mín. 4 dígitos):
-                </label>
-                <input
-                  id="venta-nro-pos-input"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={ventaNroPOS}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                    setVentaNroPOS(val);
-                  }}
-                  placeholder="Ej: 1234"
-                  style={{
-                    width: 120,
-                    padding: "6px 10px",
-                    border:
-                      ventaNroPOS.trim().length > 0 &&
-                      ventaNroPOS.trim().length < 4
-                        ? "2px solid #ef4444"
-                        : "1px solid #cbd5e1",
-                    borderRadius: 6,
-                    fontSize: 16,
-                    textAlign: "right",
-                    background: "#f9fafb",
-                    outline: "none",
-                  }}
-                />
-              </div>
-            )}
-            {/* Cuenta Cliente */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Cuenta de cliente:
-              </label>
-              <input
-                type="text"
-                value={cuentaCliente ? formatMiles(cuentaCliente) : ""}
-                onFocus={(e) => {
-                  setPagoTipoLocal("C");
-                  if (cuentaCliente === 0) {
-                    setCuentaCliente(totalRest);
-                    setTotalRest(0);
-                  }
-                  e.target.select();
-                }}
-                onChange={(e) => {
-                  const newValue = Number(e.target.value.replace(/\D/g, ""));
-                  setCuentaCliente(newValue);
-                  const totalResto =
-                    totalCost -
-                    efectivo -
-                    banco -
-                    bancoDebito -
-                    bancoCredito -
-                    newValue -
-                    voucher;
-                  setTotalRest(totalResto);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "C"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "C" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Voucher */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: 10,
-              }}
-            >
-              <label
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  color: "#444",
-                  textAlign: "right",
-                  marginRight: 8,
-                }}
-              >
-                Voucher:
-              </label>
-              <input
-                type="text"
-                value={voucher ? formatMiles(voucher) : ""}
-                onFocus={(e) => {
-                  setPagoTipoLocal("V");
-                  if (voucher === 0) {
-                    setVoucher(totalRest);
-                    setTotalRest(0);
-                  }
-                  e.target.select();
-                }}
-                onChange={(e) => {
-                  const newValue = Number(e.target.value.replace(/\D/g, ""));
-                  setVoucher(newValue);
-                  const totalResto =
-                    totalCost -
-                    efectivo -
-                    banco -
-                    bancoDebito -
-                    bancoCredito -
-                    cuentaCliente -
-                    newValue;
-                  setTotalRest(totalResto);
-                }}
-                style={{
-                  width: 120,
-                  padding: "6px 10px",
-                  border:
-                    pagoTipo === "V"
-                      ? "2px solid #a5b4fc"
-                      : "1px solid #cbd5e1",
-                  borderRadius: 6,
-                  fontSize: 16,
-                  textAlign: "right",
-                  background: pagoTipo === "V" ? "#f0f6ff" : "#f9fafb",
-                  outline: "none",
-                }}
-              />
-            </div>
-            {/* Vuelto */}
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: 28,
-                color: "#374151",
-                marginTop: 24,
-              }}
-            >
-              Vuelto:{" "}
-              <span style={{ color: totalRest < 0 ? "red" : "#000" }}>
-                {totalRest < 0 ? formatMiles(totalRest * -1) : "0"}
-              </span>
-            </div>
-            <div
-              style={{
-                marginTop: 18,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={printTicket}
-                onChange={(e) => setPrintTicket(e.target.checked)}
-                id="imprimir"
-              />
-              <label
-                htmlFor="imprimir"
-                style={{ fontSize: 17, color: "#6b7280", fontWeight: 500 }}
-              >
-                Imprimir ticket
-              </label>
-            </div>
-          </div>
-          {/* Columna derecha: Pad numérico */}
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 10,
-                marginBottom: 10,
-              }}
-            >
-              {buttonsPago.flat().map((label, idx) => (
-                <button
-                  key={idx}
-                  style={{
-                    height: 54,
-                    fontSize: 22,
-                    background: "#f8fafc",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                  onClick={() => onNumberClickModal(label)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              style={{
-                height: 48,
-                fontSize: 18,
-                background: "#f8fafc",
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-              onClick={cerarCantidadModal}
-            >
-              Cerar
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 12,
-            marginTop: 32,
-          }}
-        >
-          <button
-            style={{
-              background: "#e5e7eb",
-              color: "#374151",
-              fontWeight: 600,
-              fontSize: 18,
-              borderRadius: 8,
-              padding: "10px 32px",
-              border: "none",
-              cursor: "pointer",
-            }}
+    <Modal
+      open={show}
+      onClose={handleClose}
+      title="Seleccione un método de pago"
+      size="4xl"
+      footer={
+        <>
+          <Button
+            variant="secondary"
             onClick={handleClose}
             disabled={isSubmitting}
           >
             Cancelar
-          </button>
-          <button
-            className={`px-8 py-2.5 rounded-lg font-bold text-lg border-none transition-colors duration-200
-              ${
-                isSubmitting || totalRest > 0 || !ventaNroPOSValido
-                  ? "bg-blue-200 text-white cursor-not-allowed"
-                  : "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-              }
-            `}
+          </Button>
+          <Button
+            leftIcon={BanknotesIcon}
+            loading={isSubmitting}
             onClick={handleSendRequest}
             disabled={isSubmitting || totalRest > 0 || !ventaNroPOSValido}
           >
             Facturar
+          </Button>
+        </>
+      }
+    >
+      {/* onKeyDown en el contenido: Enter factura si el pago está completo. */}
+      <div
+        onKeyDown={handleKeyPress}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-6"
+      >
+        {/* Columna izquierda */}
+        <div>
+          {/* TOTAL */}
+          <div className="flex items-center gap-2 mb-5">
+            <div className="rounded-md bg-surface-muted px-4 py-2 text-lg font-bold text-text">
+              Total
+            </div>
+            <div className="rounded-md bg-success-50 px-4 py-2 text-2xl font-bold text-success-700 tabular-nums">
+              Gs. {formatMiles(totalCost)}
+            </div>
+          </div>
+
+          {/* Efectivo */}
+          <div className={rowCls}>
+            <label htmlFor="efectivo-input" className={labelCls}>
+              Efectivo:
+            </label>
+            <input
+              id="efectivo-input"
+              type="text"
+              inputMode="numeric"
+              aria-label="Monto en efectivo"
+              value={efectivo ? formatMiles(efectivo) : ""}
+              onFocus={(e) => {
+                setPagoTipoLocal("E");
+                e.target.select();
+              }}
+              onChange={(e) => {
+                const newValue = Number(e.target.value.replace(/\D/g, ""));
+                setEfectivo(newValue);
+                const totalResto =
+                  totalCost -
+                  newValue -
+                  banco -
+                  bancoDebito -
+                  bancoCredito -
+                  cuentaCliente -
+                  voucher;
+                setTotalRest(totalResto);
+              }}
+              className={moneyInputCls(pagoTipo === "E")}
+            />
+          </div>
+
+          {/* Transferencia */}
+          <div className={rowCls}>
+            <label htmlFor="transferencia-input" className={labelCls}>
+              Transferencia:
+            </label>
+            <input
+              id="transferencia-input"
+              type="text"
+              inputMode="numeric"
+              aria-label="Monto por transferencia"
+              value={banco ? formatMiles(banco) : ""}
+              onFocus={(e) => {
+                setPagoTipoLocal("B");
+                if (banco === 0) {
+                  setBanco(totalRest);
+                  setTotalRest(0);
+                }
+                e.target.select();
+              }}
+              onChange={(e) => {
+                const newValue = Number(e.target.value.replace(/\D/g, ""));
+                setBanco(newValue);
+                const totalResto =
+                  totalCost -
+                  efectivo -
+                  newValue -
+                  bancoDebito -
+                  bancoCredito -
+                  cuentaCliente -
+                  voucher;
+                setTotalRest(totalResto);
+              }}
+              className={moneyInputCls(pagoTipo === "B")}
+            />
+          </div>
+
+          {/* Tarjeta Débito */}
+          <div className={rowCls}>
+            <label htmlFor="debito-input" className={labelCls}>
+              Tarjeta Débito (3% adicional):
+            </label>
+            <input
+              id="debito-input"
+              type="text"
+              readOnly
+              aria-label="Monto con tarjeta de débito"
+              value={formatMiles(bancoDebito)}
+              onFocus={(e) => {
+                setPagoTipoLocal("D");
+                if (bancoDebito === 0) {
+                  setBancoDebito(Number((totalRest * 1.03).toFixed(0)));
+                  setTotalRest(0);
+                }
+                e.target.select();
+                setTimeout(() => {
+                  document.getElementById("venta-nro-pos-input")?.focus();
+                }, 100);
+              }}
+              className={moneyInputCls(pagoTipo === "D")}
+            />
+          </div>
+
+          {/* Tarjeta Crédito */}
+          <div className={rowCls}>
+            <label htmlFor="credito-input" className={labelCls}>
+              Tarjeta Crédito (5% adicional):
+            </label>
+            <input
+              id="credito-input"
+              type="text"
+              readOnly
+              aria-label="Monto con tarjeta de crédito"
+              value={formatMiles(bancoCredito)}
+              onFocus={(e) => {
+                setPagoTipoLocal("CR");
+                if (bancoCredito === 0) {
+                  setBancoCredito(Number((totalRest * 1.05).toFixed(0)));
+                  setTotalRest(0);
+                }
+                e.target.select();
+                setTimeout(() => {
+                  document.getElementById("venta-nro-pos-input")?.focus();
+                }, 100);
+              }}
+              className={moneyInputCls(pagoTipo === "CR")}
+            />
+          </div>
+
+          {/* Nro. POS - solo cuando hay pago con tarjeta débito o crédito */}
+          {pagoConTarjeta && (
+            <div className={rowCls}>
+              <label htmlFor="venta-nro-pos-input" className={labelCls}>
+                Nro. POS (mín. 4 dígitos):
+              </label>
+              <input
+                id="venta-nro-pos-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                aria-label="Número de comprobante POS"
+                aria-invalid={
+                  ventaNroPOS.trim().length > 0 &&
+                  ventaNroPOS.trim().length < 4
+                    ? true
+                    : undefined
+                }
+                value={ventaNroPOS}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setVentaNroPOS(val);
+                }}
+                placeholder="Ej: 1234"
+                className={moneyInputCls(
+                  false,
+                  ventaNroPOS.trim().length > 0 &&
+                    ventaNroPOS.trim().length < 4,
+                )}
+              />
+            </div>
+          )}
+
+          {/* Cuenta Cliente */}
+          <div className={rowCls}>
+            <label htmlFor="cuenta-cliente-input" className={labelCls}>
+              Cuenta de cliente:
+            </label>
+            <input
+              id="cuenta-cliente-input"
+              type="text"
+              inputMode="numeric"
+              aria-label="Monto a cuenta de cliente"
+              value={cuentaCliente ? formatMiles(cuentaCliente) : ""}
+              onFocus={(e) => {
+                setPagoTipoLocal("C");
+                if (cuentaCliente === 0) {
+                  setCuentaCliente(totalRest);
+                  setTotalRest(0);
+                }
+                e.target.select();
+              }}
+              onChange={(e) => {
+                const newValue = Number(e.target.value.replace(/\D/g, ""));
+                setCuentaCliente(newValue);
+                const totalResto =
+                  totalCost -
+                  efectivo -
+                  banco -
+                  bancoDebito -
+                  bancoCredito -
+                  newValue -
+                  voucher;
+                setTotalRest(totalResto);
+              }}
+              className={moneyInputCls(pagoTipo === "C")}
+            />
+          </div>
+
+          {/* Voucher */}
+          <div className={rowCls}>
+            <label htmlFor="voucher-input" className={labelCls}>
+              Voucher:
+            </label>
+            <input
+              id="voucher-input"
+              type="text"
+              inputMode="numeric"
+              aria-label="Monto en voucher"
+              value={voucher ? formatMiles(voucher) : ""}
+              onFocus={(e) => {
+                setPagoTipoLocal("V");
+                if (voucher === 0) {
+                  setVoucher(totalRest);
+                  setTotalRest(0);
+                }
+                e.target.select();
+              }}
+              onChange={(e) => {
+                const newValue = Number(e.target.value.replace(/\D/g, ""));
+                setVoucher(newValue);
+                const totalResto =
+                  totalCost -
+                  efectivo -
+                  banco -
+                  bancoDebito -
+                  bancoCredito -
+                  cuentaCliente -
+                  newValue;
+                setTotalRest(totalResto);
+              }}
+              className={moneyInputCls(pagoTipo === "V")}
+            />
+          </div>
+
+          {/* Vuelto */}
+          <div className="mt-6 text-2xl font-bold text-text">
+            Vuelto:{" "}
+            <span className="text-text-strong tabular-nums">
+              {totalRest < 0 ? formatMiles(totalRest * -1) : "0"}
+            </span>
+          </div>
+
+          <label className="mt-4 flex items-center gap-2 cursor-pointer text-text-muted">
+            <input
+              type="checkbox"
+              checked={printTicket}
+              onChange={(e) => setPrintTicket(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-brand-700 focus:ring-2 focus:ring-brand-500/40"
+            />
+            <span className="text-sm font-medium">Imprimir ticket</span>
+          </label>
+        </div>
+
+        {/* Columna derecha: Pad numérico */}
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-2.5">
+            {buttonsPago.flat().map((label, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onNumberClickModal(label)}
+                className="h-14 rounded-lg border border-border bg-surface-muted text-xl font-semibold text-text transition-colors hover:bg-surface-sunken active:bg-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={cerarCantidadModal}
+            className="h-12 rounded-lg border border-border bg-surface-muted text-base font-medium text-text transition-colors hover:bg-surface-sunken active:bg-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+          >
+            Borrar
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

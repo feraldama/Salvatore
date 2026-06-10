@@ -207,7 +207,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onEdit(item)}
                           aria-label="Editar"
                           title="Editar"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-md text-brand-700 hover:bg-brand-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-brand-700 hover:bg-brand-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
                         >
                           <PencilSquareIcon className="h-5 w-5" />
                         </button>
@@ -217,7 +217,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onViewCredit(item)}
                           aria-label="Ver detalles de crédito"
                           title="Ver detalles de crédito"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-md text-success-700 hover:bg-success-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-success-700 hover:bg-success-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
                         >
                           <CreditCardIcon className="h-5 w-5" />
                         </button>
@@ -227,7 +227,7 @@ function DataTable<T extends DataTableRow>({
                           onClick={() => onDelete(item)}
                           aria-label="Eliminar"
                           title="Eliminar"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-md text-danger-700 hover:bg-danger-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-600/40"
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-danger-700 hover:bg-danger-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-600/40"
                         >
                           <TrashIcon className="h-5 w-5" />
                         </button>

@@ -13,6 +13,7 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../contexts/useAuth";
+import { usePermiso } from "../../hooks/usePermiso";
 import {
   Button,
   Card,
@@ -164,6 +165,9 @@ function StatSkeleton() {
 
 function Dashboard() {
   const { user, empresas } = useAuth();
+  // Reportes/analítica de negocio: solo para roles con permiso (admin siempre).
+  // Un vendedor no ve la tendencia de ventas ni el acceso a Reportes.
+  const canVerReportes = usePermiso("REPORTES", "leer");
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,9 +216,11 @@ function Dashboard() {
         umbralGlobal: UMBRAL_GLOBAL_STOCK,
         total: 0,
       })),
-      getVentasPorDia(daysAgoISO(TREND_DAYS - 1), today).catch(
-        () => [] as VentaPorDia[],
-      ),
+      canVerReportes
+        ? getVentasPorDia(daysAgoISO(TREND_DAYS - 1), today).catch(
+            () => [] as VentaPorDia[],
+          )
+        : Promise.resolve([] as VentaPorDia[]),
     ])
       .then(
         ([
@@ -265,7 +271,7 @@ function Dashboard() {
     return () => {
       active = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, canVerReportes]);
 
   const handleRetry = () => setReloadKey((k) => k + 1);
 
@@ -354,7 +360,7 @@ function Dashboard() {
         )}
       </section>
 
-      {!loading && !error && stats && (
+      {canVerReportes && !loading && !error && stats && (
         <Card padding="none">
           {(() => {
             const serie = stats.ventasPorDia;
@@ -543,13 +549,15 @@ function Dashboard() {
             to="/apertura-cierre-caja"
             tone="warning"
           />
-          <QuickAction
-            icon={ChartBarIcon}
-            title="Reportes"
-            description="Resumen de ventas y movimientos"
-            to="/reportes"
-            tone="info"
-          />
+          {canVerReportes && (
+            <QuickAction
+              icon={ChartBarIcon}
+              title="Reportes"
+              description="Resumen de ventas y movimientos"
+              to="/reportes"
+              tone="info"
+            />
+          )}
         </div>
       </Card>
     </div>

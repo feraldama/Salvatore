@@ -14,7 +14,8 @@ exports.getAll = async (req, res) => {
       offset,
       sortBy,
       sortOrder,
-      req.empresaId
+      req.empresaId,
+      req.localId
     );
     res.json({
       data: result.cajas,
@@ -46,7 +47,11 @@ exports.getById = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const caja = await Caja.create({ ...req.body, EmpresaId: req.empresaId });
+    const caja = await Caja.create({
+      ...req.body,
+      EmpresaId: req.empresaId,
+      LocalId: req.localId ?? req.body.LocalId ?? null,
+    });
     res.status(201).json({ message: "Caja creada exitosamente", data: caja });
   } catch (error) {
     console.error(error);
@@ -111,7 +116,8 @@ exports.searchCajas = async (req, res) => {
       offset,
       sortBy,
       sortOrder,
-      req.empresaId
+      req.empresaId,
+      req.localId
     );
 
     res.json({

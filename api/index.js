@@ -64,7 +64,7 @@ const corsOptions = {
     return cb(new Error(`Origin ${origin} no permitido por CORS`));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Empresa-Id"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Empresa-Id", "X-Local-Id"],
   credentials: true,
   maxAge: 86400,
 };

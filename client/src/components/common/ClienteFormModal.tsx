@@ -131,7 +131,7 @@ export default function ClienteFormModal({
           )}
         </div>
         <TextInput
-          label="Nombre *"
+          label="Nombre"
           name="ClienteNombre"
           value={formData.ClienteNombre}
           onChange={handleInputChange}

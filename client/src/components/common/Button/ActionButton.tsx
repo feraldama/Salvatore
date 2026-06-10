@@ -23,7 +23,7 @@ export default function ActionButton({
     <button
       onClick={onClick}
       type={type}
-      className={`flex items-center gap-2 px-4 py-2 bg-brand-700 rounded-lg whitespace-nowrap transition-colors duration-150 ${
+      className={`flex items-center gap-2 px-4 py-2 bg-brand-700 rounded-lg whitespace-nowrap transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
         className ? className : "text-white"
       } ${
         disabled
@@ -32,7 +32,7 @@ export default function ActionButton({
       }`}
       disabled={disabled}
     >
-      {Icon && <Icon className="w-5 h-5" />}
+      {Icon && <Icon className="w-5 h-5" aria-hidden="true" />}
       {label}
     </button>
   );

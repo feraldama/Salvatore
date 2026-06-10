@@ -394,7 +394,7 @@ export default function UsuariosList({
         >
           {!currentUser && (
             <TextInput
-              label="ID de Usuario *"
+              label="ID de Usuario"
               name="UsuarioId"
               value={formData.UsuarioId}
               onChange={handleInputChange}
@@ -402,7 +402,7 @@ export default function UsuariosList({
             />
           )}
           <TextInput
-            label="Nombre *"
+            label="Nombre"
             name="UsuarioNombre"
             value={formData.UsuarioNombre}
             onChange={(e) =>
