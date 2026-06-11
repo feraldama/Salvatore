@@ -91,7 +91,7 @@ export default function Sales() {
     itemsPerPage: 10,
   });
   // const [modalPago, setModalPago] = useState(false);
-  const { user } = useAuth();
+  const { user, empresaActiva, localActiva } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [showInvoicePrintModal, setShowInvoicePrintModal] = useState(false);
   const [totalRest, setTotalRest] = useState(0);
@@ -1174,21 +1174,35 @@ export default function Sales() {
             )}
           </div>
           {user && (
-            <div className="ml-6 font-semibold text-[#222] text-[16px] flex items-center gap-2">
-              <span>
+            <div className="ml-6 flex items-center gap-2">
+              <span className="font-semibold text-[#222] text-[16px]">
                 {user.nombre + " "}
                 <span style={{ color: "#888", fontWeight: 400 }}>
                   ({user.id})
                 </span>
               </span>
-              {localNombre && (
-                <span className="text-red-600 font-medium">
-                  | Local: {localNombre}
+              {empresaActiva && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 border border-indigo-200"
+                  title="Empresa activa (facturación)"
+                >
+                  🏢 {empresaActiva.EmpresaNombre}
+                </span>
+              )}
+              {(localActiva?.LocalNombre || localNombre || user.LocalNombre) && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 border border-slate-200"
+                  title="Sucursal / Local"
+                >
+                  📍 {localActiva?.LocalNombre || localNombre || user.LocalNombre}
                 </span>
               )}
               {cajaAperturada && (
-                <span className="text-blue-600 font-medium">
-                  | Caja: {cajaAperturada.CajaDescripcion}
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200"
+                  title="Caja aperturada"
+                >
+                  💵 {cajaAperturada.CajaDescripcion}
                 </span>
               )}
               <ActionButton
