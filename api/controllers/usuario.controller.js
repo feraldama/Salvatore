@@ -146,6 +146,9 @@ exports.login = async (req, res) => {
 
     // La empresa del usuario se deriva del local al que pertenece.
     const empresaIdEfectiva = usuario.LocalEmpresaId || usuario.EmpresaId || 1;
+    // Tipo de empresa derivado del local ('M' minorista, 'D' distribuidora).
+    // Define qué pantalla de venta ve el usuario; por defecto minorista.
+    const empresaTipoEfectivo = usuario.LocalEmpresaTipo || "M";
 
     // Crear payload seguro
     const payload = {
@@ -156,6 +159,7 @@ exports.login = async (req, res) => {
       LocalId: usuario.LocalId,
       AlmacenId: usuario.AlmacenId || null,
       EmpresaId: empresaIdEfectiva,
+      EmpresaTipo: empresaTipoEfectivo,
     };
 
     // Generar token. Duración configurable vía JWT_EXPIRES_IN (ej: "4h", "1d").
@@ -193,6 +197,7 @@ exports.login = async (req, res) => {
         LocalId: usuario.LocalId,
         AlmacenId: usuario.AlmacenId || null,
         EmpresaId: empresaIdEfectiva,
+        EmpresaTipo: empresaTipoEfectivo,
       },
       permisos,
     });

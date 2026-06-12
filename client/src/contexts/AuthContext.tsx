@@ -14,6 +14,8 @@ export interface User {
   AlmacenId?: number | null;
   isAdmin?: string;
   EmpresaId?: number;
+  // Tipo de empresa del usuario derivado de su local ('M' minorista, 'D' distribuidora).
+  EmpresaTipo?: string;
 }
 
 interface Credentials {

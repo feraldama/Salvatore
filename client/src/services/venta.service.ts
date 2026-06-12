@@ -262,6 +262,9 @@ export interface ConfirmarVentaPayload {
   VentaNroFactura?: number;
   VentaTimbrado?: number;
   VentaNroPOS?: string;
+  // Marca la venta como ENVÍO: el pago no entra a la caja del operador (lo cobra
+  // el repartidor / al recibir) y se registra con grupos de pago dedicados.
+  EsEnvio?: boolean;
   Pagos: {
     Efectivo?: number;
     Banco?: number;
@@ -325,6 +328,65 @@ export const devolverVenta = async (payload: DevolucionVentaPayload) => {
     const axiosError = error as AxiosError<{ message?: string }>;
     throw (
       axiosError.response?.data || { message: "Error al realizar la devolución" }
+    );
+  }
+};
+
+// --- Reporte de envíos (ventas tipo ENVÍO) ---
+export interface EnvioVenta {
+  VentaId: number;
+  VentaFecha: string;
+  VentaTipo: string;
+  Total: number;
+  VentaEntrega: number;
+  Pendiente: number;
+  ClienteNombre?: string;
+  ClienteApellido?: string;
+  VendedorId?: number | null;
+  VendedorNombre?: string;
+  VendedorApellido?: string;
+}
+
+export interface EnviosResumen {
+  porMetodo: {
+    efectivo: number;
+    pos: number;
+    voucher: number;
+    transferencia: number;
+    credito: number;
+  };
+  totalEnviado: number;
+  cantidad: number;
+  ventas: EnvioVenta[];
+}
+
+export const getEnviosResumen = async (params: {
+  fechaDesde?: string;
+  fechaHasta?: string;
+  vendedorId?: number | string;
+}): Promise<EnviosResumen> => {
+  try {
+    const response = await api.get("/venta/envios", { params });
+    return (
+      response.data?.data ?? {
+        porMetodo: {
+          efectivo: 0,
+          pos: 0,
+          voucher: 0,
+          transferencia: 0,
+          credito: 0,
+        },
+        totalEnviado: 0,
+        cantidad: 0,
+        ventas: [],
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener el resumen de envíos",
+      }
     );
   }
 };

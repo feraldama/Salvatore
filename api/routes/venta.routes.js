@@ -29,6 +29,7 @@ router.get(
   authMiddleware,
   ventaController.getVentasPorDia
 );
+router.get("/envios", authMiddleware, ventaController.getEnviosResumen);
 router.post("/confirmar", authMiddleware, ventaController.confirmar);
 router.post("/devolucion", authMiddleware, ventaController.devolucion);
 router.get("/search", authMiddleware, ventaController.searchVentas);

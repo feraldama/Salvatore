@@ -424,6 +424,41 @@ exports.getVentasPorDia = async (req, res) => {
   }
 };
 
+// GET /venta/envios?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD&vendedorId=N
+// Reporte de ventas tipo ENVÍO: totales por forma de pago + detalle. Scopeado
+// a la empresa activa (req.empresaId). fecha y vendedor son opcionales.
+exports.getEnviosResumen = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta, vendedorId } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getEnviosResumen({
+      empresaId: req.empresaId,
+      fechaDesde,
+      fechaHasta,
+      vendedorId,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener resumen de envíos:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // Confirma una venta de forma atómica: cabecera + items + descuento de stock
 // (general y por almacén) + movimientos de caja + actualización del monto de
 // caja + ventacredito/ventacreditopago si hubo cobro a cuenta corriente.
@@ -441,7 +476,13 @@ exports.confirmar = async (req, res) => {
     VentaPagoTipo,
     Pagos = {},
     Productos = [],
+    EsEnvio = false,
   } = req.body || {};
+
+  // ENVÍO: la mercadería se entrega ahora y el pago lo cobra el repartidor / al
+  // recibir, así que NO entra a la caja física del operador ni a su arqueo. Se
+  // registra con grupos de pago dedicados (11-14) para poder verlo aparte.
+  const esEnvio = EsEnvio === true || EsEnvio === "S" || EsEnvio === "s";
 
   // Todos los montos de pago caen en columnas BIGINT (Total, VentaEntrega,
   // RegistroDiarioCajaMonto, CajaMonto, VentaCreditoPagoMonto). PG no trunca
@@ -495,8 +536,8 @@ exports.confirmar = async (req, res) => {
       `INSERT INTO venta (
          VentaId, VentaFecha, ClienteId, AlmacenId, VentaTipo, VentaPagoTipo,
          VentaCantidadProductos, VentaUsuario, VentaNroFactura, VentaTimbrado,
-         Total, VentaEntrega, VentaNroPOS, EmpresaId
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         Total, VentaEntrega, VentaNroPOS, EmpresaId, EsEnvio
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ultorden,
         ventaFecha,
@@ -512,6 +553,7 @@ exports.confirmar = async (req, res) => {
         ventaEntrega,
         VentaNroPOS,
         req.empresaId || 1,
+        esEnvio ? "S" : "N",
       ]
     );
 
@@ -653,8 +695,24 @@ exports.confirmar = async (req, res) => {
     // 6. RegistroDiarioCaja por método de pago.
     // Efectivo: TipoGastoGrupoId=3 (cobro crédito) si la venta es a cuenta,
     //           TipoGastoGrupoId=1 (venta contado) si no.
+    // Grupos de pago: en envío usan los IDs dedicados (11-14) para que el
+    // cierre los separe del efectivo/POS/etc. que sí están en la caja física.
+    const etiquetaEnvio = esEnvio ? " (ENVÍO)" : "";
     if (efectivo > 0) {
       const isCredito = cuentaCliente > 0;
+      const grupoEfectivo = esEnvio ? 11 : isCredito ? 3 : 1;
+      const detalleEfectivo = isCredito
+        ? `Venta Crédito N°: ${ultorden}${etiquetaEnvio}`
+        : `Venta N°: ${ultorden}${etiquetaEnvio}`;
+      await conn.query(
+        `INSERT INTO registrodiariocaja (
+           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+        [CajaId, ventaFecha, grupoEfectivo, detalleEfectivo, efectivo, UsuarioId]
+      );
+    }
+    if (banco > 0) {
       await conn.query(
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
@@ -663,20 +721,11 @@ exports.confirmar = async (req, res) => {
         [
           CajaId,
           ventaFecha,
-          isCredito ? 3 : 1,
-          isCredito ? `Venta Crédito N°: ${ultorden}` : `Venta N°: ${ultorden}`,
-          efectivo,
+          esEnvio ? 12 : 4,
+          `Venta POS N°: ${ultorden}${etiquetaEnvio}`,
+          banco,
           UsuarioId,
         ]
-      );
-    }
-    if (banco > 0) {
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 4, ?, ?, ?)`,
-        [CajaId, ventaFecha, `Venta POS N°: ${ultorden}`, banco, UsuarioId]
       );
     }
     if (voucher > 0) {
@@ -684,8 +733,15 @@ exports.confirmar = async (req, res) => {
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
            RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 5, ?, ?, ?)`,
-        [CajaId, ventaFecha, `Venta Voucher N°: ${ultorden}`, voucher, UsuarioId]
+         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+        [
+          CajaId,
+          ventaFecha,
+          esEnvio ? 13 : 5,
+          `Venta Voucher N°: ${ultorden}${etiquetaEnvio}`,
+          voucher,
+          UsuarioId,
+        ]
       );
     }
     if (transferencia > 0) {
@@ -693,19 +749,21 @@ exports.confirmar = async (req, res) => {
         `INSERT INTO registrodiariocaja (
            CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
            RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 6, ?, ?, ?)`,
+         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
         [
           CajaId,
           ventaFecha,
-          `Venta Transferencia N°: ${ultorden}`,
+          esEnvio ? 14 : 6,
+          `Venta Transferencia N°: ${ultorden}${etiquetaEnvio}`,
           transferencia,
           UsuarioId,
         ]
       );
     }
 
-    // 7. Solo el efectivo se acumula en la caja física.
-    if (efectivo > 0) {
+    // 7. Solo el efectivo de una venta NORMAL se acumula en la caja física.
+    // En envío el efectivo lo cobra el repartidor, no entra a la caja.
+    if (efectivo > 0 && !esEnvio) {
       await conn.query(
         `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
         [efectivo, CajaId]

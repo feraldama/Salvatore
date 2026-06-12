@@ -721,6 +721,84 @@ const Venta = {
       }
     });
   },
+
+  // Reporte de envíos: detalle de ventas marcadas EsEnvio en un rango, más los
+  // totales por forma de pago. Los métodos cobrados ahora (efectivo/POS/voucher/
+  // transferencia) salen de registrodiariocaja (grupos de envío 11-14, atados a
+  // la venta por el N° del detalle); el crédito (paga al recibir) = Total -
+  // VentaEntrega. Scope por empresa siempre; fecha y vendedor opcionales.
+  getEnviosResumen: async ({ empresaId, fechaDesde, fechaHasta, vendedorId }) => {
+    const pe = db.promise();
+    const cond = ["v.EsEnvio = 'S'", "v.EmpresaId = ?"];
+    const params = [Number(empresaId)];
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    if (vendedorId) {
+      cond.push("c.VendedorId = ?");
+      params.push(Number(vendedorId));
+    }
+    const where = cond.join(" AND ");
+
+    // Detalle de ventas envío.
+    const [ventas] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total, v.VentaEntrega,
+              (v.Total - v.VentaEntrega) AS Pendiente,
+              c.ClienteNombre, c.ClienteApellido,
+              ve.VendedorId, ve.VendedorNombre, ve.VendedorApellido
+         FROM venta v
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+         LEFT JOIN vendedor ve ON ve.VendedorId = c.VendedorId
+        WHERE ${where}
+        ORDER BY v.VentaFecha DESC, v.VentaId DESC`,
+      params
+    );
+
+    // Totales por método cobrado al confirmar (grupos de envío en caja),
+    // atados a las ventas del filtro por el N° que figura en el detalle.
+    const [metodos] = await pe.query(
+      `SELECT r.TipoGastoGrupoId AS grupo,
+              COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS total
+         FROM registrodiariocaja r
+         JOIN venta v
+           ON v.VentaId = CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              )
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE r.TipoGastoId = 2
+          AND r.TipoGastoGrupoId IN (11, 12, 13, 14)
+          AND ${where}
+        GROUP BY r.TipoGastoGrupoId`,
+      params
+    );
+
+    const porMetodo = {
+      efectivo: 0,
+      pos: 0,
+      voucher: 0,
+      transferencia: 0,
+      credito: 0,
+    };
+    for (const m of metodos) {
+      const g = Number(m.grupo);
+      if (g === 11) porMetodo.efectivo = Number(m.total);
+      else if (g === 12) porMetodo.pos = Number(m.total);
+      else if (g === 13) porMetodo.voucher = Number(m.total);
+      else if (g === 14) porMetodo.transferencia = Number(m.total);
+    }
+    porMetodo.credito = ventas.reduce(
+      (a, v) => a + Number(v.Pendiente || 0),
+      0
+    );
+
+    const totalEnviado = ventas.reduce((a, v) => a + Number(v.Total || 0), 0);
+    return { porMetodo, totalEnviado, cantidad: ventas.length, ventas };
+  },
 };
 
 module.exports = Venta;

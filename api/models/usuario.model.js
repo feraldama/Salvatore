@@ -58,10 +58,12 @@ const Usuario = {
       db.query(
         `SELECT u.*,
                 a.AlmacenId AS AlmacenId,
-                l.EmpresaId AS LocalEmpresaId
+                l.EmpresaId AS LocalEmpresaId,
+                e.EmpresaTipo AS LocalEmpresaTipo
            FROM usuario u
            LEFT JOIN almacen a ON a.LocalId = u.LocalId
            LEFT JOIN local l ON l.LocalId = u.LocalId
+           LEFT JOIN empresa e ON e.EmpresaId = l.EmpresaId
           WHERE u.UsuarioId = ?
           LIMIT 1`,
         [email],

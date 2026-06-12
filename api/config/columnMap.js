@@ -141,6 +141,7 @@ module.exports = {
   "total": "Total",
   "ventaentrega": "VentaEntrega",
   "ventanropos": "VentaNroPOS",
+  "esenvio": "EsEnvio",
   "ventacreditoid": "VentaCreditoId",
   "ventacreditopagocant": "VentaCreditoPagoCant",
   "ventacreditopagoid": "VentaCreditoPagoId",

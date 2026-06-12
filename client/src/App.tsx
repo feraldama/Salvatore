@@ -17,7 +17,7 @@ import CajasPage from "./pages/cajas/CajasPage";
 import TiposGastoPage from "./pages/tipogasto/TiposGastoPage";
 import CustomersPage from "./pages/customers/CustomersPage";
 import AperturaCierreCajaPage from "./pages/cajas/AperturaCierreCajaPage";
-import Sales from "./pages/dashboard/Sales";
+import VentasDispatcher from "./pages/dashboard/VentasDispatcher";
 import LocalesPage from "./pages/locales/LocalesPage";
 import AlmacenesPage from "./pages/almacenes/AlmacenesPage";
 import CombosPage from "./pages/combos/CombosPage";
@@ -50,7 +50,7 @@ function App() {
             path="/ventas"
             element={
               <PrivateRoute>
-                <Sales />
+                <VentasDispatcher />
               </PrivateRoute>
             }
           />
