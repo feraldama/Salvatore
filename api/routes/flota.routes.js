@@ -29,7 +29,33 @@ router.use(authMiddleware);
 
 router.get("/config", flota.getConfig);
 
-// Chofer
+// POS mayorista + ABM dashboard: vehículos activos (?all=1 lista completa).
+router.get("/vehiculos", flota.getVehiculosActivos);
+
+// ── ABM de flota (dashboard admin) ──────────────────────────────────────────
+// Vehículos
+router.post("/vehiculos", flota.crearVehiculo);
+router.put("/vehiculos/:id", flota.actualizarVehiculo);
+router.delete("/vehiculos/:id", flota.eliminarVehiculo);
+// Asignación de choferes al vehículo
+router.get("/vehiculos/:id/choferes", flota.getChoferesDeVehiculo);
+router.put("/vehiculos/:id/choferes", flota.setChoferesDeVehiculo);
+// Documentos del vehículo
+router.get("/vehiculos/:id/documentos", flota.getDocsVehiculo);
+router.post("/vehiculos/:id/documentos", flota.crearDocVehiculo);
+router.delete("/documentos-vehiculo/:docId", flota.eliminarDocVehiculo);
+
+// Choferes (usuarios con perfil CHOFER)
+router.get("/choferes", flota.listChoferes);
+router.post("/choferes", flota.crearChofer);
+router.put("/choferes/:id", flota.actualizarChofer);
+router.delete("/choferes/:id", flota.eliminarChofer);
+// Documentos del chofer
+router.get("/choferes/:id/documentos", flota.getDocsChofer);
+router.post("/choferes/:id/documentos", flota.crearDocChofer);
+router.delete("/documentos-chofer/:docId", flota.eliminarDocChofer);
+
+// Chofer (app mobile)
 router.get("/vehiculos/mis", flota.getMisVehiculos);
 router.get("/mantenimiento/mis-pendientes", flota.getMisPendientes);
 router.get("/viajes/activo", flota.getViajeActivo);

@@ -5,7 +5,7 @@ import type {
   VentaCreditoPago,
   VentaFilters,
 } from "../../services/venta.service";
-import { formatCurrency, formatMiles } from "../../utils/utils";
+import { formatCurrency, formatMiles, formatFechaHora } from "../../utils/utils";
 import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
 import { Button } from "../common/ui";
@@ -182,9 +182,9 @@ const VentasList = ({
                 (pago: VentaCreditoPago) => `
               <tr class="border-b hover:bg-surface-sunken">
                 <td class="py-2 px-4">${pago.VentaCreditoPagoId}</td>
-                <td class="py-2 px-4">${new Date(
+                <td class="py-2 px-4">${formatFechaHora(
                   pago.VentaCreditoPagoFecha
-                ).toLocaleString()}</td>
+                )}</td>
                 <td class="text-right py-2 px-4">${formatCurrency(
                   pago.VentaCreditoPagoMonto
                 )}</td>
@@ -205,9 +205,9 @@ const VentasList = ({
                 ? `${venta.ClienteNombre} ${venta.ClienteApellido}`
                 : `Cliente #${venta.ClienteId}`
             }</p>
-            <p><strong>Fecha de Venta:</strong> ${new Date(
+            <p><strong>Fecha de Venta:</strong> ${formatFechaHora(
               venta.VentaFecha
-            ).toLocaleString()}</p>
+            )}</p>
             <p><strong>Monto Total:</strong> ${formatCurrency(venta.Total)}</p>
             <p><strong>Cantidad de Pagos:</strong> ${
               ventaCredito.VentaCreditoPagoCant
@@ -259,16 +259,7 @@ const VentasList = ({
     {
       key: "VentaFecha",
       label: "Fecha",
-      render: (venta: VentaWithId) => {
-        const fecha = new Date(venta.VentaFecha);
-        return fecha.toLocaleDateString("es-ES", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      },
+      render: (venta: VentaWithId) => formatFechaHora(venta.VentaFecha),
     },
     {
       key: "Cliente",

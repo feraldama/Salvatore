@@ -5,7 +5,7 @@ import type {
   CompraProducto,
   CompraFilters,
 } from "../../services/compras.service";
-import { formatCurrency, formatMiles } from "../../utils/utils";
+import { formatCurrency, formatMiles, formatFechaHora } from "../../utils/utils";
 import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
 import { Button } from "../common/ui";
@@ -165,30 +165,9 @@ const ComprasList = ({
     {
       key: "CompraFecha",
       label: "Fecha",
-      render: (compra: CompraWithId) => {
-        const raw = String(compra.CompraFecha ?? "");
-        if (!raw) return "";
-        // Si trae componente horario o sufijo Z, el backend ya lo ajustó a UTC
-        // sobre el local del servidor; dejo que JS lo interprete y lo
-        // muestre en local con hora.
-        if (/[TZ:]/.test(raw)) {
-          return new Date(raw).toLocaleString("es-ES", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-        }
-        // Fallback DATE puro "YYYY-MM-DD": construyo local sin hora.
-        const [y, mo, d] = raw.slice(0, 10).split("-").map(Number);
-        if (!y || !mo || !d) return raw;
-        return new Date(y, mo - 1, d).toLocaleDateString("es-ES", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-      },
+      // dd/mm/aaaa (con hora si el dato la trae). formatFechaHora parsea los
+      // componentes del string ISO, evitando el desfase de zona horaria.
+      render: (compra: CompraWithId) => formatFechaHora(compra.CompraFecha),
     },
     {
       key: "Proveedor",

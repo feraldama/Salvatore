@@ -26,6 +26,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/facturas": "Facturas",
   "/vendedores": "Vendedores",
   "/empresas": "Empresas",
+  "/flota/vehiculos": "Vehículos",
+  "/flota/choferes": "Choferes",
 };
 
 // const APP_NAME = "Salvatore";

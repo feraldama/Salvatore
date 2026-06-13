@@ -60,6 +60,58 @@ export const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+// ── Fechas ───────────────────────────────────────────────────────────────────
+// Regla del proyecto: TODA fecha mostrada al usuario va en dd/mm/aaaa.
+// Para strings ISO de fecha pura ("aaaa-mm-dd") y datetime ("aaaa-mm-ddTHH:mm…")
+// se parsean los componentes del string en vez de usar new Date(), así se evita
+// el desfase de zona horaria (PY = UTC-4). El backend ya guarda la hora local.
+
+type FechaInput = string | number | Date | null | undefined;
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// Extrae {y, mo, d, hh, mi} de un string ISO-ish; null si no matchea.
+const partesISO = (s: string) => {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  return m
+    ? { y: m[1], mo: m[2], d: m[3], hh: m[4] as string | undefined, mi: m[5] as string | undefined }
+    : null;
+};
+
+// dd/mm/aaaa
+export const formatFecha = (value: FechaInput): string => {
+  if (value == null || value === "") return "";
+  if (typeof value === "string") {
+    const p = partesISO(value);
+    if (p) return `${p.d}/${p.mo}/${p.y}`;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
+// dd/mm/aaaa HH:mm (si el dato no trae hora, cae a dd/mm/aaaa)
+export const formatFechaHora = (value: FechaInput): string => {
+  if (value == null || value === "") return "";
+  if (typeof value === "string") {
+    const p = partesISO(value);
+    if (p) {
+      return p.hh != null
+        ? `${p.d}/${p.mo}/${p.y} ${p.hh}:${p.mi}`
+        : `${p.d}/${p.mo}/${p.y}`;
+    }
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return `${formatFecha(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return `${formatFecha(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
 // Interfaz para los items del carrito
 export interface CarritoItem {
   nombre: string;

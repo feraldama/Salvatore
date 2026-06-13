@@ -11,7 +11,7 @@ import {
   getProductosByVentaId,
 } from "../../services/venta.service";
 import { getClienteById } from "../../services/clientes.service";
-import { calcularDV } from "../../utils/utils";
+import { calcularDV, formatFecha } from "../../utils/utils";
 import { Modal, Button, TextInput, LoadingState, EmptyState } from "./ui";
 
 interface VentaProducto {
@@ -190,14 +190,7 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     return numeroRedondeado.toLocaleString("es-PY");
   };
 
-  const formatearFecha = (fecha: string) => {
-    const date = new Date(fecha);
-    return date.toLocaleDateString("es-PY", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-  };
+  const formatearFecha = (fecha: string) => formatFecha(fecha);
 
   const imprimirFactura = () => {
     if (!ventaSeleccionada) {

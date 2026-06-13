@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import SearchButton from "../../components/common/Input/SearchButton";
 import "../../App.css";
 import {
@@ -8,7 +9,11 @@ import {
 import { useAuth } from "../../contexts/useAuth";
 import PaymentModalMayorista from "../../components/common/PaymentModalMayorista";
 import Swal from "sweetalert2";
-import { confirmarVenta, devolverVenta } from "../../services/venta.service";
+import { confirmarVenta } from "../../services/venta.service";
+import {
+  getVehiculosActivos,
+  type VehiculoFlota,
+} from "../../services/flota.service";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import {
@@ -121,6 +126,10 @@ export default function SalesMayorista() {
   // Tipo de venta mayorista: CONTADO (cobro inmediato) o ENVIO (se entregan los
   // productos y el cliente paga al recibir; se registra como cuenta corriente).
   const [tipoVenta, setTipoVenta] = useState<"CONTADO" | "ENVIO">("CONTADO");
+  // Vehículos activos de la flota y el elegido para el envío (obligatorio en
+  // ENVIO; el backend lo registra en venta_envio para la app mobile de flota).
+  const [vehiculos, setVehiculos] = useState<VehiculoFlota[]>([]);
+  const [vehiculoEnvioId, setVehiculoEnvioId] = useState<number | "">("");
   // Vendedores de la empresa, para mostrar el asignado al cliente seleccionado.
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const navigate = useNavigate();
@@ -129,9 +138,16 @@ export default function SalesMayorista() {
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null,
   );
-  const [isDevolucion, setIsDevolucion] = useState(false);
+  // Índice del producto resaltado para navegación por teclado en la lista
+  // (flechas ↑/↓ + Enter). -1 = ninguno (foco fuera de la lista).
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const cantidadRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Contenedor scrollable de la lista de productos: recibe el foco al tabular
+  // desde el buscador (solo búsquedas por texto) para navegar con el teclado.
+  const productListRef = useRef<HTMLDivElement>(null);
+  // Fila actualmente resaltada, para hacer scrollIntoView al navegar.
+  const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Flag para indicar "al llegar los próximos resultados de búsqueda, agregar
   // el primer producto al carrito". Se activa cuando el usuario presiona Enter
@@ -161,6 +177,14 @@ export default function SalesMayorista() {
     }
   }, []);
 
+  // Cargar los vehículos de la flota al seleccionar ENVÍO (una sola vez).
+  useEffect(() => {
+    if (tipoVenta !== "ENVIO" || vehiculos.length > 0) return;
+    getVehiculosActivos()
+      .then(setVehiculos)
+      .catch((e) => console.error("Error al cargar vehículos de flota:", e));
+  }, [tipoVenta, vehiculos.length]);
+
   const agregarProducto = (producto: {
     id: number;
     nombre: string;
@@ -185,8 +209,9 @@ export default function SalesMayorista() {
       {
         ...producto,
         precio: precioSeguro,
-        cantidad: 1,
-        caja: false,
+        cantidad: 0,
+        // Mayorista: por defecto la venta es por CAJA.
+        caja: true,
         cartItemId: nuevoCartItemId,
         // Guardar los precios originales para cálculos posteriores
         precioVenta: producto.precio,
@@ -448,24 +473,6 @@ export default function SalesMayorista() {
     );
   }, [clienteSeleccionado]);
 
-  // Simulación de items y cliente seleccionados (ajusta según tu lógica real)
-  const cartItems = carrito.map((p) => ({
-    id: p.id,
-    nombre: p.nombre,
-    quantity: p.cantidad,
-    salePrice: p.precio,
-    price: p.precio,
-    unidad: "U",
-    totalPrice: obtenerTotal(p),
-  }));
-
-  function getSubtotal(items: Array<{ totalPrice: number }>): number {
-    return items.reduce(
-      (acc: number, item: { totalPrice: number }) => acc + item.totalPrice,
-      0,
-    );
-  }
-
   function calcularPrecioConCombo(
     productoId: number,
     cantidad: number,
@@ -533,9 +540,6 @@ export default function SalesMayorista() {
       };
     });
 
-    // Determinar si es venta o devolución
-    const isDevolucionMode = isDevolucion;
-
     // Timestamp ISO YYYY-MM-DDTHH:MM:SS para que registrodiariocaja y
     // venta.VentaFecha guarden la hora real (el ajuste UTC-4 ya se aplicó
     // sobre fechaAjustada arriba).
@@ -546,63 +550,49 @@ export default function SalesMayorista() {
       `${pad(fechaAjustada.getMinutes())}:${pad(fechaAjustada.getSeconds())}`;
 
     try {
-      if (isDevolucionMode) {
-        await devolverVenta({
-          VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
-          CajaId: Number(cajaAperturada?.CajaId),
-          UsuarioId: String(user?.id ?? ""),
-          Total2: getSubtotal(cartItems),
-          Productos: SDTProductoItem.map((item) => ({
-            ProductoId: Number(item.Producto.ProductoId),
-            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
-            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
-          })),
-        });
-      } else {
-        await confirmarVenta({
-          VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
-          ClienteId: Number(clienteSeleccionado?.ClienteId),
-          CajaId: Number(cajaAperturada?.CajaId),
-          UsuarioId: String(user?.id ?? ""),
-          VentaPagoTipo: "E",
-          EsEnvio: tipoVenta === "ENVIO",
-          VentaNroFactura: 0,
-          VentaTimbrado: 0,
-          VentaNroPOS:
-            bancoDebito > 0 || bancoCredito > 0
-              ? ventaNroPOS.trim() || "0"
-              : "0",
-          Pagos: {
-            Efectivo: Number(efectivo) + Number(totalRest),
-            Banco: Number(bancoDebito) + Number(bancoCredito),
-            CuentaCliente: Number(cuentaCliente),
-            Voucher: Number(voucher),
-            Transferencia: Number(banco),
-          },
-          Productos: SDTProductoItem.map((item) => ({
-            ProductoId: Number(item.Producto.ProductoId),
-            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
-            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
-            VentaProductoPrecioTotal: Number(
-              item.Producto.VentaProductoPrecioTotal
-            ),
-            Combo: item.Producto.Combo === "S",
-            ComboPrecio: Number(item.Producto.ComboPrecio),
-          })),
-        });
-      }
+      // En mayorista siempre es venta (no hay devolución).
+      await confirmarVenta({
+        VentaFecha: fechaIso,
+        AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+        ClienteId: Number(clienteSeleccionado?.ClienteId),
+        CajaId: Number(cajaAperturada?.CajaId),
+        UsuarioId: String(user?.id ?? ""),
+        VentaPagoTipo: "E",
+        EsEnvio: tipoVenta === "ENVIO",
+        EnvioVehiculoId:
+          tipoVenta === "ENVIO" && vehiculoEnvioId !== ""
+            ? vehiculoEnvioId
+            : undefined,
+        VentaNroFactura: 0,
+        VentaTimbrado: 0,
+        VentaNroPOS:
+          bancoDebito > 0 || bancoCredito > 0
+            ? ventaNroPOS.trim() || "0"
+            : "0",
+        Pagos: {
+          Efectivo: Number(efectivo) + Number(totalRest),
+          Banco: Number(bancoDebito) + Number(bancoCredito),
+          CuentaCliente: Number(cuentaCliente),
+          Voucher: Number(voucher),
+          Transferencia: Number(banco),
+        },
+        Productos: SDTProductoItem.map((item) => ({
+          ProductoId: Number(item.Producto.ProductoId),
+          VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
+          ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
+          VentaProductoPrecioTotal: Number(
+            item.Producto.VentaProductoPrecioTotal
+          ),
+          Combo: item.Producto.Combo === "S",
+          ComboPrecio: Number(item.Producto.ComboPrecio),
+        })),
+      });
       if (printTicket) {
         await generateTicketPDF();
       }
 
-      const successMessage = isDevolucionMode
-        ? "Devolución realizada con éxito!"
-        : "Venta realizada con éxito!";
-
       Swal.fire({
-        title: successMessage,
+        title: "Venta realizada con éxito!",
         icon: "success",
         timer: 1000,
         showConfirmButton: false,
@@ -633,9 +623,7 @@ export default function SalesMayorista() {
       Swal.fire({
         icon: "error",
         title: "Error",
-        text: isDevolucionMode
-          ? "Error al realizar la devolución"
-          : "Error al realizar la venta",
+        text: "Error al realizar la venta",
       });
     }
     // Limpiar estados de pago
@@ -649,7 +637,6 @@ export default function SalesMayorista() {
     setTotalRest(0);
     setPrintTicket(false);
     setShowModal(false);
-    setIsDevolucion(false); // Resetear el checkbox de devolución
   };
 
   const generateTicketPDF = async () => {
@@ -664,7 +651,7 @@ export default function SalesMayorista() {
     const fechaActual = new Date();
     const dia = String(fechaActual.getDate()).padStart(2, "0");
     const mes = String(fechaActual.getMonth() + 1).padStart(2, "0");
-    const año = fechaActual.getFullYear().toString().slice(-2);
+    const año = fechaActual.getFullYear().toString();
     const horas = String(fechaActual.getHours()).padStart(2, "0");
     const minutos = String(fechaActual.getMinutes()).padStart(2, "0");
     const segundos = String(fechaActual.getSeconds()).padStart(2, "0");
@@ -915,11 +902,8 @@ export default function SalesMayorista() {
     setBusquedaDebounced(busqueda);
   };
 
-  // Agrega el primer producto visible al carrito (helper compartido por el
-  // Enter inmediato y por el efecto que espera los resultados asíncronos).
-  const agregarPrimerProductoVisible = () => {
-    if (productos.length === 0) return;
-    const p = productos[0];
+  // Agrega al carrito un producto cualquiera de la lista visible.
+  const agregarProductoDeLista = (p: (typeof productos)[number]) => {
     agregarProducto({
       id: p.ProductoId,
       nombre: p.ProductoNombre,
@@ -929,6 +913,70 @@ export default function SalesMayorista() {
       stock: p.ProductoStock,
       precioUnitario: p.ProductoPrecioUnitario,
     });
+  };
+
+  // Agrega el primer producto visible al carrito (helper compartido por el
+  // Enter inmediato y por el efecto que espera los resultados asíncronos).
+  const agregarPrimerProductoVisible = () => {
+    if (productos.length === 0) return;
+    agregarProductoDeLista(productos[0]);
+  };
+
+  // ¿El término actual es una búsqueda por texto (no un código numérico)?
+  // Solo en ese caso habilitamos la navegación por teclado de la lista; para
+  // códigos numéricos se mantiene el flujo de escaneo (Enter agrega el primero).
+  const esBusquedaTexto = () => {
+    const term = busqueda.trim();
+    return term !== "" && !/^\d+$/.test(term);
+  };
+
+  // Mueve el foco del buscador a la lista de productos para navegar con flechas.
+  const enfocarListaProductos = () => {
+    if (productos.length === 0) return;
+    setHighlightedIndex(0);
+    productListRef.current?.focus();
+  };
+
+  // Si cambia el conjunto de productos, resetear el resaltado.
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [productos]);
+
+  // Mantener la fila resaltada visible al navegar con el teclado.
+  useEffect(() => {
+    if (highlightedIndex >= 0) {
+      highlightedRowRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightedIndex]);
+
+  // Teclado sobre la lista de productos: ↑/↓ navegan, Enter agrega, Esc/Shift+Tab
+  // o ↑ en el primero devuelven el foco al buscador.
+  const handleListaKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (productos.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((i) => Math.min(productos.length - 1, i < 0 ? 0 : i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((i) => {
+        if (i <= 0) {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+          return -1;
+        }
+        return i - 1;
+      });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && highlightedIndex < productos.length) {
+        agregarProductoDeLista(productos[highlightedIndex]);
+      }
+    } else if (e.key === "Escape" || (e.key === "Tab" && e.shiftKey)) {
+      e.preventDefault();
+      setHighlightedIndex(-1);
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
   };
 
   if (!puedeLeerVentas)
@@ -1026,6 +1074,12 @@ export default function SalesMayorista() {
                               } else if (e.key === "ArrowDown") {
                                 e.preventDefault();
                                 cambiarCantidad(p.cartItemId, p.cantidad - 1);
+                              } else if (e.key === "Tab" && !e.shiftKey) {
+                                e.preventDefault();
+                                // Seleccionar el texto de la búsqueda anterior
+                                // para que al tipear se reemplace directamente.
+                                searchInputRef.current?.focus();
+                                searchInputRef.current?.select();
                               }
                             }}
                           />
@@ -1079,76 +1133,88 @@ export default function SalesMayorista() {
         </div>
         {/* Pad numérico y botón pagar - NUEVO DISEÑO TAILWIND */}
         <div className="bg-white rounded-xl shadow p-4">
-          {/* Checkbox de Devolución */}
-          <div className="flex items-center mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
-            <input
-              type="checkbox"
-              id="devolucion-checkbox"
-              checked={isDevolucion}
-              onChange={(e) => setIsDevolucion(e.target.checked)}
-              className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer"
-            />
-            <label
-              htmlFor="devolucion-checkbox"
-              className="ml-2 text-sm font-medium text-red-700 cursor-pointer select-none"
+          {/* Selector de tipo de venta: CONTADO / ENVÍO (mayorista = siempre venta) */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setTipoVenta("CONTADO")}
+              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
+                tipoVenta === "CONTADO"
+                  ? "bg-brand-600 border-brand-600 text-white"
+                  : "bg-surface border-border text-text hover:bg-surface-muted"
+              }`}
             >
-              {isDevolucion ? "🔴 MODO DEVOLUCIÓN" : "⚪ MODO VENTA"}
-            </label>
+              💵 Contado
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipoVenta("ENVIO")}
+              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
+                tipoVenta === "ENVIO"
+                  ? "bg-amber-500 border-amber-500 text-white"
+                  : "bg-surface border-border text-text hover:bg-surface-muted"
+              }`}
+            >
+              🚚 Envío
+            </button>
           </div>
-          {/* Selector de tipo de venta: CONTADO / ENVÍO (oculto en devolución) */}
-          {!isDevolucion && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setTipoVenta("CONTADO")}
-                className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
-                  tipoVenta === "CONTADO"
-                    ? "bg-brand-600 border-brand-600 text-white"
-                    : "bg-surface border-border text-text hover:bg-surface-muted"
+          {/* Vehículo del envío (obligatorio para confirmar un ENVÍO) */}
+          {tipoVenta === "ENVIO" && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-sm text-text-muted shrink-0">
+                🚛 Vehículo:
+              </span>
+              <select
+                value={vehiculoEnvioId}
+                onChange={(e) =>
+                  setVehiculoEnvioId(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                className={`flex-1 min-w-0 rounded-md border bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-amber-500/40 ${
+                  vehiculoEnvioId === ""
+                    ? "border-amber-400"
+                    : "border-border"
                 }`}
               >
-                💵 Contado
-              </button>
-              <button
-                type="button"
-                onClick={() => setTipoVenta("ENVIO")}
-                className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
-                  tipoVenta === "ENVIO"
-                    ? "bg-amber-500 border-amber-500 text-white"
-                    : "bg-surface border-border text-text hover:bg-surface-muted"
-                }`}
-              >
-                🚚 Envío
-              </button>
+                <option value="">— Seleccionar vehículo —</option>
+                {vehiculos.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.chapa}
+                    {v.marca || v.modelo
+                      ? ` · ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           {/* Total */}
           <div className="flex justify-between items-center mb-3">
             <span className="font-bold text-lg text-text">Total</span>
-            <span
-              className={`font-num font-semibold text-lg ${
-                isDevolucion ? "text-danger-700" : "text-brand-700"
-              }`}
-            >
+            <span className="font-num font-semibold text-lg text-brand-700">
               Gs. {formatMiles(total)}
             </span>
           </div>
           {/* Grid de botones */}
           <div className="grid grid-cols-3 gap-4 mb-3">
-            {/* Botón Pagar/Devolver grande */}
+            {/* Botón Pagar / Confirmar Envío */}
             <button
-              className={`text-white font-semibold rounded-lg flex items-center justify-center text-lg h-[100px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
-                isDevolucion
-                  ? "bg-danger-700 border-danger-700 hover:bg-danger-800 focus-visible:ring-danger-600/50"
-                  : "bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
-              }`}
-              onClick={() => setShowModal(true)}
+              className="text-white font-semibold rounded-lg flex items-center justify-center text-lg h-[100px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
+              onClick={() => {
+                // Un ENVÍO no puede confirmarse sin vehículo asignado.
+                if (tipoVenta === "ENVIO" && vehiculoEnvioId === "") {
+                  Swal.fire({
+                    icon: "warning",
+                    title: "Seleccione el vehículo",
+                    text: "Elegí con qué vehículo sale este envío.",
+                  });
+                  return;
+                }
+                setShowModal(true);
+              }}
             >
-              {isDevolucion
-                ? "Devolver"
-                : tipoVenta === "ENVIO"
-                  ? "Confirmar Envío"
-                  : "Pagar"}
+              {tipoVenta === "ENVIO" ? "Confirmar Envío" : "Pagar"}
             </button>
             {/* Botón Presupuesto */}
             <button
@@ -1218,12 +1284,16 @@ export default function SalesMayorista() {
               placeholder="Buscar por nombre o código"
               hideButton={true}
               inputRef={searchInputRef}
+              onKeyPress={(e) => {
+                // Tab en búsqueda por TEXTO: saltar a la lista para navegar con
+                // flechas. Para códigos numéricos se mantiene el comportamiento
+                // actual (Tab normal / flujo de escaneo).
+                if (e.key === "Tab" && !e.shiftKey && esBusquedaTexto()) {
+                  e.preventDefault();
+                  enfocarListaProductos();
+                }
+              }}
             />
-            {isDevolucion && (
-              <div className="bg-red-100 border border-red-300 text-red-700 px-3 py-1 rounded-full text-sm font-medium">
-                🔴 MODO DEVOLUCIÓN
-              </div>
-            )}
           </div>
           {user && (
             <div className="ml-6 flex items-center gap-2">
@@ -1275,7 +1345,12 @@ export default function SalesMayorista() {
           className="flex flex-col"
           style={{ height: "calc(100vh - 120px)" }}
         >
-          <div className="overflow-y-auto flex-1 mb-4 bg-white rounded-xl shadow">
+          <div
+            ref={productListRef}
+            tabIndex={-1}
+            onKeyDown={handleListaKeyDown}
+            className="overflow-y-auto flex-1 mb-4 bg-white rounded-xl shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+          >
             <table className="w-full border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-surface-alt text-left">
@@ -1329,11 +1404,15 @@ export default function SalesMayorista() {
                         precioUnitario: p.ProductoPrecioUnitario,
                       });
                     const sinStock = Number(p.ProductoStock) <= 0;
+                    const resaltado = idx === highlightedIndex;
                     return (
                       <tr
                         key={p.ProductoId}
+                        ref={resaltado ? highlightedRowRef : undefined}
                         onClick={agregar}
-                        className={`cursor-pointer transition-colors hover:bg-brand-50 ${
+                        className={`cursor-pointer transition-colors ${
+                          resaltado ? "bg-brand-100" : "hover:bg-brand-50"
+                        } ${
                           idx !== productos.length - 1
                             ? "border-b border-gray-100"
                             : ""

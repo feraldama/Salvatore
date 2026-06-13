@@ -34,6 +34,8 @@ import Inventario from "./pages/inventario/Inventario";
 import DocumentTitle from "./components/common/DocumentTitle";
 import VendedoresPage from "./pages/vendedores/VendedoresPage";
 import EmpresasPage from "./pages/empresas/EmpresasPage";
+import VehiculosPage from "./pages/flota/VehiculosPage";
+import ChoferesPage from "./pages/flota/ChoferesPage";
 
 function App() {
   return (
@@ -103,6 +105,8 @@ function App() {
             <Route path="/facturas" element={<FacturasPage />} />
             <Route path="/vendedores" element={<VendedoresPage />} />
             <Route path="/empresas" element={<EmpresasPage />} />
+            <Route path="/flota/vehiculos" element={<VehiculosPage />} />
+            <Route path="/flota/choferes" element={<ChoferesPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

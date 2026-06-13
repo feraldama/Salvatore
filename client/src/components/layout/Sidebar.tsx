@@ -103,6 +103,8 @@ const sections: NavigationSection[] = [
     empresaTipos: ["D"], // solo visible cuando la empresa activa es distribuidora
     items: [
       { name: "Vendedores", href: "/vendedores", icon: UserGroupIcon, permiso: "VENDEDORES" },
+      { name: "Vehículos", href: "/flota/vehiculos", icon: TruckIcon, permiso: "VEHICULOS" },
+      { name: "Choferes", href: "/flota/choferes", icon: UserGroupIcon, permiso: "CHOFERES" },
       { name: "Rutas de Reparto", href: "/rutas", icon: TruckIcon },
     ],
   },

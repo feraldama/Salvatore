@@ -265,6 +265,9 @@ export interface ConfirmarVentaPayload {
   // Marca la venta como ENVÍO: el pago no entra a la caja del operador (lo cobra
   // el repartidor / al recibir) y se registra con grupos de pago dedicados.
   EsEnvio?: boolean;
+  // Vehículo de flota con el que sale el envío (obligatorio si EsEnvio).
+  // El backend lo registra en venta_envio con estado PENDIENTE.
+  EnvioVehiculoId?: number;
   Pagos: {
     Efectivo?: number;
     Banco?: number;

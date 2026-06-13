@@ -1,7 +1,12 @@
 const Flota = require("../models/flota.model");
+const Usuario = require("../models/usuario.model");
 
 const num = (v) =>
   v === undefined || v === null || v === "" ? null : Number(v);
+
+// ¿El error de PG es por violación de llave foránea? (vehículo/chofer con
+// envíos, viajes, etc. asociados). code 23503 = foreign_key_violation.
+const esFkViolation = (e) => e && (e.code === "23503" || /foreign key/i.test(e.message || ""));
 
 // ── Config ──────────────────────────────────────────────────────────────────
 exports.getConfig = async (req, res) => {
@@ -18,6 +23,21 @@ exports.getConfig = async (req, res) => {
   } catch (e) {
     console.error("flota/config", e);
     res.status(500).json({ message: "Error al obtener config de flota" });
+  }
+};
+
+// ── Vehículos activos (selector de envío en el POS mayorista) ───────────────
+// ?all=1 → listado completo (incluye inactivos + km + cantidad de choferes)
+// para el ABM del dashboard. Sin parámetro → versión liviana para el POS.
+exports.getVehiculosActivos = async (req, res) => {
+  try {
+    if (req.query.all === "1" || req.query.all === "true") {
+      return res.json(await Flota.listVehiculos(true));
+    }
+    res.json(await Flota.getVehiculosActivos());
+  } catch (e) {
+    console.error("flota/vehiculos", e);
+    res.status(500).json({ message: "Error al obtener vehículos" });
   }
 };
 
@@ -242,5 +262,244 @@ exports.getViajeDetalle = async (req, res) => {
   } catch (e) {
     console.error("flota/viajes/detalle", e);
     res.status(500).json({ message: "Error al obtener detalle de viaje" });
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// ABM de flota (dashboard admin): vehículos, asignación y documentos.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Vehículos ─────────────────────────────────────────────────────────────
+exports.crearVehiculo = async (req, res) => {
+  try {
+    const chapa = String(req.body.chapa || "").trim();
+    if (!chapa) return res.status(400).json({ message: "La chapa es requerida" });
+    const veh = await Flota.createVehiculo({
+      chapa,
+      marca: req.body.marca ? String(req.body.marca).trim() : null,
+      modelo: req.body.modelo ? String(req.body.modelo).trim() : null,
+      km_actual: num(req.body.km_actual) ?? 0,
+      activo: req.body.activo !== false && req.body.activo !== "N",
+    });
+    res.status(201).json(veh);
+  } catch (e) {
+    console.error("flota/vehiculos POST", e);
+    res.status(500).json({ message: "Error al crear vehículo" });
+  }
+};
+
+exports.actualizarVehiculo = async (req, res) => {
+  try {
+    const chapa = String(req.body.chapa || "").trim();
+    if (!chapa) return res.status(400).json({ message: "La chapa es requerida" });
+    const veh = await Flota.updateVehiculo(req.params.id, {
+      chapa,
+      marca: req.body.marca ? String(req.body.marca).trim() : null,
+      modelo: req.body.modelo ? String(req.body.modelo).trim() : null,
+      km_actual: num(req.body.km_actual) ?? 0,
+      activo: req.body.activo !== false && req.body.activo !== "N",
+    });
+    if (!veh) return res.status(404).json({ message: "Vehículo no encontrado" });
+    res.json(veh);
+  } catch (e) {
+    console.error("flota/vehiculos PUT", e);
+    res.status(500).json({ message: "Error al actualizar vehículo" });
+  }
+};
+
+exports.eliminarVehiculo = async (req, res) => {
+  try {
+    await Flota.deleteVehiculo(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    if (esFkViolation(e)) {
+      return res.status(409).json({
+        message:
+          "No se puede eliminar: el vehículo tiene envíos o viajes asociados. Desactivalo en su lugar.",
+      });
+    }
+    console.error("flota/vehiculos DELETE", e);
+    res.status(500).json({ message: "Error al eliminar vehículo" });
+  }
+};
+
+// ── Asignación de choferes al vehículo ──────────────────────────────────────
+exports.getChoferesDeVehiculo = async (req, res) => {
+  try {
+    const rows = await Flota.getChoferesDeVehiculo(req.params.id);
+    res.json(rows.map((r) => r.usuario_id));
+  } catch (e) {
+    console.error("flota/vehiculos/:id/choferes GET", e);
+    res.status(500).json({ message: "Error al obtener choferes del vehículo" });
+  }
+};
+
+exports.setChoferesDeVehiculo = async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.choferIds) ? req.body.choferIds : [];
+    await Flota.setChoferesDeVehiculo(req.params.id, ids);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("flota/vehiculos/:id/choferes PUT", e);
+    res.status(500).json({ message: "Error al asignar choferes" });
+  }
+};
+
+// ── Documentos de vehículo ──────────────────────────────────────────────────
+exports.getDocsVehiculo = async (req, res) => {
+  try {
+    res.json(await Flota.listDocsVehiculo(req.params.id));
+  } catch (e) {
+    console.error("flota/vehiculos/:id/documentos GET", e);
+    res.status(500).json({ message: "Error al obtener documentos" });
+  }
+};
+
+exports.crearDocVehiculo = async (req, res) => {
+  try {
+    const tipo = String(req.body.tipo || "").trim().toUpperCase();
+    if (!tipo) return res.status(400).json({ message: "El tipo es requerido" });
+    const doc = await Flota.createDocVehiculo(req.params.id, {
+      tipo,
+      vencimiento: req.body.vencimiento || null,
+    });
+    res.status(201).json(doc);
+  } catch (e) {
+    console.error("flota/vehiculos/:id/documentos POST", e);
+    res.status(500).json({ message: "Error al crear documento" });
+  }
+};
+
+exports.eliminarDocVehiculo = async (req, res) => {
+  try {
+    await Flota.deleteDocVehiculo(req.params.docId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("flota/documentos-vehiculo DELETE", e);
+    res.status(500).json({ message: "Error al eliminar documento" });
+  }
+};
+
+// ── Documentos de chofer ────────────────────────────────────────────────────
+exports.getDocsChofer = async (req, res) => {
+  try {
+    res.json(await Flota.listDocsChofer(req.params.id));
+  } catch (e) {
+    console.error("flota/choferes/:id/documentos GET", e);
+    res.status(500).json({ message: "Error al obtener documentos" });
+  }
+};
+
+exports.crearDocChofer = async (req, res) => {
+  try {
+    const tipo = String(req.body.tipo || "").trim().toUpperCase();
+    if (!tipo) return res.status(400).json({ message: "El tipo es requerido" });
+    const doc = await Flota.createDocChofer(req.params.id, {
+      tipo,
+      vencimiento: req.body.vencimiento || null,
+    });
+    res.status(201).json(doc);
+  } catch (e) {
+    console.error("flota/choferes/:id/documentos POST", e);
+    res.status(500).json({ message: "Error al crear documento" });
+  }
+};
+
+exports.eliminarDocChofer = async (req, res) => {
+  try {
+    await Flota.deleteDocChofer(req.params.docId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("flota/documentos-chofer DELETE", e);
+    res.status(500).json({ message: "Error al eliminar documento" });
+  }
+};
+
+// ── Choferes (usuarios con perfil CHOFER) ───────────────────────────────────
+exports.listChoferes = async (req, res) => {
+  try {
+    res.json(await Flota.listChoferes());
+  } catch (e) {
+    console.error("flota/choferes GET", e);
+    res.status(500).json({ message: "Error al obtener choferes" });
+  }
+};
+
+exports.crearChofer = async (req, res) => {
+  try {
+    const usuarioId = String(req.body.UsuarioId || "").trim();
+    const nombre = String(req.body.UsuarioNombre || "").trim();
+    const password = req.body.UsuarioContrasena;
+    const localId = num(req.body.LocalId);
+    if (!usuarioId || !nombre || !password || !localId) {
+      return res.status(400).json({
+        message: "UsuarioId, UsuarioNombre, contraseña y LocalId son requeridos",
+      });
+    }
+    if (await Flota.existeUsuario(usuarioId)) {
+      return res
+        .status(409)
+        .json({ message: `Ya existe un usuario con el ID '${usuarioId}'` });
+    }
+    // Reutiliza el alta de usuario (hashea la contraseña) y le asigna el perfil
+    // CHOFER para que pueda autenticarse en la app mobile de flota.
+    await Usuario.create({
+      UsuarioId: usuarioId,
+      UsuarioNombre: nombre,
+      UsuarioApellido: req.body.UsuarioApellido ?? "",
+      UsuarioCorreo: req.body.UsuarioCorreo ?? "",
+      UsuarioContrasena: password,
+      UsuarioIsAdmin: "N",
+      UsuarioEstado: req.body.UsuarioEstado === "I" ? "I" : "A",
+      LocalId: localId,
+    });
+    await Flota.asignarPerfilChofer(usuarioId);
+    res.status(201).json({ UsuarioId: usuarioId });
+  } catch (e) {
+    console.error("flota/choferes POST", e);
+    res.status(500).json({ message: "Error al crear chofer" });
+  }
+};
+
+exports.actualizarChofer = async (req, res) => {
+  try {
+    const data = {
+      UsuarioNombre: req.body.UsuarioNombre,
+      UsuarioApellido: req.body.UsuarioApellido,
+      UsuarioCorreo: req.body.UsuarioCorreo,
+      UsuarioEstado: req.body.UsuarioEstado,
+      LocalId: num(req.body.LocalId),
+    };
+    if (req.body.UsuarioContrasena) {
+      data.UsuarioContrasena = req.body.UsuarioContrasena;
+    }
+    const updated = await Usuario.update(req.params.id, data);
+    if (!updated) return res.status(404).json({ message: "Chofer no encontrado" });
+    // Por si se editó un usuario que aún no tenía el perfil (idempotente).
+    await Flota.asignarPerfilChofer(req.params.id);
+    res.json({ UsuarioId: req.params.id });
+  } catch (e) {
+    console.error("flota/choferes PUT", e);
+    res.status(500).json({ message: "Error al actualizar chofer" });
+  }
+};
+
+exports.eliminarChofer = async (req, res) => {
+  try {
+    // usuarioperfil no cascadea: hay que quitar los perfiles antes de borrar el
+    // usuario. flota_asignacion y flota_documento_chofer sí cascadean. Si el
+    // chofer tiene viajes/envíos, el DELETE siguiente fallará por FK (guard).
+    await Flota.quitarPerfilesUsuario(req.params.id);
+    await Usuario.delete(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    if (esFkViolation(e)) {
+      return res.status(409).json({
+        message:
+          "No se puede eliminar: el chofer tiene viajes o ventas asociadas. Desactivalo (estado Inactivo) en su lugar.",
+      });
+    }
+    console.error("flota/choferes DELETE", e);
+    res.status(500).json({ message: "Error al eliminar chofer" });
   }
 };

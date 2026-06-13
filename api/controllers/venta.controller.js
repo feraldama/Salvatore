@@ -477,12 +477,23 @@ exports.confirmar = async (req, res) => {
     Pagos = {},
     Productos = [],
     EsEnvio = false,
+    EnvioVehiculoId = null,
   } = req.body || {};
 
   // ENVÍO: la mercadería se entrega ahora y el pago lo cobra el repartidor / al
   // recibir, así que NO entra a la caja física del operador ni a su arqueo. Se
   // registra con grupos de pago dedicados (11-14) para poder verlo aparte.
   const esEnvio = EsEnvio === true || EsEnvio === "S" || EsEnvio === "s";
+
+  // Todo envío sale con un vehículo de la flota (tabla venta_envio, migración
+  // 012). El ciclo de vida del reparto (EN_RUTA/ENTREGADO) lo maneja la app
+  // mobile de flota; acá sólo se crea PENDIENTE con el vehículo elegido.
+  const envioVehiculoId = Math.round(Number(EnvioVehiculoId) || 0);
+  if (esEnvio && !envioVehiculoId) {
+    return res
+      .status(400)
+      .json({ message: "Seleccione el vehículo para el envío" });
+  }
 
   // Todos los montos de pago caen en columnas BIGINT (Total, VentaEntrega,
   // RegistroDiarioCajaMonto, CajaMonto, VentaCreditoPagoMonto). PG no trunca
@@ -556,6 +567,15 @@ exports.confirmar = async (req, res) => {
         esEnvio ? "S" : "N",
       ]
     );
+
+    // 3b. Envío: registrar con qué vehículo sale (estado inicial PENDIENTE).
+    // Tabla snake_case (contrato app mobile), fuera de columnMap a propósito.
+    if (esEnvio) {
+      await conn.query(
+        `INSERT INTO venta_envio (venta_id, vehiculo_id) VALUES (?, ?)`,
+        [ultorden, envioVehiculoId]
+      );
+    }
 
     // 4. Items + descuento de stock.
     let i = 1;

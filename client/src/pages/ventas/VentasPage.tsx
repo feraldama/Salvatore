@@ -19,7 +19,7 @@ import {
   ErrorState,
   PermissionDenied,
 } from "../../components/common/ui";
-import { formatCurrency } from "../../utils/utils";
+import { formatCurrency, formatFechaHora } from "../../utils/utils";
 import Swal from "sweetalert2";
 
 interface Pagination {
@@ -256,9 +256,7 @@ export default function VentasPage() {
         html: `
           <div class="text-left" style="overflow-x: auto;">
             <p><strong>Cliente:</strong> ${clienteInfo}</p>
-            <p><strong>Fecha:</strong> ${new Date(
-              venta.VentaFecha
-            ).toLocaleString()}</p>
+            <p><strong>Fecha:</strong> ${formatFechaHora(venta.VentaFecha)}</p>
             <p><strong>Tipo:</strong> ${getTipoVentaText(venta.VentaTipo)}</p>
             <p><strong>Almacén:</strong> ${almacen.AlmacenNombre}</p>
             <p><strong>Usuario:</strong> ${venta.VentaUsuario}</p>

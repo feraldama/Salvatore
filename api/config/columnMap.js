@@ -74,6 +74,11 @@ module.exports = {
   "facturacreditopagoid": "FacturaCreditoPagoId",
   "facturacreditopagofecha": "FacturaCreditoPagoFecha",
   "facturacreditopagomonto": "FacturaCreditoPagoMonto",
+  // Aliases derivados del JOIN local→empresa en el login (no son columnas
+  // reales; mantener a mano). Sin estos, el mapper deja el nombre en minúscula
+  // y el controller lee undefined → EmpresaTipo cae a "M" (pantalla minorista).
+  "localempresaid": "LocalEmpresaId",
+  "localempresatipo": "LocalEmpresaTipo",
   "localid": "LocalId",
   "localnombre": "LocalNombre",
   "localtelefono": "LocalTelefono",

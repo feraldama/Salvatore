@@ -26,6 +26,17 @@ const Flota = {
     );
   },
 
+  // Todos los vehículos activos de la flota. Lo usa el POS mayorista para
+  // elegir con qué vehículo sale una venta ENVÍO (no se filtra por chofer:
+  // el operador asigna cualquier vehículo disponible).
+  getVehiculosActivos: () =>
+    q(
+      `SELECT id, chapa, marca, modelo
+         FROM flota_vehiculo
+        WHERE activo
+        ORDER BY chapa`
+    ),
+
   getMisVehiculos: (usuarioId) =>
     q(
       `SELECT v.id, v.chapa, v.marca, v.modelo
@@ -363,6 +374,170 @@ const Flota = {
       alertas: [],
     };
   },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ABM de flota desde el dashboard (admin). Vehículos, asignación de choferes
+  // y documentos. Choferes = usuarios con perfil CHOFER (ver chofer* abajo).
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Vehículos ───────────────────────────────────────────────────────────
+  listVehiculos: (incluirInactivos = false) =>
+    q(
+      `SELECT v.id, v.chapa, v.marca, v.modelo,
+              v.km_actual::float8 AS km_actual, v.activo,
+              (SELECT COUNT(*) FROM flota_asignacion a
+                WHERE a.vehiculo_id = v.id AND a.activo) AS choferes
+         FROM flota_vehiculo v
+        ${incluirInactivos ? "" : "WHERE v.activo"}
+        ORDER BY v.chapa`
+    ),
+
+  createVehiculo: async ({ chapa, marca, modelo, km_actual, activo }) => {
+    const rows = await q(
+      `INSERT INTO flota_vehiculo (chapa, marca, modelo, km_actual, activo)
+       VALUES (?, ?, ?, ?, ?) RETURNING id`,
+      [chapa, marca ?? null, modelo ?? null, km_actual ?? 0, activo !== false]
+    );
+    return rows[0];
+  },
+
+  updateVehiculo: async (id, { chapa, marca, modelo, km_actual, activo }) => {
+    const rows = await q(
+      `UPDATE flota_vehiculo
+          SET chapa = ?, marca = ?, modelo = ?, km_actual = ?, activo = ?
+        WHERE id = ?
+        RETURNING id`,
+      [chapa, marca ?? null, modelo ?? null, km_actual ?? 0, activo !== false, id]
+    );
+    return rows[0] || null;
+  },
+
+  deleteVehiculo: (id) =>
+    q(`DELETE FROM flota_vehiculo WHERE id = ?`, [id]),
+
+  // ── Asignación chofer ↔ vehículo (flota_asignacion) ──────────────────────
+  getChoferesDeVehiculo: (vehiculoId) =>
+    q(
+      `SELECT TRIM(usuario_id) AS usuario_id
+         FROM flota_asignacion
+        WHERE vehiculo_id = ? AND activo`,
+      [vehiculoId]
+    ),
+
+  // Reemplaza el set de choferes del vehículo: borra los actuales e inserta los
+  // nuevos. La tabla tiene UNIQUE(vehiculo_id, usuario_id), así que un borrado
+  // total + alta limpia evita choques.
+  setChoferesDeVehiculo: async (vehiculoId, choferIds) => {
+    await q(`DELETE FROM flota_asignacion WHERE vehiculo_id = ?`, [vehiculoId]);
+    for (const uid of choferIds) {
+      await q(
+        `INSERT INTO flota_asignacion (vehiculo_id, usuario_id, activo)
+         VALUES (?, ?, true)`,
+        [vehiculoId, String(uid).trim()]
+      );
+    }
+  },
+
+  // ── Documentos de vehículo (flota_documento) ─────────────────────────────
+  listDocsVehiculo: (vehiculoId) =>
+    q(
+      `SELECT id, tipo, vencimiento, activo
+         FROM flota_documento
+        WHERE vehiculo_id = ? AND activo
+        ORDER BY vencimiento NULLS LAST`,
+      [vehiculoId]
+    ),
+
+  createDocVehiculo: async (vehiculoId, { tipo, vencimiento }) => {
+    const rows = await q(
+      `INSERT INTO flota_documento (vehiculo_id, tipo, vencimiento)
+       VALUES (?, ?, ?) RETURNING id`,
+      [vehiculoId, tipo, vencimiento || null]
+    );
+    return rows[0];
+  },
+
+  deleteDocVehiculo: (docId) =>
+    q(`DELETE FROM flota_documento WHERE id = ?`, [docId]),
+
+  // ── Documentos de chofer (flota_documento_chofer) ────────────────────────
+  listDocsChofer: (usuarioId) =>
+    q(
+      `SELECT id, tipo, vencimiento, activo
+         FROM flota_documento_chofer
+        WHERE TRIM(usuario_id) = ? AND activo
+        ORDER BY vencimiento NULLS LAST`,
+      [String(usuarioId).trim()]
+    ),
+
+  createDocChofer: async (usuarioId, { tipo, vencimiento }) => {
+    const rows = await q(
+      `INSERT INTO flota_documento_chofer (usuario_id, tipo, vencimiento)
+       VALUES (?, ?, ?) RETURNING id`,
+      [String(usuarioId).trim(), tipo, vencimiento || null]
+    );
+    return rows[0];
+  },
+
+  deleteDocChofer: (docId) =>
+    q(`DELETE FROM flota_documento_chofer WHERE id = ?`, [docId]),
+
+  // ── Choferes (usuarios con perfil CHOFER) ────────────────────────────────
+  // PerfilId del perfil CHOFER (creado por la migración 001). Alias snake para
+  // que el adaptador PG no lo remapee.
+  getPerfilChoferId: async () => {
+    const rows = await q(
+      `SELECT perfilid AS perfil_id FROM perfil
+        WHERE upper(perfildescripcion) = 'CHOFER' LIMIT 1`
+    );
+    return rows[0]?.perfil_id || null;
+  },
+
+  listChoferes: () =>
+    q(
+      `SELECT TRIM(u.usuarioid) AS usuario_id,
+              u.usuarionombre  AS nombre,
+              u.usuarioapellido AS apellido,
+              u.usuariocorreo  AS correo,
+              u.usuarioestado  AS estado,
+              u.localid        AS local_id,
+              l.localnombre    AS local_nombre,
+              (SELECT COUNT(*) FROM flota_asignacion a
+                WHERE TRIM(a.usuario_id) = TRIM(u.usuarioid) AND a.activo) AS vehiculos
+         FROM usuario u
+         JOIN usuarioperfil up ON TRIM(up.usuarioid) = TRIM(u.usuarioid)
+         JOIN perfil p ON p.perfilid = up.perfilid
+              AND upper(p.perfildescripcion) = 'CHOFER'
+         LEFT JOIN local l ON l.localid = u.localid
+        ORDER BY u.usuarionombre, u.usuarioapellido`
+    ),
+
+  existeUsuario: async (usuarioId) => {
+    const rows = await q(
+      `SELECT 1 FROM usuario WHERE TRIM(usuarioid) = ? LIMIT 1`,
+      [String(usuarioId).trim()]
+    );
+    return rows.length > 0;
+  },
+
+  // Asegura que el usuario tenga el perfil CHOFER (idempotente).
+  asignarPerfilChofer: async (usuarioId) => {
+    const perfilId = await Flota.getPerfilChoferId();
+    if (!perfilId) throw new Error("No existe el perfil CHOFER");
+    await q(
+      `INSERT INTO usuarioperfil (UsuarioId, PerfilId)
+       VALUES (?, ?) ON CONFLICT DO NOTHING`,
+      [String(usuarioId).trim(), perfilId]
+    );
+  },
+
+  // Borra los vínculos usuario↔perfil. usuarioperfil NO tiene ON DELETE CASCADE,
+  // así que hay que limpiarlo antes de poder eliminar el usuario. (Las tablas
+  // flota_asignacion / flota_documento_chofer sí cascadean al borrar el usuario.)
+  quitarPerfilesUsuario: (usuarioId) =>
+    q(`DELETE FROM usuarioperfil WHERE TRIM(UsuarioId) = ?`, [
+      String(usuarioId).trim(),
+    ]),
 };
 
 function estadoPorFecha(vencimiento) {
