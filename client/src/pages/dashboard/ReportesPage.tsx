@@ -151,12 +151,12 @@ function calcularTotalesCiclo(
   let ingresosVoucher = 0;
   let ingresosTransfer = 0;
   for (const reg of filtrados) {
+    // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
+    // de venta a crédito (3). POS(4)/voucher(5)/transferencia(6) no son efectivo,
+    // y los grupos de envío (7-10) los cobra el móvil → NO entran a la caja.
     if (
       reg.TipoGastoId === 2 &&
-      reg.TipoGastoGrupoId !== 2 &&
-      reg.TipoGastoGrupoId !== 4 &&
-      reg.TipoGastoGrupoId !== 5 &&
-      reg.TipoGastoGrupoId !== 6
+      (reg.TipoGastoGrupoId === 1 || reg.TipoGastoGrupoId === 3)
     ) {
       ingresos += reg.RegistroDiarioCajaMonto;
     }

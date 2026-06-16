@@ -106,7 +106,8 @@ export default function SalesMayorista() {
   const [cuentaCliente, setCuentaCliente] = useState(0);
   const [voucher, setVoucher] = useState(0);
   const [ventaNroPOS, setVentaNroPOS] = useState("");
-  const [printTicket, setPrintTicket] = useState(false);
+  // Mayorista: imprimir ticket activo por defecto.
+  const [printTicket, setPrintTicket] = useState(true);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] =
@@ -605,6 +606,8 @@ export default function SalesMayorista() {
         setBusquedaDebounced("");
         setCurrentPage(1);
         setShowInvoicePrintModal(false);
+        // Limpiar el vehículo del envío para la próxima venta.
+        setVehiculoEnvioId("");
         setClienteSeleccionado({
           ClienteId: 1,
           ClienteNombre: "SIN NOMBRE MINORISTA",
@@ -635,7 +638,7 @@ export default function SalesMayorista() {
     setVoucher(0);
     setVentaNroPOS("");
     setTotalRest(0);
-    setPrintTicket(false);
+    setPrintTicket(true); // queda activo para la próxima venta
     setShowModal(false);
   };
 
@@ -704,9 +707,7 @@ export default function SalesMayorista() {
           clienteSeleccionado?.ClienteTipo === "MA"
             ? p.precioVentaMayorista
             : p.precioVenta;
-        precioLabel = `Caja (${
-          clienteSeleccionado?.ClienteTipo === "MA" ? "Mayorista" : "Minorista"
-        })`;
+        precioLabel = `Caja`;
         totalLinea = precioUnitario * p.cantidad;
       } else {
         // Unidad: puede aplicar combo
@@ -984,21 +985,25 @@ export default function SalesMayorista() {
 
   return (
     <div className="flex h-screen bg-surface-alt">
-      {/* Lado Izquierdo */}
-      <div className="flex-1 bg-surface-alt p-4 flex flex-col justify-between">
-        <div className="bg-white rounded-xl shadow-lg p-0 mb-4 flex flex-col max-h-[80vh] overflow-hidden">
+      {/* Lado Izquierdo: solo el carrito (ocupa todo el alto disponible) */}
+      <div className="flex-1 bg-surface-alt p-4 flex flex-col min-h-0">
+        <div className="bg-white rounded-xl shadow-lg p-0 flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <table className="w-full border-separate border-spacing-0">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="text-left bg-surface-alt">
-                  <th className="py-4 pl-6 font-semibold text-[15px]">
+                  <th className="py-4 pl-6 font-semibold text-[15px] bg-surface-alt">
                     Nombre
                   </th>
-                  <th className="py-4 font-semibold text-[15px]">Cantidad</th>
-                  <th className="py-4 font-semibold text-[15px]">
+                  <th className="py-4 font-semibold text-[15px] bg-surface-alt">
+                    Cantidad
+                  </th>
+                  <th className="py-4 font-semibold text-[15px] bg-surface-alt">
                     Precio Uni.
                   </th>
-                  <th className="py-4 pr-6 font-semibold text-[15px]">Total</th>
+                  <th className="py-4 pr-6 font-semibold text-[15px] bg-surface-alt">
+                    Total
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1131,150 +1136,9 @@ export default function SalesMayorista() {
             </table>
           </div>
         </div>
-        {/* Pad numérico y botón pagar - NUEVO DISEÑO TAILWIND */}
-        <div className="bg-white rounded-xl shadow p-4">
-          {/* Selector de tipo de venta: CONTADO / ENVÍO (mayorista = siempre venta) */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <button
-              type="button"
-              onClick={() => setTipoVenta("CONTADO")}
-              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
-                tipoVenta === "CONTADO"
-                  ? "bg-brand-600 border-brand-600 text-white"
-                  : "bg-surface border-border text-text hover:bg-surface-muted"
-              }`}
-            >
-              💵 Contado
-            </button>
-            <button
-              type="button"
-              onClick={() => setTipoVenta("ENVIO")}
-              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
-                tipoVenta === "ENVIO"
-                  ? "bg-amber-500 border-amber-500 text-white"
-                  : "bg-surface border-border text-text hover:bg-surface-muted"
-              }`}
-            >
-              🚚 Envío
-            </button>
-          </div>
-          {/* Vehículo del envío (obligatorio para confirmar un ENVÍO) */}
-          {tipoVenta === "ENVIO" && (
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-sm text-text-muted shrink-0">
-                🚛 Vehículo:
-              </span>
-              <select
-                value={vehiculoEnvioId}
-                onChange={(e) =>
-                  setVehiculoEnvioId(
-                    e.target.value === "" ? "" : Number(e.target.value),
-                  )
-                }
-                className={`flex-1 min-w-0 rounded-md border bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-amber-500/40 ${
-                  vehiculoEnvioId === ""
-                    ? "border-amber-400"
-                    : "border-border"
-                }`}
-              >
-                <option value="">— Seleccionar vehículo —</option>
-                {vehiculos.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.chapa}
-                    {v.marca || v.modelo
-                      ? ` · ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {/* Total */}
-          <div className="flex justify-between items-center mb-3">
-            <span className="font-bold text-lg text-text">Total</span>
-            <span className="font-num font-semibold text-lg text-brand-700">
-              Gs. {formatMiles(total)}
-            </span>
-          </div>
-          {/* Grid de botones */}
-          <div className="grid grid-cols-3 gap-4 mb-3">
-            {/* Botón Pagar / Confirmar Envío */}
-            <button
-              className="text-white font-semibold rounded-lg flex items-center justify-center text-lg h-[100px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
-              onClick={() => {
-                // Un ENVÍO no puede confirmarse sin vehículo asignado.
-                if (tipoVenta === "ENVIO" && vehiculoEnvioId === "") {
-                  Swal.fire({
-                    icon: "warning",
-                    title: "Seleccione el vehículo",
-                    text: "Elegí con qué vehículo sale este envío.",
-                  });
-                  return;
-                }
-                setShowModal(true);
-              }}
-            >
-              {tipoVenta === "ENVIO" ? "Confirmar Envío" : "Pagar"}
-            </button>
-            {/* Botón Presupuesto */}
-            <button
-              className="bg-surface border border-border rounded-lg text-text font-medium text-lg h-[100px] flex items-center justify-center hover:bg-surface-muted transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-              onClick={handlePresupuestoPDF}
-            >
-              Presupuesto
-            </button>
-            {/* Botón Imprimir Factura */}
-            <button
-              className="bg-success-700 border border-success-700 rounded-lg text-white font-medium text-lg h-[100px] flex items-center justify-center hover:bg-success-800 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
-              onClick={() => setShowInvoicePrintModal(true)}
-            >
-              Imprimir Factura
-            </button>
-          </div>
-          {/* Recuadro inferior para el nombre del cliente */}
-          <div className="mt-2">
-            <button
-              className="w-full bg-surface-sunken border border-border rounded-lg py-2 text-center text-text font-semibold text-base tracking-wide hover:bg-brand-50 hover:border-brand-200 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
-              onClick={() => setShowClienteModal(true)}
-            >
-              {clienteSeleccionado
-                ? `${clienteSeleccionado.ClienteNombre} ${
-                    clienteSeleccionado.ClienteApellido || ""
-                  }`
-                : clientes[0]
-                  ? `${clientes[0].ClienteNombre} ${
-                      clientes[0].ClienteApellido || ""
-                    }`
-                  : "SIN NOMBRE MINORISTA"}
-            </button>
-            {/* Vendedor asignado al cliente seleccionado (solo mayoristas) */}
-            <div className="mt-1.5 flex items-center justify-center gap-1.5 text-sm">
-              <span className="text-text-muted">Vendedor:</span>
-              {vendedorAsignado ? (
-                <span className="font-semibold text-indigo-700">
-                  {vendedorAsignado.VendedorNombre}{" "}
-                  {vendedorAsignado.VendedorApellido || ""}
-                </span>
-              ) : (
-                <span className="italic text-text-muted">Sin asignar</span>
-              )}
-            </div>
-            <ClienteModal
-              show={showClienteModal}
-              onClose={() => setShowClienteModal(false)}
-              clientes={clientes}
-              onSelect={(cliente: Cliente) => {
-                setClienteSeleccionado(cliente);
-                setShowClienteModal(false);
-              }}
-              onCreateCliente={handleCreateCliente}
-              currentUserId={user?.id}
-            />
-          </div>
-        </div>
       </div>
       {/* Lado Derecho */}
-      <div className="flex-[2] p-4">
+      <div className="flex-[2] p-4 flex flex-col min-h-0">
         <div className="flex items-center mb-4 justify-between">
           <div className="flex items-center gap-4">
             <SearchButton
@@ -1340,11 +1204,8 @@ export default function SalesMayorista() {
             </div>
           )}
         </div>
-        {/* Nuevo contenedor con scroll solo para los productos */}
-        <div
-          className="flex flex-col"
-          style={{ height: "calc(100vh - 120px)" }}
-        >
+        {/* Contenedor con scroll para los productos (crece para ocupar el alto) */}
+        <div className="flex flex-col flex-1 min-h-0">
           <div
             ref={productListRef}
             tabIndex={-1}
@@ -1476,6 +1337,149 @@ export default function SalesMayorista() {
               />
             </div>
           )}
+        </div>
+        {/* Acciones de venta: movidas debajo del catálogo/paginación para que
+            el carrito (izquierda) ocupe todo el alto. */}
+        <div className="bg-white rounded-xl shadow p-4 mt-3 shrink-0">
+          {/* Selector de tipo de venta: CONTADO / ENVÍO (mayorista = siempre venta) */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setTipoVenta("CONTADO")}
+              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
+                tipoVenta === "CONTADO"
+                  ? "bg-brand-600 border-brand-600 text-white"
+                  : "bg-surface border-border text-text hover:bg-surface-muted"
+              }`}
+            >
+              💵 Contado
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipoVenta("ENVIO")}
+              className={`rounded-lg py-2 text-sm font-semibold border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
+                tipoVenta === "ENVIO"
+                  ? "bg-amber-500 border-amber-500 text-white"
+                  : "bg-surface border-border text-text hover:bg-surface-muted"
+              }`}
+            >
+              🚚 Envío
+            </button>
+          </div>
+          {/* Vehículo del envío (obligatorio para confirmar un ENVÍO) */}
+          {tipoVenta === "ENVIO" && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-sm text-text-muted shrink-0">
+                🚛 Vehículo:
+              </span>
+              <select
+                value={vehiculoEnvioId}
+                onChange={(e) =>
+                  setVehiculoEnvioId(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                className={`flex-1 min-w-0 rounded-md border bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-amber-500/40 ${
+                  vehiculoEnvioId === ""
+                    ? "border-amber-400"
+                    : "border-border"
+                }`}
+              >
+                <option value="">— Seleccionar vehículo —</option>
+                {vehiculos.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.chapa}
+                    {v.marca || v.modelo
+                      ? ` · ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {/* Total + acciones en una fila para no ocupar tanto alto */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-baseline gap-2">
+              <span className="font-bold text-lg text-text">Total</span>
+              <span className="font-num font-semibold text-xl text-brand-700">
+                Gs. {formatMiles(total)}
+              </span>
+            </div>
+            <div className="flex-1 grid grid-cols-3 gap-3">
+              {/* Botón Pagar / Confirmar Envío */}
+              <button
+                className="text-white font-semibold rounded-lg flex items-center justify-center text-base h-[64px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
+                onClick={() => {
+                  // Un ENVÍO no puede confirmarse sin vehículo asignado.
+                  if (tipoVenta === "ENVIO" && vehiculoEnvioId === "") {
+                    Swal.fire({
+                      icon: "warning",
+                      title: "Seleccione el vehículo",
+                      text: "Elegí con qué vehículo sale este envío.",
+                    });
+                    return;
+                  }
+                  setShowModal(true);
+                }}
+              >
+                {tipoVenta === "ENVIO" ? "Confirmar Envío" : "Pagar"}
+              </button>
+              {/* Botón Presupuesto */}
+              <button
+                className="bg-surface border border-border rounded-lg text-text font-medium text-base h-[64px] flex items-center justify-center hover:bg-surface-muted transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                onClick={handlePresupuestoPDF}
+              >
+                Presupuesto
+              </button>
+              {/* Botón Imprimir Factura */}
+              <button
+                className="bg-success-700 border border-success-700 rounded-lg text-white font-medium text-base h-[64px] flex items-center justify-center hover:bg-success-800 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
+                onClick={() => setShowInvoicePrintModal(true)}
+              >
+                Imprimir Factura
+              </button>
+            </div>
+          </div>
+          {/* Recuadro inferior para el nombre del cliente */}
+          <div className="mt-3">
+            <button
+              className="w-full bg-surface-sunken border border-border rounded-lg py-2 text-center text-text font-semibold text-base tracking-wide hover:bg-brand-50 hover:border-brand-200 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+              onClick={() => setShowClienteModal(true)}
+            >
+              {clienteSeleccionado
+                ? `${clienteSeleccionado.ClienteNombre} ${
+                    clienteSeleccionado.ClienteApellido || ""
+                  }`
+                : clientes[0]
+                  ? `${clientes[0].ClienteNombre} ${
+                      clientes[0].ClienteApellido || ""
+                    }`
+                  : "SIN NOMBRE MINORISTA"}
+            </button>
+            {/* Vendedor asignado al cliente seleccionado (solo mayoristas) */}
+            <div className="mt-1.5 flex items-center justify-center gap-1.5 text-sm">
+              <span className="text-text-muted">Vendedor:</span>
+              {vendedorAsignado ? (
+                <span className="font-semibold text-indigo-700">
+                  {vendedorAsignado.VendedorNombre}{" "}
+                  {vendedorAsignado.VendedorApellido || ""}
+                </span>
+              ) : (
+                <span className="italic text-text-muted">Sin asignar</span>
+              )}
+            </div>
+            <ClienteModal
+              show={showClienteModal}
+              onClose={() => setShowClienteModal(false)}
+              clientes={clientes}
+              onSelect={(cliente: Cliente) => {
+                setClienteSeleccionado(cliente);
+                setShowClienteModal(false);
+              }}
+              onCreateCliente={handleCreateCliente}
+              currentUserId={user?.id}
+            />
+          </div>
         </div>
         <PagoModal
           show={showPagoModal}

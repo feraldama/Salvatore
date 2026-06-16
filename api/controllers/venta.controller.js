@@ -42,6 +42,8 @@ function extractVentaFilters(query, empresaId, localId) {
   if (query.fechaHasta) filters.fechaHasta = query.fechaHasta;
   if (query.estado && allowedEstados.includes(query.estado))
     filters.estado = query.estado;
+  if (query.esEnvio === "S" || query.esEnvio === "N")
+    filters.esEnvio = query.esEnvio;
   return filters;
 }
 
@@ -482,7 +484,7 @@ exports.confirmar = async (req, res) => {
 
   // ENVÍO: la mercadería se entrega ahora y el pago lo cobra el repartidor / al
   // recibir, así que NO entra a la caja física del operador ni a su arqueo. Se
-  // registra con grupos de pago dedicados (11-14) para poder verlo aparte.
+  // registra con grupos de pago dedicados (7-10) para poder verlo aparte.
   const esEnvio = EsEnvio === true || EsEnvio === "S" || EsEnvio === "s";
 
   // Todo envío sale con un vehículo de la flota (tabla venta_envio, migración
@@ -715,12 +717,12 @@ exports.confirmar = async (req, res) => {
     // 6. RegistroDiarioCaja por método de pago.
     // Efectivo: TipoGastoGrupoId=3 (cobro crédito) si la venta es a cuenta,
     //           TipoGastoGrupoId=1 (venta contado) si no.
-    // Grupos de pago: en envío usan los IDs dedicados (11-14) para que el
+    // Grupos de pago: en envío usan los IDs dedicados (7-10) para que el
     // cierre los separe del efectivo/POS/etc. que sí están en la caja física.
     const etiquetaEnvio = esEnvio ? " (ENVÍO)" : "";
     if (efectivo > 0) {
       const isCredito = cuentaCliente > 0;
-      const grupoEfectivo = esEnvio ? 11 : isCredito ? 3 : 1;
+      const grupoEfectivo = esEnvio ? 7 : isCredito ? 3 : 1;
       const detalleEfectivo = isCredito
         ? `Venta Crédito N°: ${ultorden}${etiquetaEnvio}`
         : `Venta N°: ${ultorden}${etiquetaEnvio}`;
@@ -741,7 +743,7 @@ exports.confirmar = async (req, res) => {
         [
           CajaId,
           ventaFecha,
-          esEnvio ? 12 : 4,
+          esEnvio ? 8 : 4,
           `Venta POS N°: ${ultorden}${etiquetaEnvio}`,
           banco,
           UsuarioId,
@@ -757,7 +759,7 @@ exports.confirmar = async (req, res) => {
         [
           CajaId,
           ventaFecha,
-          esEnvio ? 13 : 5,
+          esEnvio ? 9 : 5,
           `Venta Voucher N°: ${ultorden}${etiquetaEnvio}`,
           voucher,
           UsuarioId,
@@ -773,7 +775,7 @@ exports.confirmar = async (req, res) => {
         [
           CajaId,
           ventaFecha,
-          esEnvio ? 14 : 6,
+          esEnvio ? 10 : 6,
           `Venta Transferencia N°: ${ultorden}${etiquetaEnvio}`,
           transferencia,
           UsuarioId,

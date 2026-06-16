@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import ClienteFormModal from "./ClienteFormModal";
 import type { Cliente } from "./ClienteFormModal";
@@ -32,6 +32,17 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Foco automático en el campo RUC al abrir el modal.
+  const rucRef = useRef<HTMLInputElement>(null);
+
+  // Al abrir el modal, limpiar filtros y volver a la primera página (el modal
+  // queda montado, así que su estado persiste entre ventas si no se resetea).
+  useEffect(() => {
+    if (show) {
+      setFiltros({ ruc: "", nombre: "", apellido: "", telefono: "" });
+      setPage(1);
+    }
+  }, [show]);
 
   const clientesFiltrados = useMemo(() => {
     return clientes.filter(
@@ -61,7 +72,13 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
   };
 
   return (
-    <Modal open={show} onClose={onClose} size="4xl" title="Buscar cliente">
+    <Modal
+      open={show}
+      onClose={onClose}
+      size="4xl"
+      title="Buscar cliente"
+      initialFocusRef={rucRef}
+    >
       <div className="flex flex-col">
         {onCreateCliente && (
           <div className="flex justify-end mb-4">
@@ -78,6 +95,7 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
         <div className="bg-surface-sunken rounded-md p-4 mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <TextInput
+              ref={rucRef}
               label="RUC"
               size="sm"
               placeholder="Buscar"

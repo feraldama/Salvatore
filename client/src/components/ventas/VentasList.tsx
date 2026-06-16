@@ -281,6 +281,18 @@ const VentasList = ({
       render: (venta: VentaWithId) => getTipoVentaText(venta.VentaTipo),
     },
     {
+      key: "EsEnvio",
+      label: "Envío",
+      render: (venta: VentaWithId) =>
+        venta.EsEnvio === "S" ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+            🚚 Envío
+          </span>
+        ) : (
+          <span className="text-text-subtle">—</span>
+        ),
+    },
+    {
       key: "VentaNroPOS",
       label: "Nro. POS",
       render: (venta: VentaWithId) =>
@@ -492,6 +504,25 @@ const VentasList = ({
                 <option value="">Todos</option>
                 <option value="P">Pendiente</option>
                 <option value="C">Completado</option>
+              </select>
+            </div>
+            <div>
+              <label className="block mb-1 text-xs font-medium text-text-muted">
+                Envío
+              </label>
+              <select
+                value={activeFilters.esEnvio || ""}
+                onChange={(e) =>
+                  updateFilter(
+                    "esEnvio",
+                    (e.target.value as VentaFilters["esEnvio"]) || ""
+                  )
+                }
+                className="w-full bg-surface border border-border text-text text-sm rounded-md focus:ring-brand-500 focus:border-brand-600 p-2"
+              >
+                <option value="">Todas</option>
+                <option value="S">Solo envíos</option>
+                <option value="N">Sin envío</option>
               </select>
             </div>
           </div>

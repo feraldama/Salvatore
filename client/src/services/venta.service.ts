@@ -54,6 +54,8 @@ export interface VentaFilters {
   fechaDesde?: string;
   fechaHasta?: string;
   estado?: "P" | "C";
+  // 'S' = solo envíos, 'N' = solo ventas normales (sin envío).
+  esEnvio?: "S" | "N";
 }
 
 const applyVentaFilters = (
@@ -66,6 +68,7 @@ const applyVentaFilters = (
   if (filters.fechaDesde) params.fechaDesde = filters.fechaDesde;
   if (filters.fechaHasta) params.fechaHasta = filters.fechaHasta;
   if (filters.estado) params.estado = filters.estado;
+  if (filters.esEnvio) params.esEnvio = filters.esEnvio;
 };
 
 export const getVentas = async () => {

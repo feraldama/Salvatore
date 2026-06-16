@@ -48,13 +48,18 @@ function buildVentaFiltersWhere(filters = {}) {
     conditions.push("DATE(v.VentaFecha) <= ?");
     params.push(filters.fechaHasta);
   }
+  // Filtro por tipo de entrega: 'S' = solo envíos, 'N' = solo ventas normales.
+  if (filters.esEnvio === "S" || filters.esEnvio === "N") {
+    conditions.push("v.EsEnvio = ?");
+    params.push(filters.esEnvio);
+  }
   if (filters.estado === "P") {
     conditions.push(
-      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.TotalPagos, 0)) > 0"
+      "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.totalpagos, 0)) > 0"
     );
   } else if (filters.estado === "C") {
     conditions.push(
-      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.TotalPagos, 0)) <= 0)"
+      "(v.VentaTipo <> 'CR' OR (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.totalpagos, 0)) <= 0)"
     );
   }
 
@@ -270,7 +275,7 @@ const Venta = {
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
           FROM ventacreditopago
           GROUP BY VentaCreditoId
         ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -286,7 +291,7 @@ const Venta = {
           FROM venta v
           LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
           LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
             FROM ventacreditopago
             GROUP BY VentaCreditoId
           ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -373,7 +378,7 @@ const Venta = {
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
-          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+          SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
           FROM ventacreditopago
           GROUP BY VentaCreditoId
         ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId
@@ -436,7 +441,7 @@ const Venta = {
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
           LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
           LEFT JOIN (
-            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS TotalPagos
+            SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
             FROM ventacreditopago
             GROUP BY VentaCreditoId
           ) vcp_sum ON vcp_sum.VentaCreditoId = vc.VentaCreditoId

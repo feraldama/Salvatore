@@ -68,8 +68,11 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     !pagoConTarjeta ||
     (ventaNroPOS.trim().length >= 4 && /^\d+$/.test(ventaNroPOS.trim()));
 
-  // El saldo que queda pendiente en una venta ENVÍO = total - seña (efectivo).
-  const pendienteEnvio = Math.max(0, totalCost - efectivo);
+  // Total cubierto por los métodos de pago (con recargo de tarjeta) y el saldo
+  // que quedaría en cuenta corriente en un ENVÍO (lo no cobrado).
+  const cubierto =
+    efectivo + banco + bancoDebito * 1.03 + bancoCredito * 1.05 + voucher;
+  const pendienteCC = Math.max(0, Math.round(totalCost - cubierto));
 
   // Reset al abrir, según el tipo de venta.
   useEffect(() => {
@@ -107,7 +110,10 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     totalCost,
   ]);
 
-  // Recalcula el resto a pagar (CONTADO) con recargo de tarjeta (3%/5%).
+  // Recalcula los montos con recargo de tarjeta (3%/5%).
+  // CONTADO: totalRest = lo que falta (debe llegar a 0 para facturar).
+  // ENVÍO: lo cobrado puede ser parcial; el saldo no cobrado va a cuenta
+  //        corriente (cuentaCliente). totalRest solo refleja el vuelto.
   const recomputeContado = (over: Partial<{
     efectivo: number;
     banco: number;
@@ -120,27 +126,19 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     const deb = over.bancoDebito ?? bancoDebito;
     const cred = over.bancoCredito ?? bancoCredito;
     const vou = over.voucher ?? voucher;
-    setTotalRest(
-      totalCost - efe - ban - deb * 1.03 - cred * 1.05 - vou,
-    );
-  };
-
-  // --- Seña de envío (escribe sobre efectivo y deriva la cuenta corriente) ---
-  const setSenia = (valor: number) => {
-    const v = Math.min(Math.max(0, valor), totalCost);
-    setEfectivo(v);
-    setCuentaCliente(totalCost - v);
-    setTotalRest(0);
+    const restante = totalCost - efe - ban - deb * 1.03 - cred * 1.05 - vou;
+    if (esEnvio) {
+      setCuentaCliente(Math.max(0, restante));
+      setTotalRest(restante < 0 ? restante : 0);
+    } else {
+      setTotalRest(restante);
+    }
   };
 
   const onNumberClickModal = (label: string | number) => {
     const append = (val: number, lbl: string | number) =>
       val === 0 ? Number(lbl) : Number(`${val}${lbl}`);
 
-    if (esEnvio) {
-      setSenia(append(efectivo, label));
-      return;
-    }
     if (pagoTipo === "E") {
       const v = append(efectivo, label);
       setEfectivo(v);
@@ -165,10 +163,6 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
   };
 
   const borrarMonto = () => {
-    if (esEnvio) {
-      setSenia(0);
-      return;
-    }
     if (pagoTipo === "E") {
       setEfectivo(0);
       recomputeContado({ efectivo: 0 });
@@ -188,7 +182,7 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
   };
 
   const puedeConfirmar = esEnvio
-    ? !isSubmitting
+    ? !isSubmitting && ventaNroPOSValido
     : !isSubmitting && totalRest <= 0 && ventaNroPOSValido;
 
   const handleSendRequest = async () => {
@@ -263,45 +257,15 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
             </div>
           </div>
 
-          {esEnvio ? (
-            <>
-              {/* Seña (efectivo) */}
-              <div className={rowCls}>
-                <label htmlFor="efectivo-input" className={labelCls}>
-                  Seña (efectivo):
-                </label>
-                <input
-                  id="efectivo-input"
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="Monto de seña en efectivo"
-                  value={efectivo ? formatMiles(efectivo) : ""}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) =>
-                    setSenia(Number(e.target.value.replace(/\D/g, "")))
-                  }
-                  className={moneyInputCls(true)}
-                />
-              </div>
-              {/* Pendiente en cuenta corriente */}
-              <div className={rowCls}>
-                <span className={labelCls}>Queda pendiente (cuenta corriente):</span>
-                <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
-                  {formatMiles(pendienteEnvio)}
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-text-muted">
-                🚚 Los productos se entregan ahora; el saldo de{" "}
-                <span className="font-semibold text-amber-700">
-                  Gs. {formatMiles(pendienteEnvio)}
-                </span>{" "}
-                queda en la cuenta del cliente y se cobra al recibir, desde
-                «Cobro de Créditos».
-              </p>
-            </>
-          ) : (
-            <>
-              {/* Efectivo */}
+          {esEnvio && (
+            <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-text-muted">
+              🚚 Cobro del envío: cargá cómo paga el cliente al recibir. Esa plata
+              la trae el móvil al volver (no entra a la caja ahora). El saldo no
+              cobrado queda en cuenta corriente.
+            </p>
+          )}
+          {/* Métodos de pago (iguales para contado y envío) */}
+          {/* Efectivo */}
               <div className={rowCls}>
                 <label htmlFor="efectivo-input" className={labelCls}>
                   Efectivo:
@@ -457,15 +421,23 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
                 />
               </div>
 
-              {/* Vuelto */}
-              <div className="mt-6 text-2xl font-bold text-text">
-                Vuelto:{" "}
-                <span className="text-text-strong tabular-nums">
-                  {totalRest < 0 ? formatMiles(totalRest * -1) : "0"}
-                </span>
+          {/* Queda en cuenta corriente (envío con saldo no cobrado al recibir) */}
+          {esEnvio && pendienteCC > 0 && (
+            <div className={rowCls}>
+              <span className={labelCls}>Queda en cuenta corriente:</span>
+              <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
+                {formatMiles(pendienteCC)}
               </div>
-            </>
+            </div>
           )}
+
+          {/* Vuelto */}
+          <div className="mt-6 text-2xl font-bold text-text">
+            Vuelto:{" "}
+            <span className="text-text-strong tabular-nums">
+              {totalRest < 0 ? formatMiles(totalRest * -1) : "0"}
+            </span>
+          </div>
 
           <label className="mt-4 flex items-center gap-2 cursor-pointer text-text-muted">
             <input
