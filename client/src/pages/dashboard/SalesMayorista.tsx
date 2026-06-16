@@ -516,7 +516,21 @@ export default function SalesMayorista() {
     // Node/PG directo y no hace falta.
     const fechaAjustada = new Date();
 
-    const SDTProductoItem = carrito.map((p) => {
+    // Los ítems nuevos entran al carrito con cantidad 0; vender uno así produce
+    // total 0 y, en el backend, precio unitario = 0/0 = NaN (revienta el INSERT
+    // BIGINT). Excluir los de cantidad 0 y bloquear si no queda nada que vender.
+    const itemsValidos = carrito.filter((p) => Number(p.cantidad) > 0);
+    if (itemsValidos.length === 0) {
+      await Swal.fire({
+        icon: "warning",
+        title: "Sin cantidades",
+        text: "Cargá una cantidad mayor a 0 en al menos un producto.",
+        confirmButtonColor: "#3085d6",
+      });
+      return;
+    }
+
+    const SDTProductoItem = itemsValidos.map((p) => {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
       // Usar el precio unitario guardado en el carrito
       const precioUnitario = p.precioUnitario;

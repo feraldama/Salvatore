@@ -586,6 +586,15 @@ exports.confirmar = async (req, res) => {
       const cantidad = Number(p.VentaProductoCantidad);
       const unidad = p.ProductoUnidad === "U" ? "U" : "C";
 
+      // Las columnas de monto/cantidad de ventaproducto son BIGINT: un NaN
+      // (campo ausente o no numérico en el carrito) revienta con un error
+      // críptico de PG (22P02). Validar acá para devolver un mensaje claro.
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        throw new Error(
+          `Cantidad inválida para el producto ${productoId}: ${p.VentaProductoCantidad}`
+        );
+      }
+
       // Snapshot del producto para precio promedio + cantidad por caja.
       const [prodRows] = await conn.query(
         `SELECT ProductoPrecioPromedio, ProductoCantidadCaja, ProductoStock, ProductoStockUnitario
@@ -608,6 +617,13 @@ exports.confirmar = async (req, res) => {
       const precioTotal = esCombo
         ? Number(p.ComboPrecio)
         : Number(p.VentaProductoPrecioTotal);
+      if (!Number.isFinite(precioTotal)) {
+        throw new Error(
+          `Precio total inválido para el producto ${productoId}: ${
+            esCombo ? p.ComboPrecio : p.VentaProductoPrecioTotal
+          }`
+        );
+      }
       // VentaProductoPrecio también es BIGINT.
       const precioUnit = Math.round(precioTotal / cantidad);
 
