@@ -62,6 +62,9 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     "E",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // En ENVÍO hay que cobrar el total para confirmar. El saldo solo puede
+  // quedar pendiente en cuenta corriente si el usuario lo habilita acá.
+  const [permitirCC, setPermitirCC] = useState(false);
 
   const pagoConTarjeta = bancoDebito > 0 || bancoCredito > 0;
   const ventaNroPOSValido =
@@ -83,6 +86,7 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     setVoucher(0);
     setVentaNroPOS("");
     setPagoTipoLocal("E");
+    setPermitirCC(false);
     if (esEnvio) {
       // Por defecto el total entero queda pendiente (sin seña).
       setEfectivo(0);
@@ -182,7 +186,9 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
   };
 
   const puedeConfirmar = esEnvio
-    ? !isSubmitting && ventaNroPOSValido
+    ? !isSubmitting &&
+      ventaNroPOSValido &&
+      (permitirCC || pendienteCC === 0)
     : !isSubmitting && totalRest <= 0 && ventaNroPOSValido;
 
   const handleSendRequest = async () => {
@@ -421,14 +427,38 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
                 />
               </div>
 
-          {/* Queda en cuenta corriente (envío con saldo no cobrado al recibir) */}
-          {esEnvio && pendienteCC > 0 && (
-            <div className={rowCls}>
-              <span className={labelCls}>Queda en cuenta corriente:</span>
-              <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
-                {formatMiles(pendienteCC)}
-              </div>
-            </div>
+          {/* ENVÍO: hay que cobrar el total. El saldo solo queda en cuenta
+              corriente si el usuario lo habilita explícitamente. */}
+          {esEnvio && (
+            <>
+              <label className="mt-1 flex items-center gap-2 cursor-pointer text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={permitirCC}
+                  onChange={(e) => setPermitirCC(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-brand-700 focus:ring-2 focus:ring-brand-500/40"
+                />
+                <span className="text-sm font-medium">
+                  Dejar saldo en cuenta corriente
+                </span>
+              </label>
+
+              {pendienteCC > 0 &&
+                (permitirCC ? (
+                  <div className={`${rowCls} mt-2`}>
+                    <span className={labelCls}>Queda en cuenta corriente:</span>
+                    <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
+                      {formatMiles(pendienteCC)}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">
+                    Falta cobrar Gs. {formatMiles(pendienteCC)}. Completá el
+                    total para confirmar, o marcá «Dejar saldo en cuenta
+                    corriente».
+                  </p>
+                ))}
+            </>
           )}
 
           {/* Vuelto */}
