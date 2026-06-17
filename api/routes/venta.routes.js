@@ -40,6 +40,17 @@ router.get(
   authMiddleware,
   ventaController.getVentasPorVendedor
 );
+router.get("/deliveries", authMiddleware, ventaController.getDeliveries);
+router.get(
+  "/deliveries/por-cobrar/count",
+  authMiddleware,
+  ventaController.getDeliveriesPorCobrarCount
+);
+router.patch(
+  "/deliveries/:ventaId/estado",
+  authMiddleware,
+  ventaController.updateDeliveryEstado
+);
 router.post("/confirmar", authMiddleware, ventaController.confirmar);
 router.post("/devolucion", authMiddleware, ventaController.devolucion);
 router.get("/search", authMiddleware, ventaController.searchVentas);

@@ -42,6 +42,9 @@ interface NavigationItem {
   icon: ComponentType<{ className?: string }>;
   children?: NavigationChild[];
   permiso?: string;
+  // Tipos de empresa donde aplica este ítem. undefined = todas.
+  // 'M' = minorista, 'D' = distribuidora.
+  empresaTipos?: string[];
 }
 
 interface NavigationSection {
@@ -64,6 +67,13 @@ const sections: NavigationSection[] = [
         permiso: "APERTURACAJA",
       },
       { name: "Ventas", href: "/ventas", icon: CurrencyDollarIcon, permiso: "NUEVAVENTA" },
+      {
+        name: "Deliveries",
+        href: "/deliveries",
+        icon: TruckIcon,
+        permiso: "DELIVERIES",
+        empresaTipos: ["M"], // delivery es solo de minorista
+      },
       { name: "Compras", href: "/compras", icon: ShoppingCartIcon, permiso: "NUEVACOMPRA" },
       {
         name: "Cobro de Créditos",
@@ -275,6 +285,13 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
     .map((section) => {
       const items = section.items
         .map((item) => {
+          // Filtro por tipo de empresa a nivel ítem (ej. Deliveries = solo 'M').
+          if (
+            item.empresaTipos &&
+            !(tipoActivo != null && item.empresaTipos.includes(tipoActivo))
+          ) {
+            return null;
+          }
           if (item.children) {
             const children = item.children.filter((c) => puedeVer(c.permiso));
             return children.length ? { ...item, children } : null;

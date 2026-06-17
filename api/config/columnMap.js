@@ -147,6 +147,7 @@ module.exports = {
   "ventaentrega": "VentaEntrega",
   "ventanropos": "VentaNroPOS",
   "esenvio": "EsEnvio",
+  "esdelivery": "EsDelivery",
   "ventacreditoid": "VentaCreditoId",
   "ventacreditopagocant": "VentaCreditoPagoCant",
   "ventacreditopagoid": "VentaCreditoPagoId",

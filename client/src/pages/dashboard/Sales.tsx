@@ -9,7 +9,13 @@ import ProductCard from "../../components/products/ProductCard";
 import { useAuth } from "../../contexts/useAuth";
 import PaymentModal from "../../components/common/PaymentModal";
 import Swal from "sweetalert2";
-import { confirmarVenta, devolverVenta } from "../../services/venta.service";
+import {
+  confirmarVenta,
+  devolverVenta,
+  getDeliveriesPorCobrarCount,
+} from "../../services/venta.service";
+import { getChoferes, type Chofer } from "../../services/flota.service";
+import CobrarDeliveryModal from "../../components/common/CobrarDeliveryModal";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import { resolveProductoImagen } from "../../utils/productImage";
@@ -48,6 +54,7 @@ interface Combo {
 
 export default function Sales() {
   const puedeLeerVentas = usePermiso("NUEVAVENTA", "leer");
+  const puedeCobrarDelivery = usePermiso("DELIVERIES", "leer");
   const [carrito, setCarrito] = useState<
     {
       id: number;
@@ -121,6 +128,36 @@ export default function Sales() {
   const [localNombre, setLocalNombre] = useState("");
   const navigate = useNavigate();
   const [showPagoModal, setShowPagoModal] = useState(false);
+  const [showCobrarDelivery, setShowCobrarDelivery] = useState(false);
+  const [deliveriesPorCobrar, setDeliveriesPorCobrar] = useState(0);
+  // Refresca el contador de deliveries pendientes de cobro (badge del botón).
+  const refreshDeliveriesPorCobrar = useCallback(() => {
+    if (!puedeCobrarDelivery) return;
+    getDeliveriesPorCobrarCount()
+      .then(setDeliveriesPorCobrar)
+      .catch(() => setDeliveriesPorCobrar(0));
+  }, [puedeCobrarDelivery]);
+  useEffect(() => {
+    refreshDeliveriesPorCobrar();
+    // Polling: por si otro cajero cobra o entra un delivery nuevo mientras la
+    // pantalla está abierta. Cada 60s; se limpia al desmontar.
+    if (!puedeCobrarDelivery) return;
+    const id = window.setInterval(refreshDeliveriesPorCobrar, 60000);
+    return () => window.clearInterval(id);
+  }, [refreshDeliveriesPorCobrar, puedeCobrarDelivery]);
+  // Modalidad de la venta minorista: por defecto "en ventana" (mostrador). El
+  // cajero puede marcarla como DELIVERY y elegir el chofer que la reparte; el
+  // backend la registra en venta_delivery (estado PENDIENTE) sin tocar la caja.
+  const [esDelivery, setEsDelivery] = useState(false);
+  const [choferDeliveryId, setChoferDeliveryId] = useState("");
+  const [choferes, setChoferes] = useState<Chofer[]>([]);
+  // Cargar los choferes (perfil CHOFER) la primera vez que se marca delivery.
+  useEffect(() => {
+    if (!esDelivery || choferes.length > 0) return;
+    getChoferes()
+      .then((data) => setChoferes(data.filter((c) => c.estado === "A")))
+      .catch((e) => console.error("Error al cargar choferes:", e));
+  }, [esDelivery, choferes.length]);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null,
@@ -580,6 +617,8 @@ export default function Sales() {
             bancoDebito > 0 || bancoCredito > 0
               ? ventaNroPOS.trim() || "0"
               : "0",
+          EsDelivery: esDelivery,
+          DeliveryChoferId: esDelivery ? choferDeliveryId : undefined,
           Pagos: {
             Efectivo: Number(efectivo) + Number(totalRest),
             Banco: Number(bancoDebito) + Number(bancoCredito),
@@ -621,6 +660,11 @@ export default function Sales() {
         setBusquedaDebounced("");
         setCurrentPage(1);
         setShowInvoicePrintModal(false);
+        // Volver a "ventana" para la próxima venta.
+        setEsDelivery(false);
+        setChoferDeliveryId("");
+        // Si la venta fue delivery en efectivo, ahora hay uno más por cobrar.
+        refreshDeliveriesPorCobrar();
         setClienteSeleccionado({
           ClienteId: 1,
           ClienteNombre: "SIN NOMBRE MINORISTA",
@@ -1111,6 +1155,58 @@ export default function Sales() {
               Gs. {formatMiles(total)}
             </span>
           </div>
+          {/* Modalidad de venta: Ventana (default) | Delivery. No aplica en
+              modo devolución. */}
+          {!isDevolucion && (
+            <div className="mb-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEsDelivery(false);
+                    setChoferDeliveryId("");
+                  }}
+                  className={`flex-1 rounded-lg py-2 text-sm font-semibold transition cursor-pointer border ${
+                    !esDelivery
+                      ? "bg-brand-700 border-brand-700 text-white"
+                      : "bg-white border-border text-text hover:bg-surface-muted"
+                  }`}
+                >
+                  🪟 Ventana
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEsDelivery(true)}
+                  className={`flex-1 rounded-lg py-2 text-sm font-semibold transition cursor-pointer border ${
+                    esDelivery
+                      ? "bg-brand-700 border-brand-700 text-white"
+                      : "bg-white border-border text-text hover:bg-surface-muted"
+                  }`}
+                >
+                  🛵 Delivery
+                </button>
+              </div>
+              {esDelivery && (
+                <div className="mt-2">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Chofer del delivery <span className="text-danger-600">*</span>
+                  </label>
+                  <select
+                    value={choferDeliveryId}
+                    onChange={(e) => setChoferDeliveryId(e.target.value)}
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                  >
+                    <option value="">Seleccionar chofer…</option>
+                    {choferes.map((c) => (
+                      <option key={c.usuario_id} value={c.usuario_id}>
+                        {c.nombre} {c.apellido || ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
           {/* Grid de botones */}
           <div className="grid grid-cols-3 gap-4 mb-3">
             {/* Botón Pagar/Devolver grande */}
@@ -1120,7 +1216,18 @@ export default function Sales() {
                   ? "bg-danger-700 border-danger-700 hover:bg-danger-800 focus-visible:ring-danger-600/50"
                   : "bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
               }`}
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                if (!isDevolucion && esDelivery && !choferDeliveryId) {
+                  Swal.fire({
+                    icon: "warning",
+                    title: "Falta el chofer",
+                    text: "Seleccioná el chofer del delivery antes de cobrar.",
+                    confirmButtonColor: "#3085d6",
+                  });
+                  return;
+                }
+                setShowModal(true);
+              }}
             >
               {isDevolucion ? "Devolver" : "Pagar"}
             </button>
@@ -1229,6 +1336,23 @@ export default function Sales() {
                 onClick={() => setShowPagoModal(true)}
                 className="bg-green-500 hover:bg-green-700 text-white"
               />
+              {puedeCobrarDelivery && (
+                <div className="relative inline-block">
+                  <ActionButton
+                    label="Cobrar delivery"
+                    onClick={() => setShowCobrarDelivery(true)}
+                    className="bg-amber-500 hover:bg-amber-600 text-white"
+                  />
+                  {deliveriesPorCobrar > 0 && (
+                    <span
+                      className="absolute -top-2 -right-2 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold shadow"
+                      title={`${deliveriesPorCobrar} delivery(s) pendiente(s) de cobro`}
+                    >
+                      {deliveriesPorCobrar > 99 ? "99+" : deliveriesPorCobrar}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1301,6 +1425,16 @@ export default function Sales() {
           handleClose={() => setShowPagoModal(false)}
           cajaAperturada={cajaAperturada}
           usuario={user}
+        />
+
+        <CobrarDeliveryModal
+          open={showCobrarDelivery}
+          onClose={() => setShowCobrarDelivery(false)}
+          cajaId={
+            cajaAperturada?.CajaId ? Number(cajaAperturada.CajaId) : undefined
+          }
+          usuarioId={String(user?.id ?? "")}
+          onCobrado={refreshDeliveriesPorCobrar}
         />
 
         <InvoicePrintModal

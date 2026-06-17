@@ -333,6 +333,9 @@ const ReportesPage: React.FC = () => {
 
   // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
   const [reporteActivo, setReporteActivo] = useState<string | null>(null);
+  // Modalidad para el reporte de ventas por cliente (minorista): "" = todas,
+  // "N" = solo ventana (mostrador), "S" = solo delivery.
+  const [modalidadVentas, setModalidadVentas] = useState<"" | "N" | "S">("");
 
   // Clientes que matchean el texto del buscador (por nombre, apellido o RUC).
   const clientesFiltrados = useMemo(() => {
@@ -529,6 +532,7 @@ const ReportesPage: React.FC = () => {
           clienteId: clienteSeleccionado,
           fechaDesde,
           fechaHasta,
+          esDelivery: modalidadVentas || undefined,
         },
       });
 
@@ -563,7 +567,16 @@ const ReportesPage: React.FC = () => {
         14,
         y,
       );
-      y += 10;
+      y += 6;
+      if (modalidadVentas) {
+        doc.text(
+          `Modalidad: ${modalidadVentas === "S" ? "Delivery" : "Ventana"}`,
+          14,
+          y,
+        );
+        y += 6;
+      }
+      y += 4;
 
       // Totales por tipo de venta
       let totalVentas = 0;
@@ -2246,6 +2259,25 @@ const ReportesPage: React.FC = () => {
                     />
                   </div>
                 </div>
+                {!esDistribuidora && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Modalidad
+                    </label>
+                    <select
+                      value={modalidadVentas}
+                      onChange={(e) =>
+                        setModalidadVentas(e.target.value as "" | "N" | "S")
+                      }
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    >
+                      <option value="">Todas</option>
+                      <option value="N">Ventana (mostrador)</option>
+                      <option value="S">Delivery</option>
+                    </select>
+                  </div>
+                )}
                 <button
                   onClick={handleGenerarReporteVentas}
                   disabled={loading}

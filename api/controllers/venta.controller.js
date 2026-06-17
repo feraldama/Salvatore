@@ -44,6 +44,8 @@ function extractVentaFilters(query, empresaId, localId) {
     filters.estado = query.estado;
   if (query.esEnvio === "S" || query.esEnvio === "N")
     filters.esEnvio = query.esEnvio;
+  if (query.esDelivery === "S" || query.esDelivery === "N")
+    filters.esDelivery = query.esDelivery;
   return filters;
 }
 
@@ -534,6 +536,115 @@ exports.getVentasPorVendedor = async (req, res) => {
   }
 };
 
+// GET /venta/deliveries?estado=&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+// Lista de ventas marcadas como DELIVERY (minorista) con su chofer y estado de
+// reparto, para la pantalla de gestión. Scopeado a la empresa activa.
+exports.getDeliveries = async (req, res) => {
+  try {
+    const { estado, fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const ESTADOS = ["PENDIENTE", "EN_RUTA", "ENTREGADO", "CANCELADO"];
+    if (estado && !ESTADOS.includes(estado)) {
+      return res.status(400).json({ message: "Estado inválido" });
+    }
+    const data = await Venta.getDeliveries({
+      empresaId: req.empresaId,
+      estado,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener deliveries:", error);
+    sendError(res, error, 500);
+  }
+};
+
+// GET /venta/deliveries/por-cobrar/count
+// Cantidad de deliveries pendientes de cobro en efectivo (para el badge del
+// botón "Cobrar delivery" en la pantalla de venta). Scopeado a la empresa.
+exports.getDeliveriesPorCobrarCount = async (req, res) => {
+  try {
+    const count = await Venta.countDeliveriesPorCobrar(req.empresaId);
+    res.json({ count });
+  } catch (error) {
+    console.error("Error al contar deliveries por cobrar:", error);
+    sendError(res, error, 500);
+  }
+};
+
+// PATCH /venta/deliveries/:ventaId/estado  body: { estado }
+// Avanza el ciclo de vida del reparto (PENDIENTE -> EN_RUTA -> ENTREGADO /
+// CANCELADO). Al pasar a ENTREGADO sella entregado_en. Scopeado a la empresa.
+exports.updateDeliveryEstado = async (req, res) => {
+  try {
+    const ventaId = Number(req.params.ventaId);
+    const { estado, CajaId, UsuarioId, Fecha } = req.body || {};
+    const ESTADOS = ["PENDIENTE", "EN_RUTA", "ENTREGADO", "CANCELADO"];
+    if (!ventaId) {
+      return res.status(400).json({ message: "ventaId inválido" });
+    }
+    if (!estado || !ESTADOS.includes(estado)) {
+      return res.status(400).json({ message: "Estado inválido" });
+    }
+
+    let fecha = null;
+    if (Fecha) {
+      try {
+        fecha = parseFecha(Fecha);
+      } catch (e) {
+        return res.status(400).json({ message: e.message });
+      }
+    }
+
+    const result = await Venta.updateDeliveryEstado({
+      ventaId,
+      estado,
+      empresaId: req.empresaId,
+      cajaId: CajaId ? Number(CajaId) : null,
+      usuarioId: UsuarioId || null,
+      fecha,
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ message: "Delivery no encontrado" });
+    }
+    if (result.needCaja) {
+      return res.status(400).json({
+        message:
+          "Para registrar el cobro en efectivo necesitás una caja abierta.",
+        needCaja: true,
+        pendiente: result.pendiente,
+      });
+    }
+    res.json({
+      message: "Estado actualizado",
+      ventaId,
+      estado,
+      cobrado: result.cobrado,
+      pendiente: result.pendiente,
+    });
+  } catch (error) {
+    console.error("Error al actualizar estado de delivery:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // Confirma una venta de forma atómica: cabecera + items + descuento de stock
 // (general y por almacén) + movimientos de caja + actualización del monto de
 // caja + ventacredito/ventacreditopago si hubo cobro a cuenta corriente.
@@ -553,12 +664,27 @@ exports.confirmar = async (req, res) => {
     Productos = [],
     EsEnvio = false,
     EnvioVehiculoId = null,
+    EsDelivery = false,
+    DeliveryChoferId = null,
   } = req.body || {};
 
   // ENVÍO: la mercadería se entrega ahora y el pago lo cobra el repartidor / al
   // recibir, así que NO entra a la caja física del operador ni a su arqueo. Se
   // registra con grupos de pago dedicados (7-10) para poder verlo aparte.
   const esEnvio = EsEnvio === true || EsEnvio === "S" || EsEnvio === "s";
+
+  // DELIVERY (minorista): la venta se COBRA NORMAL en la caja (no como el envío)
+  // — la única diferencia es que sale a repartir con un chofer y se clasifica
+  // aparte para reportes (venta.EsDelivery + tabla venta_delivery, migración
+  // 017). NO toca el flujo de caja: esEnvio queda false → ruta de caja normal.
+  const esDelivery =
+    EsDelivery === true || EsDelivery === "S" || EsDelivery === "s";
+  const deliveryChoferId = esDelivery ? String(DeliveryChoferId || "").trim() : "";
+  if (esDelivery && !deliveryChoferId) {
+    return res
+      .status(400)
+      .json({ message: "Seleccione el chofer para el delivery" });
+  }
 
   // Todo envío sale con un vehículo de la flota (tabla venta_envio, migración
   // 012). El ciclo de vida del reparto (EN_RUTA/ENTREGADO) lo maneja la app
@@ -622,8 +748,8 @@ exports.confirmar = async (req, res) => {
       `INSERT INTO venta (
          VentaId, VentaFecha, ClienteId, AlmacenId, VentaTipo, VentaPagoTipo,
          VentaCantidadProductos, VentaUsuario, VentaNroFactura, VentaTimbrado,
-         Total, VentaEntrega, VentaNroPOS, EmpresaId, EsEnvio
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         Total, VentaEntrega, VentaNroPOS, EmpresaId, EsEnvio, EsDelivery
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ultorden,
         ventaFecha,
@@ -640,6 +766,7 @@ exports.confirmar = async (req, res) => {
         VentaNroPOS,
         req.empresaId || 1,
         esEnvio ? "S" : "N",
+        esDelivery ? "S" : "N",
       ]
     );
 
@@ -649,6 +776,19 @@ exports.confirmar = async (req, res) => {
       await conn.query(
         `INSERT INTO venta_envio (venta_id, vehiculo_id) VALUES (?, ?)`,
         [ultorden, envioVehiculoId]
+      );
+    }
+
+    // 3c. Delivery (minorista): registrar el reparto con el chofer asignado
+    // (estado inicial PENDIENTE). El efectivo se cobra contra entrega, así que
+    // se guarda como efectivo_pendiente y NO entra a la caja ahora (ver paso 6
+    // y 7); entra cuando se marca ENTREGADO. El ciclo de vida lo gestiona la
+    // pantalla web de deliveries. Tabla snake_case fuera de columnMap.
+    if (esDelivery) {
+      await conn.query(
+        `INSERT INTO venta_delivery (venta_id, chofer_id, efectivo_pendiente)
+         VALUES (?, ?, ?)`,
+        [ultorden, deliveryChoferId, efectivo]
       );
     }
 
@@ -809,7 +949,10 @@ exports.confirmar = async (req, res) => {
     // Grupos de pago: en envío usan los IDs dedicados (7-10) para que el
     // cierre los separe del efectivo/POS/etc. que sí están en la caja física.
     const etiquetaEnvio = esEnvio ? " (ENVÍO)" : "";
-    if (efectivo > 0) {
+    // Delivery: el efectivo se cobra contra entrega, no al confirmar. Se omite
+    // su registro en caja ahora; lo crea la confirmación del ENTREGADO en la
+    // caja abierta del cajero (ver Venta.updateDeliveryEstado).
+    if (efectivo > 0 && !esDelivery) {
       const isCredito = cuentaCliente > 0;
       const grupoEfectivo = esEnvio ? 7 : isCredito ? 3 : 1;
       const detalleEfectivo = isCredito
@@ -892,8 +1035,10 @@ exports.confirmar = async (req, res) => {
     }
 
     // 7. Solo el efectivo de una venta NORMAL se acumula en la caja física.
-    // En envío el efectivo lo cobra el repartidor, no entra a la caja.
-    if (efectivo > 0 && !esEnvio) {
+    // En envío el efectivo lo cobra el repartidor, no entra a la caja. En
+    // delivery el efectivo entra recién al marcar ENTREGADO (cobro contra
+    // entrega), así que tampoco se acumula acá.
+    if (efectivo > 0 && !esEnvio && !esDelivery) {
       await conn.query(
         `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
         [efectivo, CajaId]
@@ -1072,6 +1217,10 @@ exports.devolucion = async (req, res) => {
 exports.getReporteVentasPorCliente = async (req, res) => {
   try {
     const { clienteId, fechaDesde, fechaHasta } = req.query;
+    const esDelivery =
+      req.query.esDelivery === "S" || req.query.esDelivery === "N"
+        ? req.query.esDelivery
+        : null;
 
     const esTodos = String(clienteId).toUpperCase() === "TODOS";
     const esClienteValido = !isNaN(Number(clienteId)) && Number(clienteId) > 0;
@@ -1093,7 +1242,8 @@ exports.getReporteVentasPorCliente = async (req, res) => {
       clienteId,
       fechaDesde,
       fechaHasta,
-      req.empresaId
+      req.empresaId,
+      esDelivery
     );
 
     res.json({

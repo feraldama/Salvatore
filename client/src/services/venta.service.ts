@@ -271,6 +271,12 @@ export interface ConfirmarVentaPayload {
   // Vehículo de flota con el que sale el envío (obligatorio si EsEnvio).
   // El backend lo registra en venta_envio con estado PENDIENTE.
   EnvioVehiculoId?: number;
+  // Modalidad minorista: marca la venta como DELIVERY (vs "en ventana"). El
+  // cobro entra a la caja normal; sólo cambia la clasificación + el reparto.
+  EsDelivery?: boolean;
+  // Chofer (usuario perfil CHOFER) que reparte el delivery (obligatorio si
+  // EsDelivery). El backend lo registra en venta_delivery con estado PENDIENTE.
+  DeliveryChoferId?: string;
   Pagos: {
     Efectivo?: number;
     Banco?: number;
@@ -578,6 +584,87 @@ export const getVentasPendientesPorCliente = async (
     throw (
       axiosError.response?.data || {
         message: "Error al obtener ventas pendientes",
+      }
+    );
+  }
+};
+
+// --- Deliveries (ventas minorista por delivery) ---
+export type DeliveryEstado =
+  | "PENDIENTE"
+  | "EN_RUTA"
+  | "ENTREGADO"
+  | "CANCELADO";
+
+export interface Delivery {
+  VentaId: number;
+  VentaFecha: string;
+  VentaTipo: string;
+  Total: number;
+  ClienteNombre?: string;
+  ClienteApellido?: string;
+  ClienteDireccion?: string;
+  ClienteTelefono?: string;
+  estado: DeliveryEstado;
+  entregado_en: string | null;
+  creado_en: string;
+  chofer_id: string;
+  chofer_nombre?: string;
+  chofer_apellido?: string;
+  // Cobro contra entrega (efectivo): monto a cobrar al volver y cuándo se cobró.
+  efectivo_pendiente: number;
+  cobrado_en: string | null;
+}
+
+// Lista de ventas marcadas como delivery, con su chofer y estado de reparto.
+export const getDeliveries = async (params: {
+  estado?: DeliveryEstado;
+  fechaDesde?: string;
+  fechaHasta?: string;
+}): Promise<Delivery[]> => {
+  try {
+    const response = await api.get("/venta/deliveries", { params });
+    return response.data?.data ?? [];
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener los deliveries",
+      }
+    );
+  }
+};
+
+// Cantidad de deliveries pendientes de cobro en efectivo (para el badge del
+// botón "Cobrar delivery").
+export const getDeliveriesPorCobrarCount = async (): Promise<number> => {
+  try {
+    const response = await api.get("/venta/deliveries/por-cobrar/count");
+    return Number(response.data?.count) || 0;
+  } catch {
+    return 0;
+  }
+};
+
+// Avanza el estado del reparto (PENDIENTE -> EN_RUTA -> ENTREGADO / CANCELADO).
+// Al pasar a ENTREGADO un delivery con efectivo pendiente, hay que mandar la
+// caja abierta (CajaId), el usuario y la fecha para registrar el cobro.
+export const updateDeliveryEstado = async (
+  ventaId: number,
+  estado: DeliveryEstado,
+  cobro?: { CajaId: number; UsuarioId: string; Fecha: string }
+) => {
+  try {
+    const response = await api.patch(
+      `/venta/deliveries/${ventaId}/estado`,
+      { estado, ...(cobro || {}) }
+    );
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al actualizar el estado del delivery",
       }
     );
   }

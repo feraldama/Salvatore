@@ -53,6 +53,11 @@ function buildVentaFiltersWhere(filters = {}) {
     conditions.push("v.EsEnvio = ?");
     params.push(filters.esEnvio);
   }
+  // Modalidad minorista: 'S' = solo delivery, 'N' = solo ventana (mostrador).
+  if (filters.esDelivery === "S" || filters.esDelivery === "N") {
+    conditions.push("v.EsDelivery = ?");
+    params.push(filters.esDelivery);
+  }
   if (filters.estado === "P") {
     conditions.push(
       "v.VentaTipo = 'CR' AND (v.Total - COALESCE(v.VentaEntrega, 0) - COALESCE(vcp_sum.totalpagos, 0)) > 0"
@@ -578,9 +583,17 @@ const Venta = {
 
   // Obtener reporte de ventas por cliente y rango de fechas
   // Si clienteId es "TODOS", devuelve ventas de todos los clientes
-  getReporteVentasPorCliente: (clienteId, fechaDesde, fechaHasta, empresaId) => {
+  getReporteVentasPorCliente: (
+    clienteId,
+    fechaDesde,
+    fechaHasta,
+    empresaId,
+    esDelivery = null
+  ) => {
     return new Promise((resolve, reject) => {
       const esTodos = String(clienteId).toUpperCase() === "TODOS";
+      // Filtro de modalidad minorista: 'S' = solo delivery, 'N' = solo ventana.
+      const filtraModalidad = esDelivery === "S" || esDelivery === "N";
 
       const ejecutarVentas = (cliente) => {
         const ventasQuery = `
@@ -599,12 +612,14 @@ const Venta = {
           WHERE DATE(v.VentaFecha) BETWEEN ? AND ?
           AND v.EmpresaId = ?
           ${esTodos ? "" : "AND v.ClienteId = ?"}
+          ${filtraModalidad ? "AND v.EsDelivery = ?" : ""}
           ORDER BY v.VentaFecha ASC, v.VentaId ASC
         `;
 
         const ventasParams = esTodos
           ? [fechaDesde, fechaHasta, empresaId]
           : [fechaDesde, fechaHasta, empresaId, clienteId];
+        if (filtraModalidad) ventasParams.push(esDelivery);
 
         db.query(ventasQuery, ventasParams, (err, ventasResults) => {
           if (err) return reject(err);
@@ -986,6 +1001,163 @@ const Venta = {
     }
 
     return { vehiculos, totales };
+  },
+
+  // DELIVERY (minorista): lista de ventas marcadas EsDelivery con su chofer y el
+  // estado del reparto, para la pantalla de gestión. Scope por empresa siempre;
+  // estado y fechas opcionales. El chofer es un usuario (perfil CHOFER); se une
+  // con TRIM porque usuarioid puede venir con padding.
+  getDeliveries: async ({ empresaId, estado, fechaDesde, fechaHasta }) => {
+    const pe = db.promise();
+    const cond = ["v.EsDelivery = 'S'", "v.EmpresaId = ?"];
+    const params = [Number(empresaId)];
+    if (estado) {
+      cond.push("d.estado = ?");
+      params.push(estado);
+    }
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    const where = cond.join(" AND ");
+    const [rows] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total,
+              c.ClienteNombre, c.ClienteApellido,
+              c.ClienteDireccion, c.ClienteTelefono,
+              d.estado AS estado,
+              d.entregado_en AS entregado_en,
+              d.creado_en AS creado_en,
+              d.efectivo_pendiente AS efectivo_pendiente,
+              d.cobrado_en AS cobrado_en,
+              TRIM(d.chofer_id) AS chofer_id,
+              u.usuarionombre  AS chofer_nombre,
+              u.usuarioapellido AS chofer_apellido
+         FROM venta v
+         JOIN venta_delivery d ON d.venta_id = v.VentaId
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+         LEFT JOIN usuario u ON TRIM(u.usuarioid) = TRIM(d.chofer_id)
+        WHERE ${where}
+        ORDER BY v.VentaFecha DESC, v.VentaId DESC`,
+      params
+    );
+    return rows;
+  },
+
+  // Cuenta los deliveries pendientes de cobro en efectivo (efectivo pendiente,
+  // no cobrado y no cancelado) de la empresa. Para el badge del botón "Cobrar
+  // delivery"; consulta barata (solo COUNT).
+  countDeliveriesPorCobrar: async (empresaId) => {
+    const pe = db.promise();
+    const [rows] = await pe.query(
+      `SELECT COUNT(*) AS total
+         FROM venta_delivery d
+         JOIN venta v ON v.VentaId = d.venta_id
+        WHERE v.EmpresaId = ?
+          AND d.efectivo_pendiente > 0
+          AND d.cobrado_en IS NULL
+          AND d.estado <> 'CANCELADO'`,
+      [Number(empresaId)]
+    );
+    return Number(rows[0]?.total) || 0;
+  },
+
+  // Avanza el estado del reparto de un delivery. Al pasar a ENTREGADO sella
+  // entregado_en y, si hay efectivo pendiente que todavía no se cobró, mete ese
+  // efectivo a la caja indicada (cobro contra entrega): inserta el movimiento en
+  // registrodiariocaja (grupo 1 = venta contado en efectivo) y suma a CajaMonto,
+  // todo en una transacción. Es idempotente: si cobrado_en ya está seteado no
+  // vuelve a cobrar. Scope por empresa en el SELECT inicial.
+  //
+  // Devuelve:
+  //   { ok: false, notFound: true }  -> no existe el delivery en esa empresa
+  //   { ok: false, needCaja: true, pendiente } -> falta caja abierta para cobrar
+  //   { ok: true, cobrado, pendiente } -> actualizado (cobrado=true si ingresó plata)
+  updateDeliveryEstado: async ({
+    ventaId,
+    estado,
+    empresaId,
+    cajaId = null,
+    usuarioId = null,
+    fecha = null,
+  }) => {
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [rows] = await conn.query(
+        `SELECT d.estado AS estado,
+                d.efectivo_pendiente AS efectivo_pendiente,
+                d.cobrado_en AS cobrado_en
+           FROM venta_delivery d
+           JOIN venta v ON v.VentaId = d.venta_id
+          WHERE d.venta_id = ? AND v.EmpresaId = ?`,
+        [Number(ventaId), Number(empresaId)]
+      );
+      if (!rows.length) {
+        await conn.rollback();
+        return { ok: false, notFound: true };
+      }
+
+      const pendiente = Number(rows[0].efectivo_pendiente) || 0;
+      const yaCobrado = rows[0].cobrado_en != null;
+      // Solo se cobra al ENTREGAR, si hay efectivo pendiente y no se cobró antes.
+      const debeCobrar = estado === "ENTREGADO" && pendiente > 0 && !yaCobrado;
+
+      if (debeCobrar && !cajaId) {
+        await conn.rollback();
+        return { ok: false, needCaja: true, pendiente };
+      }
+
+      if (debeCobrar) {
+        const fechaCobro = fecha || new Date();
+        await conn.query(
+          `INSERT INTO registrodiariocaja (
+             CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+             RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+           ) VALUES (?, ?, 2, 1, ?, ?, ?)`,
+          [
+            Number(cajaId),
+            fechaCobro,
+            `Cobro Delivery N°: ${Number(ventaId)}`,
+            pendiente,
+            usuarioId || "",
+          ]
+        );
+        await conn.query(
+          `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
+          [pendiente, Number(cajaId)]
+        );
+      }
+
+      let sql =
+        `UPDATE venta_delivery
+            SET estado = ?,
+                entregado_en = CASE WHEN ? = 'ENTREGADO' THEN now() ELSE NULL END`;
+      const params = [estado, estado];
+      if (debeCobrar) {
+        sql += `, cobrado_en = now(), cobro_caja_id = ?, cobro_usuario_id = ?`;
+        params.push(Number(cajaId), usuarioId || "");
+      }
+      sql += ` WHERE venta_id = ?`;
+      params.push(Number(ventaId));
+      await conn.query(sql, params);
+
+      await conn.commit();
+      return { ok: true, cobrado: debeCobrar, pendiente };
+    } catch (e) {
+      try {
+        await conn.rollback();
+      } catch (rbErr) {
+        console.error("Rollback falló (updateDeliveryEstado):", rbErr);
+      }
+      throw e;
+    } finally {
+      conn.release();
+    }
   },
 
   // Reporte de ventas agrupadas POR VENDEDOR, para liquidar comisiones. El
