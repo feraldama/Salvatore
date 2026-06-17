@@ -838,9 +838,7 @@ export default function Sales() {
           clienteSeleccionado?.ClienteTipo === "MA"
             ? p.precioVentaMayorista
             : p.precioVenta;
-        precioLabel = `Caja (${
-          clienteSeleccionado?.ClienteTipo === "MA" ? "Mayorista" : "Minorista"
-        })`;
+        precioLabel = "Caja";
         totalLinea = precioUnitario * p.cantidad;
       } else {
         // Unidad: puede aplicar combo
