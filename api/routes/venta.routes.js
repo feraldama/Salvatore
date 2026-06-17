@@ -51,6 +51,11 @@ router.patch(
   authMiddleware,
   ventaController.updateDeliveryEstado
 );
+router.post(
+  "/deliveries/:ventaId/cobrar",
+  authMiddleware,
+  ventaController.cobrarDelivery
+);
 router.post("/confirmar", authMiddleware, ventaController.confirmar);
 router.post("/devolucion", authMiddleware, ventaController.devolucion);
 router.get("/search", authMiddleware, ventaController.searchVentas);

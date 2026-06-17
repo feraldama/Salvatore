@@ -26,6 +26,7 @@ import {
 import ClienteModal from "../../components/common/ClienteModal";
 import type { Cliente } from "../../components/common/ClienteFormModal";
 import { loadPdf } from "../../utils/lazyPdf";
+import { imprimirFactura } from "../../utils/factura";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
 import { getLocalById } from "../../services/locales.service";
@@ -165,6 +166,9 @@ export default function Sales() {
   const [isDevolucion, setIsDevolucion] = useState(false);
   const cantidadRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Evita despachar dos veces el mismo delivery por doble click (el botón llama
+  // a sendRequest directo, sin el guard de isSubmitting del PaymentModal).
+  const despachandoRef = useRef(false);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Flag para indicar "al llegar los próximos resultados de búsqueda, agregar
   // el primer producto al carrito". Se activa cuando el usuario presiona Enter
@@ -515,6 +519,82 @@ export default function Sales() {
     return cantidadCombos * comboPrecio + cantidadRestante * precioUnitario;
   }
 
+  // Limpia la pantalla tras una venta/despacho/devolución para la próxima.
+  const limpiarPostVenta = () => {
+    setCarrito([]);
+    setSelectedProductId(null);
+    setBusqueda("");
+    setBusquedaDebounced("");
+    setCurrentPage(1);
+    setShowInvoicePrintModal(false);
+    // Volver a "ventana" para la próxima venta.
+    setEsDelivery(false);
+    setChoferDeliveryId("");
+    // Si fue delivery, ahora hay uno más por cobrar.
+    refreshDeliveriesPorCobrar();
+    setClienteSeleccionado({
+      ClienteId: 1,
+      ClienteNombre: "SIN NOMBRE MINORISTA",
+      ClienteRUC: "",
+      ClienteTelefono: "",
+      ClienteTipo: "MI",
+      UsuarioId: "",
+      ClienteApellido: "",
+      ClienteDireccion: "",
+    });
+    setRefreshKey((k) => k + 1);
+    searchInputRef.current?.focus();
+  };
+
+  // Tras despachar un delivery, ofrece imprimir la FACTURA (para que el chofer
+  // la lleve) o una COMANDA. El pago se carga después, al cobrar; la factura no
+  // muestra método de pago, así que sirve igual impresa antes del cobro.
+  const promptImprimirDelivery = async (
+    ventaId: number,
+    items: typeof carrito,
+    fechaIso: string
+  ) => {
+    const totalFactura = items.reduce((acc, p) => acc + obtenerTotal(p), 0);
+    const productosFactura = items.map((p) => {
+      const lineaTotal = obtenerTotal(p);
+      return {
+        ProductoNombre: p.nombre,
+        VentaProductoCantidad: p.cantidad,
+        VentaProductoPrecio: p.cantidad
+          ? Math.round(lineaTotal / p.cantidad)
+          : 0,
+        VentaProductoPrecioTotal: lineaTotal,
+      };
+    });
+    const ventaFactura = {
+      VentaId: ventaId,
+      VentaFecha: fechaIso,
+      Total: totalFactura,
+      ClienteRazonSocial: `${clienteSeleccionado?.ClienteNombre || ""} ${
+        clienteSeleccionado?.ClienteApellido || ""
+      }`.trim(),
+      ClienteRUC: clienteSeleccionado?.ClienteRUC || "",
+      ClienteTelefono: clienteSeleccionado?.ClienteTelefono || "",
+      ClienteDireccion: clienteSeleccionado?.ClienteDireccion || "",
+    };
+    const r = await Swal.fire({
+      icon: "success",
+      title: "Delivery despachado",
+      text: "¿Qué querés imprimir para el chofer?",
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: "Factura",
+      denyButtonText: "Comanda",
+      cancelButtonText: "Nada",
+      confirmButtonColor: "#16a34a",
+    });
+    if (r.isConfirmed) {
+      imprimirFactura(ventaFactura, productosFactura);
+    } else if (r.isDenied) {
+      await generateTicketPDF();
+    }
+  };
+
   const sendRequest = async () => {
     // Guardrail: el descuento de stock necesita un almacén real. Los usuarios
     // en local "TODOS" (LocalId 0) resuelven al almacén 0, que no tiene stock
@@ -589,6 +669,7 @@ export default function Sales() {
       `${pad(fechaAjustada.getDate())}T${pad(fechaAjustada.getHours())}:` +
       `${pad(fechaAjustada.getMinutes())}:${pad(fechaAjustada.getSeconds())}`;
 
+    let ventaResp: { data?: { VentaId?: number } } | null = null;
     try {
       if (isDevolucionMode) {
         await devolverVenta({
@@ -604,7 +685,7 @@ export default function Sales() {
           })),
         });
       } else {
-        await confirmarVenta({
+        ventaResp = await confirmarVenta({
           VentaFecha: fechaIso,
           AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
           ClienteId: Number(clienteSeleccionado?.ClienteId),
@@ -638,46 +719,36 @@ export default function Sales() {
           })),
         });
       }
-      if (printTicket) {
-        await generateTicketPDF();
-      }
-
-      const successMessage = isDevolucionMode
-        ? "Devolución realizada con éxito!"
-        : "Venta realizada con éxito!";
-
-      Swal.fire({
-        title: successMessage,
-        icon: "success",
-        timer: 1000,
-        showConfirmButton: false,
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-      }).then(() => {
-        setCarrito([]);
-        setSelectedProductId(null);
-        setBusqueda("");
-        setBusquedaDebounced("");
-        setCurrentPage(1);
-        setShowInvoicePrintModal(false);
-        // Volver a "ventana" para la próxima venta.
-        setEsDelivery(false);
-        setChoferDeliveryId("");
-        // Si la venta fue delivery en efectivo, ahora hay uno más por cobrar.
-        refreshDeliveriesPorCobrar();
-        setClienteSeleccionado({
-          ClienteId: 1,
-          ClienteNombre: "SIN NOMBRE MINORISTA",
-          ClienteRUC: "",
-          ClienteTelefono: "",
-          ClienteTipo: "MI",
-          UsuarioId: "",
-          ClienteApellido: "",
-          ClienteDireccion: "",
+      // Despacho de delivery: no se cobró nada (el pago se carga al volver el
+      // chofer). Se ofrece imprimir factura/comanda y se limpia, sin el toast
+      // genérico (el prompt de impresión ya da el feedback).
+      if (!isDevolucionMode && esDelivery) {
+        if (ventaResp?.data?.VentaId) {
+          await promptImprimirDelivery(
+            Number(ventaResp.data.VentaId),
+            itemsValidos,
+            fechaIso
+          );
+        }
+        limpiarPostVenta();
+      } else {
+        if (printTicket) {
+          await generateTicketPDF();
+        }
+        const successMessage = isDevolucionMode
+          ? "Devolución realizada con éxito!"
+          : "Venta realizada con éxito!";
+        Swal.fire({
+          title: successMessage,
+          icon: "success",
+          timer: 1000,
+          showConfirmButton: false,
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+        }).then(() => {
+          limpiarPostVenta();
         });
-        setRefreshKey((k) => k + 1);
-        searchInputRef.current?.focus();
-      });
+      }
     } catch (error) {
       console.error(error);
       Swal.fire({
@@ -1217,19 +1288,33 @@ export default function Sales() {
                   : "bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
               }`}
               onClick={() => {
-                if (!isDevolucion && esDelivery && !choferDeliveryId) {
-                  Swal.fire({
-                    icon: "warning",
-                    title: "Falta el chofer",
-                    text: "Seleccioná el chofer del delivery antes de cobrar.",
-                    confirmButtonColor: "#3085d6",
+                // Delivery: se despacha SIN cargar método de pago (el cobro se
+                // hace al volver el chofer). No se abre el PaymentModal.
+                if (!isDevolucion && esDelivery) {
+                  if (!choferDeliveryId) {
+                    Swal.fire({
+                      icon: "warning",
+                      title: "Falta el chofer",
+                      text: "Seleccioná el chofer del delivery antes de despachar.",
+                      confirmButtonColor: "#3085d6",
+                    });
+                    return;
+                  }
+                  if (despachandoRef.current) return;
+                  despachandoRef.current = true;
+                  sendRequest().finally(() => {
+                    despachandoRef.current = false;
                   });
                   return;
                 }
                 setShowModal(true);
               }}
             >
-              {isDevolucion ? "Devolver" : "Pagar"}
+              {isDevolucion
+                ? "Devolver"
+                : esDelivery
+                  ? "Despachar delivery"
+                  : "Pagar"}
             </button>
             {/* Botón Presupuesto */}
             <button

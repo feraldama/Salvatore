@@ -611,7 +611,10 @@ export interface Delivery {
   chofer_id: string;
   chofer_nombre?: string;
   chofer_apellido?: string;
-  // Cobro contra entrega (efectivo): monto a cobrar al volver y cuándo se cobró.
+  // Cobro contra entrega: monto_pendiente es el total a cobrar al volver el
+  // chofer (se difiere TODO el cobro). efectivo_pendiente queda del flujo viejo
+  // (solo efectivo) por compatibilidad. cobrado_en sella cuándo se cobró.
+  monto_pendiente: number;
   efectivo_pendiente: number;
   cobrado_en: string | null;
 }
@@ -647,24 +650,60 @@ export const getDeliveriesPorCobrarCount = async (): Promise<number> => {
 };
 
 // Avanza el estado del reparto (PENDIENTE -> EN_RUTA -> ENTREGADO / CANCELADO).
-// Al pasar a ENTREGADO un delivery con efectivo pendiente, hay que mandar la
-// caja abierta (CajaId), el usuario y la fecha para registrar el cobro.
+// NO cobra: si el delivery tiene cobro pendiente, marcar ENTREGADO es rechazado
+// por el backend (needCobro) — hay que cobrarlo antes con cobrarDelivery.
 export const updateDeliveryEstado = async (
   ventaId: number,
-  estado: DeliveryEstado,
-  cobro?: { CajaId: number; UsuarioId: string; Fecha: string }
+  estado: DeliveryEstado
 ) => {
   try {
-    const response = await api.patch(
-      `/venta/deliveries/${ventaId}/estado`,
-      { estado, ...(cobro || {}) }
-    );
+    const response = await api.patch(`/venta/deliveries/${ventaId}/estado`, {
+      estado,
+    });
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
     throw (
       axiosError.response?.data || {
         message: "Error al actualizar el estado del delivery",
+      }
+    );
+  }
+};
+
+// Desglose de pago que el cajero carga al cobrar el delivery (mismos campos que
+// el PaymentModal de la venta de mostrador).
+export interface CobrarDeliveryPagos {
+  Efectivo?: number;
+  Banco?: number;
+  CuentaCliente?: number;
+  Voucher?: number;
+  Transferencia?: number;
+  VentaNroPOS?: string;
+}
+
+// Cobra un delivery contra entrega: registra el desglose de pago en la caja
+// abierta del cajero y deja el reparto ENTREGADO + cobrado.
+export const cobrarDelivery = async (
+  ventaId: number,
+  payload: {
+    Pagos: CobrarDeliveryPagos;
+    CajaId: number;
+    UsuarioId: string;
+    Fecha: string;
+  }
+) => {
+  try {
+    const response = await api.post(
+      `/venta/deliveries/${ventaId}/cobrar`,
+      payload
+    );
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al cobrar el delivery",
       }
     );
   }

@@ -94,6 +94,114 @@ function normalizeVentaFecha(value) {
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
+// Registra los pagos de una venta YA creada en la caja indicada: ventacredito si
+// hubo cuenta corriente, un movimiento en registrodiariocaja por cada método y
+// la suma del efectivo a CajaMonto. Comparte la lógica de grupos de pago entre
+// la confirmación de una venta normal (controller.confirmar) y el cobro
+// contra-entrega de un delivery (Venta.cobrarDelivery), para que el cierre de
+// caja clasifique igual en ambos casos.
+//   - esEnvio: usa los grupos dedicados 7-10 y NO suma el efectivo a la caja
+//     física (en el envío lo cobra el repartidor).
+//   - etiqueta: sufijo informativo del detalle (" (ENVÍO)", " (DELIVERY)", "").
+// Recibe la conexión transaccional del caller (no abre/commitea transacción).
+async function registrarPagosEnCaja(conn, {
+  ventaId,
+  cajaId,
+  usuarioId,
+  fecha,
+  efectivo = 0,
+  banco = 0,
+  voucher = 0,
+  transferencia = 0,
+  cuentaCliente = 0,
+  esEnvio = false,
+  etiqueta = "",
+}) {
+  const usr = usuarioId || "";
+
+  // Cuenta corriente del cliente (crédito): la cabecera del crédito + el pago
+  // parcial entregado al momento (lo NO-crédito).
+  if (cuentaCliente > 0) {
+    const entregaCredito = efectivo + banco + voucher + transferencia;
+    const [vcInsert] = await conn.query(
+      `INSERT INTO ventacredito (VentaId, VentaCreditoPagoCant) VALUES (?, ?)`,
+      [ventaId, entregaCredito > 0 ? 1 : 0]
+    );
+    if (entregaCredito > 0) {
+      const ventaCreditoId = vcInsert.insertId;
+      await conn.query(
+        `INSERT INTO ventacreditopago (
+           VentaCreditoId, VentaCreditoPagoId, VentaCreditoPagoFecha, VentaCreditoPagoMonto
+         ) VALUES (?, ?, ?, ?)`,
+        [ventaCreditoId, 1, fecha, entregaCredito]
+      );
+    }
+  }
+
+  // Efectivo: grupo 3 (cobro crédito) si la venta es a cuenta, 1 (venta contado)
+  // si no; 7 si es envío.
+  if (efectivo > 0) {
+    const isCredito = cuentaCliente > 0;
+    const grupoEfectivo = esEnvio ? 7 : isCredito ? 3 : 1;
+    const detalleEfectivo = isCredito
+      ? `Venta Crédito N°: ${ventaId}${etiqueta}`
+      : `Venta N°: ${ventaId}${etiqueta}`;
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+      [cajaId, fecha, grupoEfectivo, detalleEfectivo, efectivo, usr]
+    );
+  }
+  if (banco > 0) {
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+      [cajaId, fecha, esEnvio ? 8 : 4, `Venta POS N°: ${ventaId}${etiqueta}`, banco, usr]
+    );
+  }
+  if (voucher > 0) {
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+      [cajaId, fecha, esEnvio ? 9 : 5, `Venta Voucher N°: ${ventaId}${etiqueta}`, voucher, usr]
+    );
+  }
+  if (transferencia > 0) {
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+      [cajaId, fecha, esEnvio ? 10 : 6, `Venta Transferencia N°: ${ventaId}${etiqueta}`, transferencia, usr]
+    );
+  }
+  // Saldo a crédito (cuenta corriente): grupo 11 dedicado, informativo, no entra
+  // a la caja física ni a los ingresos en efectivo del cierre.
+  if (cuentaCliente > 0) {
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, 11, ?, ?, ?)`,
+      [cajaId, fecha, `Venta Cuenta Corriente N°: ${ventaId}${etiqueta}`, cuentaCliente, usr]
+    );
+  }
+
+  // Solo el efectivo de una venta NO-envío se acumula en la caja física.
+  if (efectivo > 0 && !esEnvio) {
+    await conn.query(
+      `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
+      [efectivo, cajaId]
+    );
+  }
+}
+
 const Venta = {
   getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
@@ -1032,6 +1140,7 @@ const Venta = {
               d.entregado_en AS entregado_en,
               d.creado_en AS creado_en,
               d.efectivo_pendiente AS efectivo_pendiente,
+              d.monto_pendiente AS monto_pendiente,
               d.cobrado_en AS cobrado_en,
               TRIM(d.chofer_id) AS chofer_id,
               u.usuarionombre  AS chofer_nombre,
@@ -1047,9 +1156,10 @@ const Venta = {
     return rows;
   },
 
-  // Cuenta los deliveries pendientes de cobro en efectivo (efectivo pendiente,
-  // no cobrado y no cancelado) de la empresa. Para el badge del botón "Cobrar
-  // delivery"; consulta barata (solo COUNT).
+  // Cuenta los deliveries pendientes de cobro (monto pendiente, no cobrado y no
+  // cancelado) de la empresa. Para el badge del botón "Cobrar delivery";
+  // consulta barata (solo COUNT). Contempla monto_pendiente (flujo nuevo: se
+  // difiere el total) y efectivo_pendiente (flujo viejo 018: solo efectivo).
   countDeliveriesPorCobrar: async (empresaId) => {
     const pe = db.promise();
     const [rows] = await pe.query(
@@ -1057,7 +1167,7 @@ const Venta = {
          FROM venta_delivery d
          JOIN venta v ON v.VentaId = d.venta_id
         WHERE v.EmpresaId = ?
-          AND d.efectivo_pendiente > 0
+          AND (d.monto_pendiente > 0 OR d.efectivo_pendiente > 0)
           AND d.cobrado_en IS NULL
           AND d.estado <> 'CANCELADO'`,
       [Number(empresaId)]
@@ -1065,31 +1175,25 @@ const Venta = {
     return Number(rows[0]?.total) || 0;
   },
 
-  // Avanza el estado del reparto de un delivery. Al pasar a ENTREGADO sella
-  // entregado_en y, si hay efectivo pendiente que todavía no se cobró, mete ese
-  // efectivo a la caja indicada (cobro contra entrega): inserta el movimiento en
-  // registrodiariocaja (grupo 1 = venta contado en efectivo) y suma a CajaMonto,
-  // todo en una transacción. Es idempotente: si cobrado_en ya está seteado no
-  // vuelve a cobrar. Scope por empresa en el SELECT inicial.
+  // Avanza el estado del reparto de un delivery (PENDIENTE -> EN_RUTA ->
+  // ENTREGADO / CANCELADO) y sella entregado_en al ENTREGAR. NO mueve plata: el
+  // cobro va por Venta.cobrarDelivery (endpoint dedicado con desglose de pago).
+  // Para evitar dar por entregado sin cobrar, si se pide ENTREGADO con monto
+  // pendiente sin cobrar, se rechaza pidiendo que se cobre primero. Scope por
+  // empresa en el SELECT inicial.
   //
   // Devuelve:
   //   { ok: false, notFound: true }  -> no existe el delivery en esa empresa
-  //   { ok: false, needCaja: true, pendiente } -> falta caja abierta para cobrar
-  //   { ok: true, cobrado, pendiente } -> actualizado (cobrado=true si ingresó plata)
-  updateDeliveryEstado: async ({
-    ventaId,
-    estado,
-    empresaId,
-    cajaId = null,
-    usuarioId = null,
-    fecha = null,
-  }) => {
+  //   { ok: false, needCobro: true, pendiente } -> hay que cobrar antes de entregar
+  //   { ok: true } -> estado actualizado
+  updateDeliveryEstado: async ({ ventaId, estado, empresaId }) => {
     const conn = await db.promise().getConnection();
     try {
       await conn.beginTransaction();
 
       const [rows] = await conn.query(
         `SELECT d.estado AS estado,
+                d.monto_pendiente AS monto_pendiente,
                 d.efectivo_pendiente AS efectivo_pendiente,
                 d.cobrado_en AS cobrado_en
            FROM venta_delivery d
@@ -1102,52 +1206,26 @@ const Venta = {
         return { ok: false, notFound: true };
       }
 
-      const pendiente = Number(rows[0].efectivo_pendiente) || 0;
+      const pendiente =
+        Number(rows[0].monto_pendiente) || Number(rows[0].efectivo_pendiente) || 0;
       const yaCobrado = rows[0].cobrado_en != null;
-      // Solo se cobra al ENTREGAR, si hay efectivo pendiente y no se cobró antes.
-      const debeCobrar = estado === "ENTREGADO" && pendiente > 0 && !yaCobrado;
-
-      if (debeCobrar && !cajaId) {
+      // No se puede dar por ENTREGADO un delivery que todavía debe cobrarse: el
+      // cobro (con su desglose de pago) tiene que registrarse primero.
+      if (estado === "ENTREGADO" && pendiente > 0 && !yaCobrado) {
         await conn.rollback();
-        return { ok: false, needCaja: true, pendiente };
+        return { ok: false, needCobro: true, pendiente };
       }
 
-      if (debeCobrar) {
-        const fechaCobro = fecha || new Date();
-        await conn.query(
-          `INSERT INTO registrodiariocaja (
-             CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-             RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-           ) VALUES (?, ?, 2, 1, ?, ?, ?)`,
-          [
-            Number(cajaId),
-            fechaCobro,
-            `Cobro Delivery N°: ${Number(ventaId)}`,
-            pendiente,
-            usuarioId || "",
-          ]
-        );
-        await conn.query(
-          `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
-          [pendiente, Number(cajaId)]
-        );
-      }
-
-      let sql =
+      await conn.query(
         `UPDATE venta_delivery
             SET estado = ?,
-                entregado_en = CASE WHEN ? = 'ENTREGADO' THEN now() ELSE NULL END`;
-      const params = [estado, estado];
-      if (debeCobrar) {
-        sql += `, cobrado_en = now(), cobro_caja_id = ?, cobro_usuario_id = ?`;
-        params.push(Number(cajaId), usuarioId || "");
-      }
-      sql += ` WHERE venta_id = ?`;
-      params.push(Number(ventaId));
-      await conn.query(sql, params);
+                entregado_en = CASE WHEN ? = 'ENTREGADO' THEN now() ELSE NULL END
+          WHERE venta_id = ?`,
+        [estado, estado, Number(ventaId)]
+      );
 
       await conn.commit();
-      return { ok: true, cobrado: debeCobrar, pendiente };
+      return { ok: true };
     } catch (e) {
       try {
         await conn.rollback();
@@ -1159,6 +1237,140 @@ const Venta = {
       conn.release();
     }
   },
+
+  // Cobra un delivery contra entrega: registra el desglose de pago (que el
+  // cajero carga al volver el chofer) en la caja abierta del cajero y marca el
+  // reparto ENTREGADO + cobrado. Toda la registración en caja se difiere a este
+  // punto (al confirmar la venta delivery no entró nada a la caja). Reusa el
+  // helper registrarPagosEnCaja para clasificar igual que una venta de
+  // mostrador. Actualiza la cabecera de venta con lo realmente cobrado
+  // (VentaEntrega/VentaTipo/Total/NroPOS). Idempotente: si ya estaba cobrado no
+  // vuelve a registrar. Scope por empresa.
+  //
+  // Devuelve:
+  //   { ok: false, notFound: true }      -> no existe el delivery en esa empresa
+  //   { ok: false, yaCobrado: true }      -> ya se cobró antes
+  //   { ok: false, insuficiente: true, pendiente } -> el pago no cubre el total
+  //   { ok: true, pendiente } -> cobrado y entregado
+  cobrarDelivery: async ({
+    ventaId,
+    empresaId,
+    cajaId,
+    usuarioId = null,
+    fecha = null,
+    pagos = {},
+  }) => {
+    const efectivo = Math.round(Number(pagos.Efectivo) || 0);
+    const banco = Math.round(Number(pagos.Banco) || 0);
+    const cuentaCliente = Math.round(Number(pagos.CuentaCliente) || 0);
+    const voucher = Math.round(Number(pagos.Voucher) || 0);
+    const transferencia = Math.round(Number(pagos.Transferencia) || 0);
+    const ventaNroPOS = String(pagos.VentaNroPOS || "0");
+    const sumaPagos = efectivo + banco + cuentaCliente + voucher + transferencia;
+
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // FOR UPDATE bloquea la fila del delivery dentro de la transacción: evita
+      // que dos cajeros cobren el mismo delivery a la vez y dupliquen el ingreso.
+      const [rows] = await conn.query(
+        `SELECT d.monto_pendiente AS monto_pendiente,
+                d.efectivo_pendiente AS efectivo_pendiente,
+                d.estado AS estado,
+                d.cobrado_en AS cobrado_en
+           FROM venta_delivery d
+           JOIN venta v ON v.VentaId = d.venta_id
+          WHERE d.venta_id = ? AND v.EmpresaId = ?
+          FOR UPDATE`,
+        [Number(ventaId), Number(empresaId)]
+      );
+      if (!rows.length) {
+        await conn.rollback();
+        return { ok: false, notFound: true };
+      }
+      if (rows[0].estado === "CANCELADO") {
+        await conn.rollback();
+        return { ok: false, cancelado: true };
+      }
+      if (rows[0].cobrado_en != null) {
+        await conn.rollback();
+        return { ok: false, yaCobrado: true };
+      }
+      const pendiente =
+        Number(rows[0].monto_pendiente) || Number(rows[0].efectivo_pendiente) || 0;
+      // Decisión "siempre se cobra el total": el desglose debe cubrir el monto
+      // pendiente (puede superarlo por el recargo de tarjeta).
+      if (sumaPagos < pendiente) {
+        await conn.rollback();
+        return { ok: false, insuficiente: true, pendiente };
+      }
+
+      const fechaCobro = fecha || new Date();
+      await registrarPagosEnCaja(conn, {
+        ventaId: Number(ventaId),
+        cajaId: Number(cajaId),
+        usuarioId,
+        fecha: fechaCobro,
+        efectivo,
+        banco,
+        voucher,
+        transferencia,
+        cuentaCliente,
+        esEnvio: false,
+        etiqueta: " (DELIVERY)",
+      });
+
+      // Reflejar en la cabecera lo realmente cobrado (al despachar quedó como
+      // total de productos sin pago). VentaEntrega excluye el crédito a cuenta.
+      let ventaTipo;
+      if (cuentaCliente > 0) ventaTipo = "CR";
+      else if (transferencia > 0) ventaTipo = "TR";
+      else if (banco > 0) ventaTipo = "PO";
+      else ventaTipo = "CO";
+      const ventaEntrega = efectivo + banco + voucher + transferencia;
+      // GREATEST evita encoger Total/VentaEntrega: en el flujo nuevo crecen desde
+      // los valores de despacho (Total=productos, Entrega=0) y el recargo de
+      // tarjeta los puede subir; en deliveries del flujo viejo (donde la cabecera
+      // ya tenía el total completo) no se corrompen al cobrar solo el efectivo.
+      await conn.query(
+        `UPDATE venta
+            SET Total = GREATEST(Total, ?),
+                VentaEntrega = GREATEST(VentaEntrega, ?),
+                VentaTipo = ?,
+                VentaNroPOS = ?
+          WHERE VentaId = ?`,
+        [sumaPagos, ventaEntrega, ventaTipo, ventaNroPOS, Number(ventaId)]
+      );
+
+      await conn.query(
+        `UPDATE venta_delivery
+            SET estado = 'ENTREGADO',
+                entregado_en = now(),
+                cobrado_en = now(),
+                cobro_caja_id = ?,
+                cobro_usuario_id = ?,
+                monto_pendiente = 0,
+                efectivo_pendiente = 0
+          WHERE venta_id = ?`,
+        [Number(cajaId), usuarioId || "", Number(ventaId)]
+      );
+
+      await conn.commit();
+      return { ok: true, pendiente };
+    } catch (e) {
+      try {
+        await conn.rollback();
+      } catch (rbErr) {
+        console.error("Rollback falló (cobrarDelivery):", rbErr);
+      }
+      throw e;
+    } finally {
+      conn.release();
+    }
+  },
+
+  registrarPagosEnCaja,
 
   // Reporte de ventas agrupadas POR VENDEDOR, para liquidar comisiones. El
   // vendedor se resuelve por la venta (VentaVendedorId) y, si no está cargado,

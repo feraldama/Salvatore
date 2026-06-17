@@ -13,12 +13,19 @@ import { useAuth } from "../../contexts/useAuth";
 import {
   getDeliveries,
   updateDeliveryEstado,
+  cobrarDelivery,
   getProductosByVentaId,
   type Delivery,
   type DeliveryEstado,
 } from "../../services/venta.service";
+import PaymentModal from "../../components/common/PaymentModal";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { formatFechaHora, formatMiles } from "../../utils/utils";
+
+// Monto a cobrar de un delivery: el total diferido (monto_pendiente) o, para
+// deliveries del flujo viejo, el efectivo pendiente.
+const montoACobrar = (d: Delivery) =>
+  Number(d.monto_pendiente) || Number(d.efectivo_pendiente) || 0;
 
 // Timestamp ISO local (YYYY-MM-DDTHH:MM:SS) para que el cobro caiga con la hora
 // real del cajero (mismo criterio que la confirmación de venta).
@@ -79,6 +86,20 @@ export default function DeliveriesPage() {
   );
   const [detalleLoading, setDetalleLoading] = useState(false);
 
+  // Cobro de un delivery al entregar: abre el PaymentModal con el total
+  // pendiente y registra el desglose de pago en la caja del cajero.
+  const [cobrando, setCobrando] = useState<Delivery | null>(null);
+  const [cobroCajaId, setCobroCajaId] = useState<number | null>(null);
+  const [totalRest, setTotalRest] = useState(0);
+  const [efectivo, setEfectivo] = useState(0);
+  const [banco, setBanco] = useState(0);
+  const [bancoDebito, setBancoDebito] = useState(0);
+  const [bancoCredito, setBancoCredito] = useState(0);
+  const [cuentaCliente, setCuentaCliente] = useState(0);
+  const [voucher, setVoucher] = useState(0);
+  const [ventaNroPOS, setVentaNroPOS] = useState("");
+  const [printTicket, setPrintTicket] = useState(false);
+
   const verDetalle = async (d: Delivery) => {
     setDetalle(d);
     setDetalleProductos([]);
@@ -123,6 +144,9 @@ export default function DeliveriesPage() {
     fetchDeliveries();
   }, [fetchDeliveries]);
 
+  // Cambia el estado del reparto SIN cobrar (EN_RUTA / CANCELADO / PENDIENTE, o
+  // ENTREGADO de un delivery sin cobro pendiente). El cobro va por el flujo de
+  // PaymentModal (entregar -> abrirCobro), no acá.
   const cambiarEstado = async (
     d: Delivery,
     nuevo: DeliveryEstado,
@@ -133,60 +157,13 @@ export default function DeliveriesPage() {
     // mercadería ya salió del stock y, si se cobró, la plata sigue cobrada).
     // Para revertir la venta hay que hacer una devolución.
     const esCancelar = nuevo === "CANCELADO";
-    // Al ENTREGAR con efectivo pendiente hay que cobrarlo e ingresarlo a la caja
-    // abierta del cajero (cobro contra entrega).
-    const requiereCobro =
-      nuevo === "ENTREGADO" &&
-      Number(d.efectivo_pendiente) > 0 &&
-      !d.cobrado_en;
-
-    let cobro: { CajaId: number; UsuarioId: string; Fecha: string } | undefined;
-    if (requiereCobro) {
-      if (!user?.id) {
-        Swal.fire({
-          icon: "error",
-          title: "Sin usuario",
-          text: "No se pudo identificar al usuario para registrar el cobro.",
-        });
-        return;
-      }
-      let cajaId: number | null = null;
-      try {
-        const estado = await getEstadoAperturaPorUsuario(user.id);
-        if (estado?.cajaId && estado.aperturaId > estado.cierreId) {
-          cajaId = Number(estado.cajaId);
-        }
-      } catch {
-        cajaId = null;
-      }
-      if (!cajaId) {
-        Swal.fire({
-          icon: "warning",
-          title: "Necesitás una caja abierta",
-          text: `Para registrar el cobro de Gs. ${formatMiles(
-            d.efectivo_pendiente
-          )} en efectivo, abrí tu caja primero.`,
-          confirmButtonColor: "#3085d6",
-        });
-        return;
-      }
-      cobro = {
-        CajaId: cajaId,
-        UsuarioId: String(user.id),
-        Fecha: isoLocalAhora(),
-      };
-    }
 
     const confirm = await Swal.fire({
       icon: esCancelar ? "warning" : "question",
       title: `¿${accion}?`,
-      html: requiereCobro
-        ? `Venta N° ${ventaId}<br/><small>Se ingresará el cobro de <b>Gs. ${formatMiles(
-            d.efectivo_pendiente
-          )}</b> en efectivo a tu caja.</small>`
-        : esCancelar
-          ? `Venta N° ${ventaId}<br/><small>Esto cancela solo el <b>reparto</b>. No anula la venta ni devuelve el stock; para eso usá una devolución.</small>`
-          : `Venta N° ${ventaId}`,
+      html: esCancelar
+        ? `Venta N° ${ventaId}<br/><small>Esto cancela solo el <b>reparto</b>. No anula la venta ni devuelve el stock; para eso usá una devolución.</small>`
+        : `Venta N° ${ventaId}`,
       showCancelButton: true,
       confirmButtonText: "Sí",
       cancelButtonText: "No",
@@ -194,12 +171,12 @@ export default function DeliveriesPage() {
     });
     if (!confirm.isConfirmed) return;
     try {
-      const r = await updateDeliveryEstado(ventaId, nuevo, cobro);
+      await updateDeliveryEstado(ventaId, nuevo);
       await fetchDeliveries();
       Swal.fire({
         position: "top-end",
         icon: "success",
-        title: r?.cobrado ? "Entregado y cobrado" : "Estado actualizado",
+        title: "Estado actualizado",
         showConfirmButton: false,
         timer: 1300,
       });
@@ -209,6 +186,90 @@ export default function DeliveriesPage() {
         icon: "error",
         title: "Error",
         text: e?.message || "No se pudo actualizar el estado",
+      });
+    }
+  };
+
+  // "Entregado": si el delivery tiene cobro pendiente, hay que cobrarlo (abre el
+  // PaymentModal); si no, marca entregado directo.
+  const entregar = async (d: Delivery) => {
+    if (montoACobrar(d) > 0 && !d.cobrado_en) {
+      await abrirCobro(d);
+    } else {
+      await cambiarEstado(d, "ENTREGADO", "Marcar entregado");
+    }
+  };
+
+  // Verifica caja abierta y abre el PaymentModal para cobrar el delivery.
+  const abrirCobro = async (d: Delivery) => {
+    if (!user?.id) {
+      Swal.fire({
+        icon: "error",
+        title: "Sin usuario",
+        text: "No se pudo identificar al usuario para registrar el cobro.",
+      });
+      return;
+    }
+    let cajaId: number | null = null;
+    try {
+      const est = await getEstadoAperturaPorUsuario(user.id);
+      if (est?.cajaId && est.aperturaId > est.cierreId) {
+        cajaId = Number(est.cajaId);
+      }
+    } catch {
+      cajaId = null;
+    }
+    if (!cajaId) {
+      Swal.fire({
+        icon: "warning",
+        title: "Necesitás una caja abierta",
+        text: `Para registrar el cobro de Gs. ${formatMiles(
+          montoACobrar(d)
+        )}, abrí tu caja primero.`,
+        confirmButtonColor: "#3085d6",
+      });
+      return;
+    }
+    setCobroCajaId(cajaId);
+    setCobrando(d);
+  };
+
+  // "Facturar" del PaymentModal: registra el desglose de pago del delivery y lo
+  // deja entregado + cobrado. Mapeo de Pagos idéntico al de la venta minorista.
+  const confirmarCobro = async () => {
+    if (!cobrando || !cobroCajaId || !user?.id) return;
+    try {
+      await cobrarDelivery(cobrando.VentaId, {
+        Pagos: {
+          Efectivo: Number(efectivo) + Number(totalRest),
+          Banco: Number(bancoDebito) + Number(bancoCredito),
+          CuentaCliente: Number(cuentaCliente),
+          Voucher: Number(voucher),
+          Transferencia: Number(banco),
+          VentaNroPOS:
+            bancoDebito > 0 || bancoCredito > 0
+              ? ventaNroPOS.trim() || "0"
+              : "0",
+        },
+        CajaId: cobroCajaId,
+        UsuarioId: String(user.id),
+        Fecha: isoLocalAhora(),
+      });
+      setCobrando(null);
+      await fetchDeliveries();
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: "Entregado y cobrado",
+        showConfirmButton: false,
+        timer: 1300,
+      });
+    } catch (err) {
+      const e = err as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: e?.message || "No se pudo registrar el cobro",
       });
     }
   };
@@ -256,11 +317,12 @@ export default function DeliveriesPage() {
       key: "cobro",
       label: "Cobro",
       render: (d: Row) => {
-        const pend = Number(d.efectivo_pendiente) || 0;
-        if (pend <= 0) return <span className="text-slate-400">—</span>;
+        const pend = montoACobrar(d);
+        if (pend <= 0 && !d.cobrado_en)
+          return <span className="text-slate-400">—</span>;
         return d.cobrado_en ? (
           <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-            Cobrado Gs. {formatMiles(pend)}
+            Cobrado
           </span>
         ) : (
           <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
@@ -307,10 +369,10 @@ export default function DeliveriesPage() {
         )}
         {puedeEditar && d.estado === "EN_RUTA" && (
           <button
-            onClick={() => cambiarEstado(d, "ENTREGADO", "Marcar entregado")}
+            onClick={() => entregar(d)}
             className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
           >
-            Entregado
+            {montoACobrar(d) > 0 && !d.cobrado_en ? "Cobrar y entregar" : "Entregado"}
           </button>
         )}
         {puedeEditar && (d.estado === "PENDIENTE" || d.estado === "EN_RUTA") && (
@@ -451,18 +513,18 @@ export default function DeliveriesPage() {
                   {ESTADO_LABEL[detalle.estado]}
                 </span>
               </div>
-              {Number(detalle.efectivo_pendiente) > 0 && (
+              {(montoACobrar(detalle) > 0 || detalle.cobrado_en) && (
                 <div>
-                  <span className="text-slate-500">Cobro efectivo: </span>
+                  <span className="text-slate-500">Cobro: </span>
                   <span
                     className={`font-medium ${
                       detalle.cobrado_en ? "text-emerald-700" : "text-amber-700"
                     }`}
                   >
                     {detalle.cobrado_en
-                      ? `Cobrado · Gs. ${formatMiles(detalle.efectivo_pendiente)}`
+                      ? "Cobrado"
                       : `A cobrar contra entrega · Gs. ${formatMiles(
-                          detalle.efectivo_pendiente
+                          montoACobrar(detalle)
                         )}`}
                   </span>
                 </div>
@@ -527,6 +589,34 @@ export default function DeliveriesPage() {
           </div>
         )}
       </Modal>
+
+      {/* Cobro del delivery al entregar: el cajero carga el desglose de pago.
+          Total = monto pendiente del delivery. */}
+      <PaymentModal
+        show={!!cobrando}
+        handleClose={() => setCobrando(null)}
+        totalCost={cobrando ? montoACobrar(cobrando) : 0}
+        totalRest={totalRest}
+        setTotalRest={setTotalRest}
+        efectivo={efectivo}
+        setEfectivo={setEfectivo}
+        banco={banco}
+        setBanco={setBanco}
+        bancoDebito={bancoDebito}
+        setBancoDebito={setBancoDebito}
+        bancoCredito={bancoCredito}
+        setBancoCredito={setBancoCredito}
+        cuentaCliente={cuentaCliente}
+        setCuentaCliente={setCuentaCliente}
+        sendRequest={confirmarCobro}
+        setPrintTicket={setPrintTicket}
+        printTicket={printTicket}
+        voucher={voucher}
+        setVoucher={setVoucher}
+        ventaNroPOS={ventaNroPOS}
+        setVentaNroPOS={setVentaNroPOS}
+        hidePrintTicket
+      />
     </div>
   );
 }

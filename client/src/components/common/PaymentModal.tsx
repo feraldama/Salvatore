@@ -26,6 +26,9 @@ interface PaymentModalProps {
   setVoucher: (v: number) => void;
   ventaNroPOS: string;
   setVentaNroPOS: (v: string) => void;
+  // Oculta el checkbox "Imprimir ticket" (no aplica en el cobro de delivery,
+  // donde la factura se imprime aparte / al despachar).
+  hidePrintTicket?: boolean;
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -51,6 +54,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   setVoucher,
   ventaNroPOS,
   setVentaNroPOS,
+  hidePrintTicket = false,
 }) => {
   const [pagoTipo, setPagoTipoLocal] = useState<
     "E" | "B" | "D" | "CR" | "C" | "V"
@@ -536,15 +540,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </span>
           </div>
 
-          <label className="mt-4 flex items-center gap-2 cursor-pointer text-text-muted">
-            <input
-              type="checkbox"
-              checked={printTicket}
-              onChange={(e) => setPrintTicket(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-brand-700 focus:ring-2 focus:ring-brand-500/40"
-            />
-            <span className="text-sm font-medium">Imprimir ticket</span>
-          </label>
+          {!hidePrintTicket && (
+            <label className="mt-4 flex items-center gap-2 cursor-pointer text-text-muted">
+              <input
+                type="checkbox"
+                checked={printTicket}
+                onChange={(e) => setPrintTicket(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-brand-700 focus:ring-2 focus:ring-brand-500/40"
+              />
+              <span className="text-sm font-medium">Imprimir ticket</span>
+            </label>
+          )}
         </div>
 
         {/* Columna derecha: Pad numérico */}

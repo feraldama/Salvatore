@@ -590,17 +590,62 @@ exports.getDeliveriesPorCobrarCount = async (req, res) => {
 
 // PATCH /venta/deliveries/:ventaId/estado  body: { estado }
 // Avanza el ciclo de vida del reparto (PENDIENTE -> EN_RUTA -> ENTREGADO /
-// CANCELADO). Al pasar a ENTREGADO sella entregado_en. Scopeado a la empresa.
+// CANCELADO). Al pasar a ENTREGADO sella entregado_en. NO cobra: si el delivery
+// tiene monto pendiente, hay que cobrarlo antes (POST .../cobrar). Scope empresa.
 exports.updateDeliveryEstado = async (req, res) => {
   try {
     const ventaId = Number(req.params.ventaId);
-    const { estado, CajaId, UsuarioId, Fecha } = req.body || {};
+    const { estado } = req.body || {};
     const ESTADOS = ["PENDIENTE", "EN_RUTA", "ENTREGADO", "CANCELADO"];
     if (!ventaId) {
       return res.status(400).json({ message: "ventaId inválido" });
     }
     if (!estado || !ESTADOS.includes(estado)) {
       return res.status(400).json({ message: "Estado inválido" });
+    }
+
+    const result = await Venta.updateDeliveryEstado({
+      ventaId,
+      estado,
+      empresaId: req.empresaId,
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ message: "Delivery no encontrado" });
+    }
+    if (result.needCobro) {
+      return res.status(400).json({
+        message:
+          "Este delivery tiene un cobro pendiente. Cobralo antes de marcarlo entregado.",
+        needCobro: true,
+        pendiente: result.pendiente,
+      });
+    }
+    res.json({ message: "Estado actualizado", ventaId, estado });
+  } catch (error) {
+    console.error("Error al actualizar estado de delivery:", error);
+    sendError(res, error, 500);
+  }
+};
+
+// POST /venta/deliveries/:ventaId/cobrar
+// body: { Pagos: { Efectivo, Banco, CuentaCliente, Voucher, Transferencia,
+//         VentaNroPOS }, CajaId, UsuarioId, Fecha }
+// Cobra un delivery contra entrega: registra el desglose de pago (cargado al
+// volver el chofer) en la caja del cajero y lo deja ENTREGADO + cobrado. Scope
+// empresa.
+exports.cobrarDelivery = async (req, res) => {
+  try {
+    const ventaId = Number(req.params.ventaId);
+    const { Pagos = {}, CajaId, UsuarioId, Fecha } = req.body || {};
+    if (!ventaId) {
+      return res.status(400).json({ message: "ventaId inválido" });
+    }
+    if (!CajaId) {
+      return res.status(400).json({
+        message: "Para registrar el cobro necesitás una caja abierta.",
+        needCaja: true,
+      });
     }
 
     let fecha = null;
@@ -612,35 +657,36 @@ exports.updateDeliveryEstado = async (req, res) => {
       }
     }
 
-    const result = await Venta.updateDeliveryEstado({
+    const result = await Venta.cobrarDelivery({
       ventaId,
-      estado,
       empresaId: req.empresaId,
-      cajaId: CajaId ? Number(CajaId) : null,
+      cajaId: Number(CajaId),
       usuarioId: UsuarioId || null,
       fecha,
+      pagos: Pagos,
     });
 
     if (result.notFound) {
       return res.status(404).json({ message: "Delivery no encontrado" });
     }
-    if (result.needCaja) {
+    if (result.cancelado) {
+      return res
+        .status(400)
+        .json({ message: "El delivery está cancelado, no se puede cobrar." });
+    }
+    if (result.yaCobrado) {
+      return res.status(409).json({ message: "Este delivery ya fue cobrado." });
+    }
+    if (result.insuficiente) {
       return res.status(400).json({
-        message:
-          "Para registrar el cobro en efectivo necesitás una caja abierta.",
-        needCaja: true,
+        message: "El pago no cubre el total del delivery.",
+        insuficiente: true,
         pendiente: result.pendiente,
       });
     }
-    res.json({
-      message: "Estado actualizado",
-      ventaId,
-      estado,
-      cobrado: result.cobrado,
-      pendiente: result.pendiente,
-    });
+    res.json({ message: "Delivery cobrado", ventaId, pendiente: result.pendiente });
   } catch (error) {
-    console.error("Error al actualizar estado de delivery:", error);
+    console.error("Error al cobrar delivery:", error);
     sendError(res, error, 500);
   }
 };
@@ -739,8 +785,22 @@ exports.confirmar = async (req, res) => {
     else if (banco > 0) ventaTipo = "PO";
     else ventaTipo = "CO";
 
-    const ventaEntrega = efectivo + banco + voucher + transferencia;
-    const total = efectivo + banco + cuentaCliente + voucher + transferencia;
+    // Delivery: al despachar NO se carga ningún pago (se difiere TODO el cobro
+    // al regreso del chofer). El total se calcula desde las líneas de productos
+    // —no desde los pagos, que vienen en 0— y nada entra a la caja ahora; el
+    // desglose de pago se registra recién en Venta.cobrarDelivery. En una venta
+    // normal el total se deriva de los pagos como siempre.
+    const productosTotal = Productos.reduce((acc, p) => {
+      const esCombo = p.Combo === true || p.Combo === "S";
+      const lineaTotal = esCombo
+        ? Number(p.ComboPrecio)
+        : Number(p.VentaProductoPrecioTotal);
+      return acc + (Number.isFinite(lineaTotal) ? lineaTotal : 0);
+    }, 0);
+    const ventaEntrega = esDelivery ? 0 : efectivo + banco + voucher + transferencia;
+    const total = esDelivery
+      ? Math.round(productosTotal)
+      : efectivo + banco + cuentaCliente + voucher + transferencia;
 
     // 3. Cabecera de venta. EmpresaId scopea la venta a minorista/distribuidora
     // (req.empresaId lo resuelve el middleware resolveEmpresa).
@@ -780,15 +840,16 @@ exports.confirmar = async (req, res) => {
     }
 
     // 3c. Delivery (minorista): registrar el reparto con el chofer asignado
-    // (estado inicial PENDIENTE). El efectivo se cobra contra entrega, así que
-    // se guarda como efectivo_pendiente y NO entra a la caja ahora (ver paso 6
-    // y 7); entra cuando se marca ENTREGADO. El ciclo de vida lo gestiona la
-    // pantalla web de deliveries. Tabla snake_case fuera de columnMap.
+    // (estado inicial PENDIENTE). Se difiere TODO el cobro: el total queda como
+    // monto_pendiente y NADA entra a la caja ahora (ver paso 5-7); el desglose
+    // de pago se registra al regreso del chofer en Venta.cobrarDelivery. El
+    // ciclo de vida lo gestiona la pantalla web de deliveries. Tabla snake_case
+    // fuera de columnMap.
     if (esDelivery) {
       await conn.query(
-        `INSERT INTO venta_delivery (venta_id, chofer_id, efectivo_pendiente)
+        `INSERT INTO venta_delivery (venta_id, chofer_id, monto_pendiente)
          VALUES (?, ?, ?)`,
-        [ultorden, deliveryChoferId, efectivo]
+        [ultorden, deliveryChoferId, total]
       );
     }
 
@@ -925,124 +986,28 @@ exports.confirmar = async (req, res) => {
       i += 1;
     }
 
-    // 5. Cuenta corriente del cliente (crédito).
-    if (cuentaCliente > 0) {
-      const entregaCredito = efectivo + banco + voucher + transferencia;
-      const [vcInsert] = await conn.query(
-        `INSERT INTO ventacredito (VentaId, VentaCreditoPagoCant) VALUES (?, ?)`,
-        [ultorden, entregaCredito > 0 ? 1 : 0]
-      );
-      if (entregaCredito > 0) {
-        const ventaCreditoId = vcInsert.insertId;
-        await conn.query(
-          `INSERT INTO ventacreditopago (
-             VentaCreditoId, VentaCreditoPagoId, VentaCreditoPagoFecha, VentaCreditoPagoMonto
-           ) VALUES (?, ?, ?, ?)`,
-          [ventaCreditoId, 1, ventaFecha, entregaCredito]
-        );
-      }
-    }
-
-    // 6. RegistroDiarioCaja por método de pago.
-    // Efectivo: TipoGastoGrupoId=3 (cobro crédito) si la venta es a cuenta,
-    //           TipoGastoGrupoId=1 (venta contado) si no.
-    // Grupos de pago: en envío usan los IDs dedicados (7-10) para que el
-    // cierre los separe del efectivo/POS/etc. que sí están en la caja física.
-    const etiquetaEnvio = esEnvio ? " (ENVÍO)" : "";
-    // Delivery: el efectivo se cobra contra entrega, no al confirmar. Se omite
-    // su registro en caja ahora; lo crea la confirmación del ENTREGADO en la
-    // caja abierta del cajero (ver Venta.updateDeliveryEstado).
-    if (efectivo > 0 && !esDelivery) {
-      const isCredito = cuentaCliente > 0;
-      const grupoEfectivo = esEnvio ? 7 : isCredito ? 3 : 1;
-      const detalleEfectivo = isCredito
-        ? `Venta Crédito N°: ${ultorden}${etiquetaEnvio}`
-        : `Venta N°: ${ultorden}${etiquetaEnvio}`;
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
-        [CajaId, ventaFecha, grupoEfectivo, detalleEfectivo, efectivo, UsuarioId]
-      );
-    }
-    if (banco > 0) {
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
-        [
-          CajaId,
-          ventaFecha,
-          esEnvio ? 8 : 4,
-          `Venta POS N°: ${ultorden}${etiquetaEnvio}`,
-          banco,
-          UsuarioId,
-        ]
-      );
-    }
-    if (voucher > 0) {
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
-        [
-          CajaId,
-          ventaFecha,
-          esEnvio ? 9 : 5,
-          `Venta Voucher N°: ${ultorden}${etiquetaEnvio}`,
-          voucher,
-          UsuarioId,
-        ]
-      );
-    }
-    if (transferencia > 0) {
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
-        [
-          CajaId,
-          ventaFecha,
-          esEnvio ? 10 : 6,
-          `Venta Transferencia N°: ${ultorden}${etiquetaEnvio}`,
-          transferencia,
-          UsuarioId,
-        ]
-      );
-    }
-    // Saldo a crédito (cuenta corriente mayorista / cuenta de cliente
-    // minorista). NO es dinero recibido, así que usa el grupo 11 dedicado: no
-    // entra a la caja física ni a los ingresos en efectivo del cierre, solo
-    // queda como dato informativo para el ticket de cierre.
-    if (cuentaCliente > 0) {
-      await conn.query(
-        `INSERT INTO registrodiariocaja (
-           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
-           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
-         ) VALUES (?, ?, 2, 11, ?, ?, ?)`,
-        [
-          CajaId,
-          ventaFecha,
-          `Venta Cuenta Corriente N°: ${ultorden}${etiquetaEnvio}`,
-          cuentaCliente,
-          UsuarioId,
-        ]
-      );
-    }
-
-    // 7. Solo el efectivo de una venta NORMAL se acumula en la caja física.
-    // En envío el efectivo lo cobra el repartidor, no entra a la caja. En
-    // delivery el efectivo entra recién al marcar ENTREGADO (cobro contra
-    // entrega), así que tampoco se acumula acá.
-    if (efectivo > 0 && !esEnvio && !esDelivery) {
-      await conn.query(
-        `UPDATE caja SET CajaMonto = CajaMonto + ? WHERE CajaId = ?`,
-        [efectivo, CajaId]
-      );
+    // 5-7. Registración de pagos en caja (ventacredito + registrodiariocaja por
+    // método + suma del efectivo a CajaMonto). Lógica compartida con el cobro de
+    // delivery, en Venta.registrarPagosEnCaja, para que el cierre clasifique
+    // igual en ambos casos.
+    //
+    // DELIVERY: se saltea por completo. Al despachar no se cobra nada; el
+    // desglose de pago se registra al regreso del chofer (Venta.cobrarDelivery)
+    // contra la caja abierta del cajero. Una venta normal/envío registra acá.
+    if (!esDelivery) {
+      await Venta.registrarPagosEnCaja(conn, {
+        ventaId: ultorden,
+        cajaId: CajaId,
+        usuarioId: UsuarioId,
+        fecha: ventaFecha,
+        efectivo,
+        banco,
+        voucher,
+        transferencia,
+        cuentaCliente,
+        esEnvio,
+        etiqueta: esEnvio ? " (ENVÍO)" : "",
+      });
     }
 
     await conn.commit();
