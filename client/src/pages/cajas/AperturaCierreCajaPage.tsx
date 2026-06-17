@@ -36,7 +36,7 @@ export default function AperturaCierreCajaPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { user } = useAuth();
+  const { user, empresaActiva } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [cajaDisabled, setCajaDisabled] = useState(false);
@@ -221,6 +221,7 @@ export default function AperturaCierreCajaPage() {
     let ingresosPOS = 0;
     let ingresosVoucher = 0;
     let ingresosTransfer = 0;
+    let ingresosCuentaCorriente = 0;
     for (const reg of registrosFiltrados) {
       // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
       // de venta a crédito (3). POS(4)/voucher(5)/transferencia(6) no son efectivo,
@@ -243,6 +244,11 @@ export default function AperturaCierreCajaPage() {
       if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 6) {
         ingresosTransfer += reg.RegistroDiarioCajaMonto;
       }
+      // Saldo vendido a crédito (cuenta corriente / cuenta de cliente). No es
+      // dinero recibido: se muestra aparte y NO entra al efectivo de la caja.
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 11) {
+        ingresosCuentaCorriente += reg.RegistroDiarioCajaMonto;
+      }
     }
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
     let txtSobranteFaltante = "";
@@ -255,6 +261,15 @@ export default function AperturaCierreCajaPage() {
     } else {
       txtSobranteFaltante = `Sobrante/Faltante: Gs. 0`;
     }
+    // Etiqueta del crédito según el tipo de empresa: 'D' (distribuidora) cobra
+    // a "Cuenta Corriente"; minorista lo llama "Cuenta de Cliente".
+    const tipoEmpresa =
+      user.isAdmin === "S"
+        ? empresaActiva?.EmpresaTipo ?? user.EmpresaTipo
+        : user.EmpresaTipo;
+    const etiquetaCredito =
+      tipoEmpresa === "D" ? "Cuenta Corriente" : "Cuenta de Cliente";
+
     // --- Generar PDF ---
     const { jsPDF } = await loadPdf();
     const doc = new jsPDF({
@@ -288,10 +303,21 @@ export default function AperturaCierreCajaPage() {
     y += 8;
     doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
     y += 8;
+    // Ventas a crédito (cuenta corriente / cuenta de cliente).
+    doc.text(
+      `Ingresos ${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
+      10,
+      y
+    );
+    y += 8;
     doc.line(10, y, 200, y);
     y += 8;
     const totalIngresos =
-      ingresos + ingresosPOS + ingresosVoucher + ingresosTransfer;
+      ingresos +
+      ingresosPOS +
+      ingresosVoucher +
+      ingresosTransfer +
+      ingresosCuentaCorriente;
     doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
     y += 8;
     // Línea nueva para Total Egresos

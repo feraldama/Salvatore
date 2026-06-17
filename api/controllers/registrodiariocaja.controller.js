@@ -105,7 +105,8 @@ exports.getByDateRange = async (req, res) => {
     const data = await RegistroDiarioCaja.getByDateRange(
       fechaDesdeStr,
       fechaHastaStr,
-      limit
+      limit,
+      req.empresaId
     );
     res.json({ data });
   } catch (error) {

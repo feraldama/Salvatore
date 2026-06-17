@@ -399,8 +399,21 @@ const RegistroDiarioCaja = {
     });
   },
 
-  getByDateRange: (fechaDesdeStr, fechaHastaStr, limit = 10000) => {
+  getByDateRange: (fechaDesdeStr, fechaHastaStr, limit = 10000, empresaId = null) => {
     return new Promise((resolve, reject) => {
+      // Scope por empresa: la caja pertenece a una empresa (caja.EmpresaId), así
+      // que filtramos los registros por la empresa de su caja. Sin esto, el cierre
+      // por rango traía registros de TODAS las empresas.
+      const cond = [
+        "DATE(r.RegistroDiarioCajaFecha) >= DATE(?)",
+        "DATE(r.RegistroDiarioCajaFecha) <= DATE(?)",
+      ];
+      const params = [fechaDesdeStr, fechaHastaStr];
+      if (empresaId != null) {
+        cond.push("c.EmpresaId = ?");
+        params.push(empresaId);
+      }
+      params.push(limit);
       const query = `
         SELECT r.*,
           c.CajaDescripcion,
@@ -410,11 +423,11 @@ const RegistroDiarioCaja = {
         LEFT JOIN Caja c ON r.CajaId = c.CajaId
         LEFT JOIN TipoGasto t ON r.TipoGastoId = t.TipoGastoId
         LEFT JOIN tipogastogrupo tg ON r.TipoGastoId = tg.TipoGastoId AND r.TipoGastoGrupoId = tg.TipoGastoGrupoId
-        WHERE DATE(r.RegistroDiarioCajaFecha) >= DATE(?) AND DATE(r.RegistroDiarioCajaFecha) <= DATE(?)
+        WHERE ${cond.join(" AND ")}
         ORDER BY r.RegistroDiarioCajaId ASC
         LIMIT ?
       `;
-      db.query(query, [fechaDesdeStr, fechaHastaStr, limit], (err, results) => {
+      db.query(query, params, (err, results) => {
         if (err) return reject(err);
         resolve(results);
       });

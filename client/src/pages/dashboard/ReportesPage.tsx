@@ -15,6 +15,13 @@ import {
   getRegistrosDiariosCajaPorRango,
   type RegistroDiarioCajaRow,
 } from "../../services/registros.service";
+import {
+  getEnviosPorVehiculo,
+  type EnviosPorVehiculo,
+  getVentasPorVendedor,
+  type VentasPorVendedor,
+} from "../../services/venta.service";
+import { useAuth } from "../../contexts/useAuth";
 
 interface DeudaCliente {
   ClienteId: number;
@@ -256,6 +263,14 @@ const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
   const puedeLeer = usePermiso("REPORTES", "leer");
+  const { user, empresaActiva } = useAuth();
+  // El reporte de envíos por móvil aplica solo a la empresa mayorista
+  // (distribuidora, EmpresaTipo === "D"). Misma resolución que VentasDispatcher:
+  // el admin sigue la empresa activa del switcher; el usuario regular, la suya.
+  const esMayorista =
+    (user?.isAdmin === "S"
+      ? empresaActiva?.EmpresaTipo ?? user?.EmpresaTipo
+      : user?.EmpresaTipo) === "D";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -290,6 +305,25 @@ const ReportesPage: React.FC = () => {
     return primerDiaMes.toISOString().split("T")[0];
   });
   const [fechaHastaTop, setFechaHastaTop] = useState(() => getHoyISO());
+
+  // Estado del reporte "Envíos por móvil" (solo mayorista)
+  const [fechaDesdeEnvio, setFechaDesdeEnvio] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaEnvio, setFechaHastaEnvio] = useState(() => getHoyISO());
+
+  // Estado del reporte "Ventas por vendedor" (solo mayorista)
+  const [fechaDesdeVend, setFechaDesdeVend] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaVend, setFechaHastaVend] = useState(() => getHoyISO());
+  // Porcentaje de comisión que se aplica al total vendido (texto: admite coma o
+  // punto como separador decimal). Se parsea al generar.
+  const [comisionPorcentaje, setComisionPorcentaje] = useState("");
 
   // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
   const [reporteActivo, setReporteActivo] = useState<string | null>(null);
@@ -1305,6 +1339,266 @@ const ReportesPage: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
   };
 
+  // Reporte de envíos separado por móvil (vehículo de flota). Solo mayorista.
+  // Genera un PDF con un bloque por móvil: detalle de sus ventas envío + sus
+  // subtotales por método de pago, y al final los totales generales.
+  const handleGenerarReporteEnviosVehiculo = async () => {
+    if (!fechaDesdeEnvio || !fechaHastaEnvio) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeEnvio) > new Date(fechaHastaEnvio)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data: EnviosPorVehiculo = await getEnviosPorVehiculo({
+        fechaDesde: fechaDesdeEnvio,
+        fechaHasta: fechaHastaEnvio,
+      });
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF({ orientation: "landscape" });
+      const anchoPagina = doc.internal.pageSize.getWidth();
+      let y = 18;
+
+      doc.setFontSize(18);
+      doc.text("Ventas por envío - separadas por móvil", 14, y);
+      y += 8;
+      doc.setFontSize(11);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeEnvio)} al ${formatearFecha(fechaHastaEnvio)}`,
+        14,
+        y,
+      );
+      y += 8;
+
+      if (!data.vehiculos.length) {
+        doc.setFontSize(12);
+        doc.text("No hay envíos en el período seleccionado.", 14, y + 4);
+      }
+
+      const getFinalY = () =>
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY;
+
+      const nombreMovil = (g: EnviosPorVehiculo["vehiculos"][number]) => {
+        if (g.vehiculoId == null) return "Sin móvil asignado";
+        const desc = [g.marca, g.modelo].filter(Boolean).join(" ");
+        return `${g.chapa ?? `Móvil ${g.vehiculoId}`}${desc ? ` — ${desc}` : ""}`;
+      };
+
+      data.vehiculos.forEach((g) => {
+        // Salto de página si no entra el encabezado del móvil.
+        if (y > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setFontSize(13);
+        doc.text(nombreMovil(g), 14, y);
+        y += 6;
+        doc.setFontSize(10);
+        doc.text(
+          `Envíos: ${g.cantidad}  |  Total enviado: Gs. ${formatMiles(g.totalEnviado)}`,
+          14,
+          y,
+        );
+        y += 4;
+
+        const rows = g.ventas.map((v) => {
+          const cliente =
+            [v.ClienteNombre, v.ClienteApellido].filter(Boolean).join(" ").trim() ||
+            "-";
+          return [
+            v.VentaId.toString(),
+            formatearFechaHora(v.VentaFecha),
+            cliente,
+            formatMiles(v.Total),
+            formatMiles(v.VentaEntrega),
+            formatMiles(v.Pendiente),
+          ];
+        });
+
+        autoTable(doc, {
+          head: [["ID", "FECHA", "CLIENTE", "TOTAL", "ENTREGA", "PENDIENTE"]],
+          body: rows,
+          startY: y,
+          theme: "grid",
+          headStyles: { fillColor: [234, 88, 12] },
+          styles: { fontSize: 9 },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 38 },
+            3: { cellWidth: 35, halign: "right" },
+            4: { cellWidth: 35, halign: "right" },
+            5: { cellWidth: 35, halign: "right" },
+          },
+        });
+        y = getFinalY() + 6;
+
+        const m = g.porMetodo;
+        doc.setFontSize(9);
+        doc.text(
+          `Efectivo: ${formatMiles(m.efectivo)}  |  POS: ${formatMiles(m.pos)}  |  Voucher: ${formatMiles(m.voucher)}  |  Transfer: ${formatMiles(m.transferencia)}  |  Crédito (pendiente): ${formatMiles(m.credito)}`,
+          14,
+          y,
+        );
+        y += 10;
+      });
+
+      if (data.vehiculos.length) {
+        if (y > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          y = 18;
+        }
+        const t = data.totales;
+        doc.setDrawColor(200);
+        doc.line(14, y - 4, anchoPagina - 14, y - 4);
+        doc.setFontSize(12);
+        doc.text("TOTALES GENERALES", 14, y + 2);
+        y += 8;
+        doc.setFontSize(10);
+        doc.text(
+          `Envíos: ${t.cantidad}  |  Total enviado: Gs. ${formatMiles(t.totalEnviado)}`,
+          14,
+          y,
+        );
+        y += 6;
+        doc.text(
+          `Efectivo: ${formatMiles(t.porMetodo.efectivo)}  |  POS: ${formatMiles(t.porMetodo.pos)}  |  Voucher: ${formatMiles(t.porMetodo.voucher)}  |  Transfer: ${formatMiles(t.porMetodo.transferencia)}  |  Crédito (pendiente): ${formatMiles(t.porMetodo.credito)}`,
+          14,
+          y,
+        );
+      }
+
+      doc.save(`reporte_envios_por_movil_${fechaDesdeEnvio}_${fechaHastaEnvio}.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const error = err as { message?: string };
+      setError(error.message || "Error al generar el reporte de envíos por móvil");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reporte de ventas por vendedor (para comisiones). Solo mayorista. Aplica un
+  // % de comisión (ingresado por el usuario) sobre el total vendido de cada
+  // vendedor en el período. Genera un PDF con una fila por vendedor.
+  const handleGenerarReporteVentasVendedor = async () => {
+    if (!fechaDesdeVend || !fechaHastaVend) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeVend) > new Date(fechaHastaVend)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    const pct = Number(String(comisionPorcentaje).replace(",", "."));
+    if (isNaN(pct) || pct < 0) {
+      setError("Ingresá un porcentaje de comisión válido (ej: 2,5)");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data: VentasPorVendedor = await getVentasPorVendedor({
+        fechaDesde: fechaDesdeVend,
+        fechaHasta: fechaHastaVend,
+      });
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF();
+      let y = 18;
+      doc.setFontSize(18);
+      doc.text("Ventas por vendedor - comisiones", 14, y);
+      y += 8;
+      doc.setFontSize(11);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeVend)} al ${formatearFecha(fechaHastaVend)}`,
+        14,
+        y,
+      );
+      y += 6;
+      doc.text(`Comisión aplicada: ${formatMiles(pct)}% sobre el total vendido`, 14, y);
+      y += 8;
+
+      if (!data.vendedores.length) {
+        doc.setFontSize(12);
+        doc.text("No hay ventas en el período seleccionado.", 14, y + 4);
+      }
+
+      let totalComision = 0;
+      const rows = data.vendedores.map((v) => {
+        const nombre =
+          v.vendedorId == null
+            ? "Sin vendedor"
+            : [v.nombre, v.apellido].filter(Boolean).join(" ").trim() ||
+              `Vendedor ${v.vendedorId}`;
+        const comision = Math.round((v.totalVendido * pct) / 100);
+        totalComision += comision;
+        return [
+          nombre,
+          String(v.cantidad),
+          formatMiles(v.totalVendido),
+          `${formatMiles(pct)}%`,
+          formatMiles(comision),
+        ];
+      });
+
+      if (data.vendedores.length) {
+        autoTable(doc, {
+          head: [["VENDEDOR", "VENTAS", "TOTAL VENDIDO", "%", "COMISIÓN"]],
+          body: rows,
+          startY: y,
+          theme: "grid",
+          headStyles: { fillColor: [37, 99, 235] },
+          styles: { fontSize: 10 },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            1: { halign: "right" },
+            2: { halign: "right" },
+            3: { halign: "right" },
+            4: { halign: "right" },
+          },
+        });
+        y =
+          (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+            .finalY + 10;
+
+        doc.setFontSize(12);
+        doc.text("TOTALES", 14, y);
+        y += 6;
+        doc.setFontSize(10);
+        doc.text(
+          `Ventas: ${data.totales.cantidad}  |  Total vendido: Gs. ${formatMiles(data.totales.totalVendido)}`,
+          14,
+          y,
+        );
+        y += 6;
+        doc.text(`Comisión total a pagar: Gs. ${formatMiles(totalComision)}`, 14, y);
+      }
+
+      doc.save(`reporte_ventas_por_vendedor_${fechaDesdeVend}_${fechaHastaVend}.pdf`);
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const error = err as { message?: string };
+      setError(error.message || "Error al generar el reporte de ventas por vendedor");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Metadata de las tarjetas (para grid + abrir modal)
   const renderCard = (
     titulo: string,
@@ -1409,6 +1703,54 @@ const ReportesPage: React.FC = () => {
             )}
           </div>
         </section>
+
+        {/* === Sección Envíos (solo mayorista) === */}
+        {esMayorista && (
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Envíos
+              </h2>
+              <span className="text-xs text-slate-400">1 reporte</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {renderCard(
+                "Ventas por envío (por móvil)",
+                "Envíos del período separados por vehículo, con detalle de ventas y subtotales por método de pago.",
+                "🚚",
+                "border-orange-300",
+                () => {
+                  setError(null);
+                  setReporteActivo("enviosvehiculo");
+                },
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* === Sección Vendedores (solo mayorista) === */}
+        {esMayorista && (
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Vendedores
+              </h2>
+              <span className="text-xs text-slate-400">1 reporte</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {renderCard(
+                "Ventas por vendedor (comisiones)",
+                "Total vendido por vendedor en el período y la comisión a pagar según el % que ingreses.",
+                "👤",
+                "border-blue-300",
+                () => {
+                  setError(null);
+                  setReporteActivo("ventasvendedor");
+                },
+              )}
+            </div>
+          </section>
+        )}
 
         {/* === Sección Caja === */}
         <section>
@@ -1680,6 +2022,8 @@ const ReportesPage: React.FC = () => {
                 {reporteActivo === "ventas" && "Ventas por cliente"}
                 {reporteActivo === "movimientos" && "Productos vendidos y comprados"}
                 {reporteActivo === "masvendidos" && "Productos más vendidos"}
+                {reporteActivo === "enviosvehiculo" && "Ventas por envío (por móvil)"}
+                {reporteActivo === "ventasvendedor" && "Ventas por vendedor (comisiones)"}
               </h3>
               <button
                 onClick={() => setReporteActivo(null)}
@@ -1817,6 +2161,103 @@ const ReportesPage: React.FC = () => {
                   onClick={handleGenerarReporteMasVendidos}
                   disabled={loading}
                   className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "enviosvehiculo" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeEnvio}
+                      onChange={(e) => setFechaDesdeEnvio(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaEnvio}
+                      onChange={(e) => setFechaHastaEnvio(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteEnviosVehiculo}
+                  disabled={loading}
+                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "ventasvendedor" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeVend}
+                      onChange={(e) => setFechaDesdeVend(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaVend}
+                      onChange={(e) => setFechaHastaVend(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Comisión (%)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ej: 2,5"
+                    value={comisionPorcentaje}
+                    onChange={(e) =>
+                      setComisionPorcentaje(
+                        e.target.value.replace(/[^\d.,]/g, ""),
+                      )
+                    }
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Se aplica sobre el total vendido de cada vendedor.
+                  </p>
+                </div>
+                <button
+                  onClick={handleGenerarReporteVentasVendedor}
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
                 >
                   {loading ? "Generando…" : "Generar PDF"}
                 </button>

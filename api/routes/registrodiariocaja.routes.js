@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const registroDiarioCajaController = require("../controllers/registrodiariocaja.controller");
 const authMiddleware = require("../middlewares/auth");
+const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
 // Aplicar middleware de autenticación a todas las rutas
 router.use(authMiddleware);
@@ -13,7 +14,7 @@ router.get(
   "/estado-apertura",
   registroDiarioCajaController.estadoAperturaPorUsuario
 );
-router.get("/rango", authMiddleware, registroDiarioCajaController.getByDateRange);
+router.get("/rango", authMiddleware, resolveEmpresa, registroDiarioCajaController.getByDateRange);
 router.get("/:id", authMiddleware, registroDiarioCajaController.getById);
 router.post("/", authMiddleware, registroDiarioCajaController.create);
 router.post(

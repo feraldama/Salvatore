@@ -804,6 +804,203 @@ const Venta = {
     const totalEnviado = ventas.reduce((a, v) => a + Number(v.Total || 0), 0);
     return { porMetodo, totalEnviado, cantidad: ventas.length, ventas };
   },
+
+  // Reporte de envíos AGRUPADO POR MÓVIL (vehículo de flota). Mismo criterio que
+  // getEnviosResumen (ventas EsEnvio de la empresa, métodos cobrados de los grupos
+  // de caja 11-14, crédito = Total - VentaEntrega), pero separado por el vehículo
+  // asignado en venta_envio. Las ventas sin móvil asignado caen en un grupo aparte
+  // (vehiculo_id = null). Scope por empresa siempre; fechas opcionales.
+  getEnviosPorVehiculo: async ({ empresaId, fechaDesde, fechaHasta }) => {
+    const pe = db.promise();
+    const cond = ["v.EsEnvio = 'S'", "v.EmpresaId = ?"];
+    const params = [Number(empresaId)];
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    const where = cond.join(" AND ");
+
+    // Detalle de ventas envío con el móvil asignado. Los alias de flota van en
+    // snake_case (chapa/marca/modelo) tal como vienen de flota_vehiculo.
+    const [ventas] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total, v.VentaEntrega,
+              (v.Total - v.VentaEntrega) AS Pendiente,
+              c.ClienteNombre, c.ClienteApellido,
+              env.vehiculo_id AS vehiculo_id,
+              fv.chapa AS chapa, fv.marca AS marca, fv.modelo AS modelo
+         FROM venta v
+         LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
+         LEFT JOIN flota_vehiculo fv ON fv.id = env.vehiculo_id
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE ${where}
+        ORDER BY fv.chapa ASC NULLS LAST, v.VentaFecha DESC, v.VentaId DESC`,
+      params
+    );
+
+    // Totales por método cobrado (grupos de envío en caja), por vehículo.
+    const [metodos] = await pe.query(
+      `SELECT env.vehiculo_id AS vehiculo_id,
+              r.TipoGastoGrupoId AS grupo,
+              COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS total
+         FROM registrodiariocaja r
+         JOIN venta v
+           ON v.VentaId = CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              )
+         LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
+        WHERE r.TipoGastoId = 2
+          AND r.TipoGastoGrupoId IN (11, 12, 13, 14)
+          AND ${where}
+        GROUP BY env.vehiculo_id, r.TipoGastoGrupoId`,
+      params
+    );
+
+    // Agrupar ventas por vehículo. Clave: vehiculo_id (o "SIN" si no tiene móvil).
+    const grupos = new Map();
+    const nuevoMetodo = () => ({
+      efectivo: 0,
+      pos: 0,
+      voucher: 0,
+      transferencia: 0,
+      credito: 0,
+    });
+    const claveVehiculo = (id) => (id == null ? "SIN" : String(id));
+    const obtenerGrupo = (row) => {
+      const key = claveVehiculo(row.vehiculo_id);
+      if (!grupos.has(key)) {
+        grupos.set(key, {
+          vehiculoId: row.vehiculo_id ?? null,
+          chapa: row.chapa ?? null,
+          marca: row.marca ?? null,
+          modelo: row.modelo ?? null,
+          totalEnviado: 0,
+          cantidad: 0,
+          porMetodo: nuevoMetodo(),
+          ventas: [],
+        });
+      }
+      return grupos.get(key);
+    };
+
+    for (const v of ventas) {
+      const g = obtenerGrupo(v);
+      g.ventas.push(v);
+      g.cantidad += 1;
+      g.totalEnviado += Number(v.Total || 0);
+      g.porMetodo.credito += Number(v.Pendiente || 0);
+    }
+
+    for (const m of metodos) {
+      // Asegura el grupo aunque no tenga filas de venta listadas (defensivo).
+      const key = claveVehiculo(m.vehiculo_id);
+      if (!grupos.has(key)) {
+        grupos.set(key, {
+          vehiculoId: m.vehiculo_id ?? null,
+          chapa: null,
+          marca: null,
+          modelo: null,
+          totalEnviado: 0,
+          cantidad: 0,
+          porMetodo: nuevoMetodo(),
+          ventas: [],
+        });
+      }
+      const g = grupos.get(key);
+      const grupo = Number(m.grupo);
+      if (grupo === 11) g.porMetodo.efectivo += Number(m.total);
+      else if (grupo === 12) g.porMetodo.pos += Number(m.total);
+      else if (grupo === 13) g.porMetodo.voucher += Number(m.total);
+      else if (grupo === 14) g.porMetodo.transferencia += Number(m.total);
+    }
+
+    // Ordenar: móviles con chapa primero (alfabético), "Sin móvil" al final.
+    const vehiculos = Array.from(grupos.values()).sort((a, b) => {
+      if (a.vehiculoId == null) return 1;
+      if (b.vehiculoId == null) return -1;
+      return String(a.chapa || "").localeCompare(String(b.chapa || ""));
+    });
+
+    // Totales generales.
+    const totales = {
+      totalEnviado: vehiculos.reduce((a, g) => a + g.totalEnviado, 0),
+      cantidad: vehiculos.reduce((a, g) => a + g.cantidad, 0),
+      porMetodo: nuevoMetodo(),
+    };
+    for (const g of vehiculos) {
+      totales.porMetodo.efectivo += g.porMetodo.efectivo;
+      totales.porMetodo.pos += g.porMetodo.pos;
+      totales.porMetodo.voucher += g.porMetodo.voucher;
+      totales.porMetodo.transferencia += g.porMetodo.transferencia;
+      totales.porMetodo.credito += g.porMetodo.credito;
+    }
+
+    return { vehiculos, totales };
+  },
+
+  // Reporte de ventas agrupadas POR VENDEDOR, para liquidar comisiones. El
+  // vendedor se resuelve por la venta (VentaVendedorId) y, si no está cargado,
+  // por el cliente (clientes.VendedorId) — hoy las ventas se atribuyen siempre
+  // vía cliente. Las ventas sin vendedor caen en un grupo aparte (id null). El
+  // porcentaje de comisión NO se calcula acá: el reporte lo aplica con un % que
+  // ingresa el usuario sobre el total vendido. Scope por empresa; fechas opc.
+  getVentasPorVendedor: async ({ empresaId, fechaDesde, fechaHasta }) => {
+    const pe = db.promise();
+    const cond = ["v.EmpresaId = ?"];
+    const params = [Number(empresaId)];
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    const where = cond.join(" AND ");
+
+    const [rows] = await pe.query(
+      `SELECT COALESCE(v.VentaVendedorId, c.VendedorId) AS vendedor_id,
+              ve.VendedorNombre, ve.VendedorApellido,
+              COUNT(v.VentaId)                       AS cantidad,
+              COALESCE(SUM(v.Total), 0)              AS total_vendido,
+              COALESCE(SUM(v.VentaEntrega), 0)       AS total_entregado,
+              COALESCE(SUM(v.Total - v.VentaEntrega), 0) AS total_pendiente
+         FROM venta v
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+         LEFT JOIN vendedor ve
+                ON ve.VendedorId = COALESCE(v.VentaVendedorId, c.VendedorId)
+        WHERE ${where}
+        GROUP BY COALESCE(v.VentaVendedorId, c.VendedorId),
+                 ve.VendedorNombre, ve.VendedorApellido
+        ORDER BY total_vendido DESC`,
+      params
+    );
+
+    const vendedores = rows.map((r) => ({
+      vendedorId: r.vendedor_id ?? null,
+      nombre: r.VendedorNombre ?? null,
+      apellido: r.VendedorApellido ?? null,
+      cantidad: Number(r.cantidad) || 0,
+      totalVendido: Number(r.total_vendido) || 0,
+      totalEntregado: Number(r.total_entregado) || 0,
+      totalPendiente: Number(r.total_pendiente) || 0,
+    }));
+
+    const totales = vendedores.reduce(
+      (acc, v) => ({
+        cantidad: acc.cantidad + v.cantidad,
+        totalVendido: acc.totalVendido + v.totalVendido,
+        totalEntregado: acc.totalEntregado + v.totalEntregado,
+        totalPendiente: acc.totalPendiente + v.totalPendiente,
+      }),
+      { cantidad: 0, totalVendido: 0, totalEntregado: 0, totalPendiente: 0 }
+    );
+
+    return { vendedores, totales };
+  },
 };
 
 module.exports = Venta;

@@ -397,6 +397,119 @@ export const getEnviosResumen = async (params: {
   }
 };
 
+// --- Reporte de envíos separado por móvil (vehículo de flota) ---
+export interface EnviosVehiculo {
+  vehiculoId: number | null; // null = ventas envío sin móvil asignado
+  chapa: string | null;
+  marca: string | null;
+  modelo: string | null;
+  totalEnviado: number;
+  cantidad: number;
+  porMetodo: {
+    efectivo: number;
+    pos: number;
+    voucher: number;
+    transferencia: number;
+    credito: number;
+  };
+  ventas: EnvioVenta[];
+}
+
+export interface EnviosPorVehiculo {
+  vehiculos: EnviosVehiculo[];
+  totales: {
+    totalEnviado: number;
+    cantidad: number;
+    porMetodo: {
+      efectivo: number;
+      pos: number;
+      voucher: number;
+      transferencia: number;
+      credito: number;
+    };
+  };
+}
+
+export const getEnviosPorVehiculo = async (params: {
+  fechaDesde?: string;
+  fechaHasta?: string;
+}): Promise<EnviosPorVehiculo> => {
+  try {
+    const response = await api.get("/venta/envios-por-vehiculo", { params });
+    return (
+      response.data?.data ?? {
+        vehiculos: [],
+        totales: {
+          totalEnviado: 0,
+          cantidad: 0,
+          porMetodo: {
+            efectivo: 0,
+            pos: 0,
+            voucher: 0,
+            transferencia: 0,
+            credito: 0,
+          },
+        },
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener los envíos por móvil",
+      }
+    );
+  }
+};
+
+// --- Reporte de ventas por vendedor (para comisiones) ---
+export interface VentasVendedor {
+  vendedorId: number | null; // null = ventas sin vendedor asignado
+  nombre: string | null;
+  apellido: string | null;
+  cantidad: number;
+  totalVendido: number;
+  totalEntregado: number;
+  totalPendiente: number;
+}
+
+export interface VentasPorVendedor {
+  vendedores: VentasVendedor[];
+  totales: {
+    cantidad: number;
+    totalVendido: number;
+    totalEntregado: number;
+    totalPendiente: number;
+  };
+}
+
+export const getVentasPorVendedor = async (params: {
+  fechaDesde?: string;
+  fechaHasta?: string;
+}): Promise<VentasPorVendedor> => {
+  try {
+    const response = await api.get("/venta/reporte-por-vendedor", { params });
+    return (
+      response.data?.data ?? {
+        vendedores: [],
+        totales: {
+          cantidad: 0,
+          totalVendido: 0,
+          totalEntregado: 0,
+          totalPendiente: 0,
+        },
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener las ventas por vendedor",
+      }
+    );
+  }
+};
+
 export interface VentaPorDia {
   fecha: string; // YYYY-MM-DD
   total: number;

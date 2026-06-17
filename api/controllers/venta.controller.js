@@ -160,12 +160,13 @@ exports.delete = async (req, res) => {
     const detalleCredEfe = `Cobro Crédito Efectivo N°: ${ventaId}`;
     const detalleCredPOS = `Cobro Crédito POS N°: ${ventaId}`;
     const detalleCredTrans = `Cobro Crédito Transfer N°: ${ventaId}`;
+    const detalleCtaCte = `Venta Cuenta Corriente N°: ${ventaId}`;
 
     const [rdcRows] = await conn.query(
       `SELECT RegistroDiarioCajaId, CajaId, RegistroDiarioCajaMonto,
               RegistroDiarioCajaDetalle
        FROM registrodiariocaja
-       WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?)`,
+       WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         detalleVenta,
         detallePOS,
@@ -175,6 +176,7 @@ exports.delete = async (req, res) => {
         detalleCredEfe,
         detalleCredPOS,
         detalleCredTrans,
+        detalleCtaCte,
       ]
     );
 
@@ -193,7 +195,7 @@ exports.delete = async (req, res) => {
     if (rdcRows.length) {
       await conn.query(
         `DELETE FROM registrodiariocaja
-         WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?)`,
+         WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           detalleVenta,
           detallePOS,
@@ -203,6 +205,7 @@ exports.delete = async (req, res) => {
           detalleCredEfe,
           detalleCredPOS,
           detalleCredTrans,
+          detalleCtaCte,
         ]
       );
     }
@@ -457,6 +460,76 @@ exports.getEnviosResumen = async (req, res) => {
     res.json({ data });
   } catch (error) {
     console.error("Error al obtener resumen de envíos:", error);
+    sendError(res, error, 500);
+  }
+};
+
+// GET /venta/envios-por-vehiculo?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+// Reporte de ventas tipo ENVÍO separado por móvil (vehículo de flota): por cada
+// vehículo, su detalle de ventas y los totales por método de pago. Scopeado a la
+// empresa activa (req.empresaId). Las fechas son opcionales.
+exports.getEnviosPorVehiculo = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getEnviosPorVehiculo({
+      empresaId: req.empresaId,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener envíos por vehículo:", error);
+    sendError(res, error, 500);
+  }
+};
+
+// GET /venta/reporte-por-vendedor?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+// Ventas agrupadas por vendedor (para liquidar comisiones). Scopeado a la empresa
+// activa (req.empresaId). El % de comisión se aplica en el frontend sobre el total
+// vendido. Las fechas son opcionales.
+exports.getVentasPorVendedor = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getVentasPorVendedor({
+      empresaId: req.empresaId,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener ventas por vendedor:", error);
     sendError(res, error, 500);
   }
 };
@@ -794,6 +867,25 @@ exports.confirmar = async (req, res) => {
           esEnvio ? 10 : 6,
           `Venta Transferencia N°: ${ultorden}${etiquetaEnvio}`,
           transferencia,
+          UsuarioId,
+        ]
+      );
+    }
+    // Saldo a crédito (cuenta corriente mayorista / cuenta de cliente
+    // minorista). NO es dinero recibido, así que usa el grupo 11 dedicado: no
+    // entra a la caja física ni a los ingresos en efectivo del cierre, solo
+    // queda como dato informativo para el ticket de cierre.
+    if (cuentaCliente > 0) {
+      await conn.query(
+        `INSERT INTO registrodiariocaja (
+           CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+           RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+         ) VALUES (?, ?, 2, 11, ?, ?, ?)`,
+        [
+          CajaId,
+          ventaFecha,
+          `Venta Cuenta Corriente N°: ${ultorden}${etiquetaEnvio}`,
+          cuentaCliente,
           UsuarioId,
         ]
       );

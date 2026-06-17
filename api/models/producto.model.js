@@ -595,6 +595,7 @@ const Producto = {
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
+            AND vv.EmpresaId = ?
           GROUP BY vp.ProductoId
         ) v ON v.ProductoId = p.ProductoId
         LEFT JOIN (
@@ -610,6 +611,7 @@ const Producto = {
           FROM compraproducto cp
           INNER JOIN compra cc ON cc.CompraId = cp.CompraId
           WHERE DATE(cc.CompraFecha) BETWEEN ? AND ?
+            AND cc.EmpresaId = ?
           GROUP BY cp.ProductoId
         ) c ON c.ProductoId = p.ProductoId
         WHERE p.EmpresaId = ?
@@ -621,7 +623,7 @@ const Producto = {
       `;
       db.query(
         query,
-        [fechaDesde, fechaHasta, fechaDesde, fechaHasta, empresaId],
+        [fechaDesde, fechaHasta, empresaId, fechaDesde, fechaHasta, empresaId, empresaId],
         (err, rows) => {
           if (err) return reject(err);
           const productos = rows.map((r) => ({
@@ -700,13 +702,14 @@ const Producto = {
           FROM ventaproducto vp
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
+            AND vv.EmpresaId = ?
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId
         WHERE p.EmpresaId = ?
           AND (v.vendida_cajas <> 0 OR v.vendida_unidades <> 0)
       `;
-      db.query(query, [fechaDesde, fechaHasta, empresaId], (err, rows) => {
+      db.query(query, [fechaDesde, fechaHasta, empresaId, empresaId], (err, rows) => {
         if (err) return reject(err);
         const productos = rows
           .map((r) => {
