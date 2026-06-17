@@ -171,7 +171,7 @@ export default function CobrarDeliveryModal({
       <Modal
         open={open && !cobrando}
         onClose={onClose}
-        size="2xl"
+        size="4xl"
         title="Cobrar delivery"
         description="Deliveries pendientes de cobro"
       >

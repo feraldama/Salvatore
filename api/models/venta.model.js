@@ -1175,6 +1175,24 @@ const Venta = {
     return Number(rows[0]?.total) || 0;
   },
 
+  // Cuenta los deliveries pendientes de cobro DESPACHADOS por un cajero (la
+  // venta la registró ese usuario). Para bloquear el cierre de su caja mientras
+  // tenga deliveries suyos sin cobrar. TRIM por el padding de usuarioid.
+  countDeliveriesPorCobrarPorUsuario: async (usuarioId) => {
+    const pe = db.promise();
+    const [rows] = await pe.query(
+      `SELECT COUNT(*) AS total
+         FROM venta_delivery d
+         JOIN venta v ON v.VentaId = d.venta_id
+        WHERE TRIM(v.VentaUsuario) = TRIM(?)
+          AND (d.monto_pendiente > 0 OR d.efectivo_pendiente > 0)
+          AND d.cobrado_en IS NULL
+          AND d.estado <> 'CANCELADO'`,
+      [String(usuarioId || "")]
+    );
+    return Number(rows[0]?.total) || 0;
+  },
+
   // Avanza el estado del reparto de un delivery (PENDIENTE -> EN_RUTA ->
   // ENTREGADO / CANCELADO) y sella entregado_en al ENTREGAR. NO mueve plata: el
   // cobro va por Venta.cobrarDelivery (endpoint dedicado con desglose de pago).

@@ -1,4 +1,5 @@
 const RegistroDiarioCaja = require("../models/registrodiariocaja.model");
+const Venta = require("../models/venta.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
 
@@ -273,6 +274,20 @@ exports.aperturaCierreCaja = async (req, res) => {
       });
     } else {
       // CIERRE
+      // No permitir cerrar la caja si el cajero todavía tiene deliveries que
+      // despachó sin cobrar: esa plata debe entrar a su caja antes del cierre
+      // (o cancelarse el delivery). Evita "olvidar" cobros del turno.
+      const deliveriesPendientes =
+        await Venta.countDeliveriesPorCobrarPorUsuario(UsuarioId);
+      if (deliveriesPendientes > 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `No podés cerrar la caja: tenés ${deliveriesPendientes} delivery(s) ` +
+            `pendiente(s) de cobro. Cobralos (o cancelá el reparto) antes de cerrar.`,
+          deliveriesPendientes,
+        });
+      }
       // Poner monto de caja en 0
       await new Promise((resolve, reject) => {
         db.query(

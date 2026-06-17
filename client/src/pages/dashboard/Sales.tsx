@@ -552,7 +552,7 @@ export default function Sales() {
   const promptImprimirDelivery = async (
     ventaId: number,
     items: typeof carrito,
-    fechaIso: string
+    fechaIso: string,
   ) => {
     const totalFactura = items.reduce((acc, p) => acc + obtenerTotal(p), 0);
     const productosFactura = items.map((p) => {
@@ -584,7 +584,7 @@ export default function Sales() {
       showDenyButton: true,
       showCancelButton: true,
       confirmButtonText: "Factura",
-      denyButtonText: "Comanda",
+      denyButtonText: "Ticket",
       cancelButtonText: "Nada",
       confirmButtonColor: "#16a34a",
     });
@@ -606,7 +606,7 @@ export default function Sales() {
         icon: "warning",
         title: "Sin local de venta asignado",
         text:
-          "Tu usuario no tiene un local de venta válido (figura como \"TODOS\"). " +
+          'Tu usuario no tiene un local de venta válido (figura como "TODOS"). ' +
           "Pedí al administrador que te asigne un local real (ej. SALON) para poder vender y descontar stock.",
         confirmButtonColor: "#3085d6",
       });
@@ -712,7 +712,7 @@ export default function Sales() {
             VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
             ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
             VentaProductoPrecioTotal: Number(
-              item.Producto.VentaProductoPrecioTotal
+              item.Producto.VentaProductoPrecioTotal,
             ),
             Combo: item.Producto.Combo === "S",
             ComboPrecio: Number(item.Producto.ComboPrecio),
@@ -727,7 +727,7 @@ export default function Sales() {
           await promptImprimirDelivery(
             Number(ventaResp.data.VentaId),
             itemsValidos,
-            fechaIso
+            fechaIso,
           );
         }
         limpiarPostVenta();
@@ -1258,7 +1258,8 @@ export default function Sales() {
               {esDelivery && (
                 <div className="mt-2">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Chofer del delivery <span className="text-danger-600">*</span>
+                    Chofer del delivery{" "}
+                    <span className="text-danger-600">*</span>
                   </label>
                   <select
                     value={choferDeliveryId}
@@ -1393,12 +1394,15 @@ export default function Sales() {
                   🏢 {empresaActiva.EmpresaNombre}
                 </span>
               )}
-              {(localActiva?.LocalNombre || localNombre || user.LocalNombre) && (
+              {(localActiva?.LocalNombre ||
+                localNombre ||
+                user.LocalNombre) && (
                 <span
                   className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 border border-slate-200"
                   title="Sucursal / Local"
                 >
-                  📍 {localActiva?.LocalNombre || localNombre || user.LocalNombre}
+                  📍{" "}
+                  {localActiva?.LocalNombre || localNombre || user.LocalNombre}
                 </span>
               )}
               {cajaAperturada && (
@@ -1475,7 +1479,10 @@ export default function Sales() {
                         nombre: p.ProductoNombre,
                         precio: p.ProductoPrecioVenta,
                         precioMayorista: p.ProductoPrecioVentaMayorista,
-                        imagen: resolveProductoImagen(p.ProductoId, p.HasImagen),
+                        imagen: resolveProductoImagen(
+                          p.ProductoId,
+                          p.HasImagen,
+                        ),
                         stock: p.ProductoStock,
                         precioUnitario: p.ProductoPrecioUnitario,
                       })
