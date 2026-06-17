@@ -776,7 +776,7 @@ const Venta = {
               )
          LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
         WHERE r.TipoGastoId = 2
-          AND r.TipoGastoGrupoId IN (11, 12, 13, 14)
+          AND r.TipoGastoGrupoId IN (7, 8, 9, 10)
           AND ${where}
         GROUP BY r.TipoGastoGrupoId`,
       params
@@ -789,12 +789,15 @@ const Venta = {
       transferencia: 0,
       credito: 0,
     };
+    // Grupos de cobro de envío: 7=efectivo, 8=POS, 9=voucher, 10=transferencia
+    // (los inserta la confirmación de venta; el grupo 11 es cuenta corriente y
+    // NO es dinero recibido, por eso no se cuenta acá).
     for (const m of metodos) {
       const g = Number(m.grupo);
-      if (g === 11) porMetodo.efectivo = Number(m.total);
-      else if (g === 12) porMetodo.pos = Number(m.total);
-      else if (g === 13) porMetodo.voucher = Number(m.total);
-      else if (g === 14) porMetodo.transferencia = Number(m.total);
+      if (g === 7) porMetodo.efectivo = Number(m.total);
+      else if (g === 8) porMetodo.pos = Number(m.total);
+      else if (g === 9) porMetodo.voucher = Number(m.total);
+      else if (g === 10) porMetodo.transferencia = Number(m.total);
     }
     porMetodo.credito = ventas.reduce(
       (a, v) => a + Number(v.Pendiente || 0),
@@ -853,11 +856,55 @@ const Venta = {
               )
          LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
         WHERE r.TipoGastoId = 2
-          AND r.TipoGastoGrupoId IN (11, 12, 13, 14)
+          AND r.TipoGastoGrupoId IN (7, 8, 9, 10)
           AND ${where}
         GROUP BY env.vehiculo_id, r.TipoGastoGrupoId`,
       params
     );
+
+    // Método de cobro POR VENTA (para mostrar la forma de pago en cada renglón).
+    // Misma fuente que los totales (grupos 11-14 atados por el N° del detalle).
+    const [metodosVenta] = await pe.query(
+      `SELECT CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              ) AS venta_id,
+              r.TipoGastoGrupoId AS grupo,
+              COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS total
+         FROM registrodiariocaja r
+         JOIN venta v
+           ON v.VentaId = CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              )
+        WHERE r.TipoGastoId = 2
+          AND r.TipoGastoGrupoId IN (7, 8, 9, 10)
+          AND ${where}
+        GROUP BY venta_id, r.TipoGastoGrupoId`,
+      params
+    );
+
+    // Mapa ventaId -> etiquetas de método cobrado (efectivo/POS/voucher/transfer).
+    // Grupos de envío: 7=efectivo, 8=POS, 9=voucher, 10=transferencia.
+    const ETIQUETA_GRUPO = {
+      7: "Efectivo",
+      8: "POS",
+      9: "Voucher",
+      10: "Transferencia",
+    };
+    const metodosPorVenta = new Map();
+    for (const m of metodosVenta) {
+      if (Number(m.total) === 0) continue;
+      const id = Number(m.venta_id);
+      if (!metodosPorVenta.has(id)) metodosPorVenta.set(id, []);
+      const etiqueta = ETIQUETA_GRUPO[Number(m.grupo)];
+      if (etiqueta) metodosPorVenta.get(id).push(etiqueta);
+    }
+    // Construye la etiqueta de forma de pago de una venta: los métodos cobrados
+    // más "Crédito" si quedó saldo pendiente. Si no hubo cobro, es "Crédito".
+    const formaPagoDe = (v) => {
+      const partes = metodosPorVenta.get(Number(v.VentaId)) || [];
+      if (Number(v.Pendiente || 0) > 0) partes.push("Crédito");
+      return partes.length ? Array.from(new Set(partes)).join(" + ") : "-";
+    };
 
     // Agrupar ventas por vehículo. Clave: vehiculo_id (o "SIN" si no tiene móvil).
     const grupos = new Map();
@@ -888,7 +935,7 @@ const Venta = {
 
     for (const v of ventas) {
       const g = obtenerGrupo(v);
-      g.ventas.push(v);
+      g.ventas.push({ ...v, formaPago: formaPagoDe(v) });
       g.cantidad += 1;
       g.totalEnviado += Number(v.Total || 0);
       g.porMetodo.credito += Number(v.Pendiente || 0);
@@ -911,10 +958,10 @@ const Venta = {
       }
       const g = grupos.get(key);
       const grupo = Number(m.grupo);
-      if (grupo === 11) g.porMetodo.efectivo += Number(m.total);
-      else if (grupo === 12) g.porMetodo.pos += Number(m.total);
-      else if (grupo === 13) g.porMetodo.voucher += Number(m.total);
-      else if (grupo === 14) g.porMetodo.transferencia += Number(m.total);
+      if (grupo === 7) g.porMetodo.efectivo += Number(m.total);
+      else if (grupo === 8) g.porMetodo.pos += Number(m.total);
+      else if (grupo === 9) g.porMetodo.voucher += Number(m.total);
+      else if (grupo === 10) g.porMetodo.transferencia += Number(m.total);
     }
 
     // Ordenar: móviles con chapa primero (alfabético), "Sin móvil" al final.
@@ -961,33 +1008,63 @@ const Venta = {
     }
     const where = cond.join(" AND ");
 
+    // Detalle de TODAS las ventas del período con su vendedor resuelto. El
+    // agrupado por vendedor se arma en JS para devolver también el detalle.
     const [rows] = await pe.query(
-      `SELECT COALESCE(v.VentaVendedorId, c.VendedorId) AS vendedor_id,
-              ve.VendedorNombre, ve.VendedorApellido,
-              COUNT(v.VentaId)                       AS cantidad,
-              COALESCE(SUM(v.Total), 0)              AS total_vendido,
-              COALESCE(SUM(v.VentaEntrega), 0)       AS total_entregado,
-              COALESCE(SUM(v.Total - v.VentaEntrega), 0) AS total_pendiente
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total, v.VentaEntrega,
+              (v.Total - v.VentaEntrega) AS Pendiente,
+              c.ClienteNombre, c.ClienteApellido,
+              COALESCE(v.VentaVendedorId, c.VendedorId) AS vendedor_id,
+              ve.VendedorNombre, ve.VendedorApellido
          FROM venta v
          LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
          LEFT JOIN vendedor ve
                 ON ve.VendedorId = COALESCE(v.VentaVendedorId, c.VendedorId)
         WHERE ${where}
-        GROUP BY COALESCE(v.VentaVendedorId, c.VendedorId),
-                 ve.VendedorNombre, ve.VendedorApellido
-        ORDER BY total_vendido DESC`,
+        ORDER BY ve.VendedorNombre ASC NULLS LAST, v.VentaFecha DESC, v.VentaId DESC`,
       params
     );
 
-    const vendedores = rows.map((r) => ({
-      vendedorId: r.vendedor_id ?? null,
-      nombre: r.VendedorNombre ?? null,
-      apellido: r.VendedorApellido ?? null,
-      cantidad: Number(r.cantidad) || 0,
-      totalVendido: Number(r.total_vendido) || 0,
-      totalEntregado: Number(r.total_entregado) || 0,
-      totalPendiente: Number(r.total_pendiente) || 0,
-    }));
+    // Agrupar por vendedor (clave: vendedor_id o "SIN" si no tiene vendedor).
+    const grupos = new Map();
+    const claveVendedor = (id) => (id == null ? "SIN" : String(id));
+    for (const r of rows) {
+      const key = claveVendedor(r.vendedor_id);
+      if (!grupos.has(key)) {
+        grupos.set(key, {
+          vendedorId: r.vendedor_id ?? null,
+          nombre: r.VendedorNombre ?? null,
+          apellido: r.VendedorApellido ?? null,
+          cantidad: 0,
+          totalVendido: 0,
+          totalEntregado: 0,
+          totalPendiente: 0,
+          ventas: [],
+        });
+      }
+      const g = grupos.get(key);
+      g.ventas.push({
+        VentaId: r.VentaId,
+        VentaFecha: r.VentaFecha,
+        VentaTipo: r.VentaTipo,
+        Total: Number(r.Total) || 0,
+        VentaEntrega: Number(r.VentaEntrega) || 0,
+        Pendiente: Number(r.Pendiente) || 0,
+        ClienteNombre: r.ClienteNombre ?? null,
+        ClienteApellido: r.ClienteApellido ?? null,
+      });
+      g.cantidad += 1;
+      g.totalVendido += Number(r.Total) || 0;
+      g.totalEntregado += Number(r.VentaEntrega) || 0;
+      g.totalPendiente += Number(r.Pendiente) || 0;
+    }
+
+    // Vendedores con ventas primero (mayor total), "Sin vendedor" al final.
+    const vendedores = Array.from(grupos.values()).sort((a, b) => {
+      if (a.vendedorId == null) return 1;
+      if (b.vendedorId == null) return -1;
+      return b.totalVendido - a.totalVendido;
+    });
 
     const totales = vendedores.reduce(
       (acc, v) => ({

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
 import { loadPdf } from "../../utils/lazyPdf";
@@ -275,6 +275,12 @@ const ReportesPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string>("TODOS");
+  // Buscador del selector de cliente: texto escrito + si la lista está abierta +
+  // índice resaltado para navegar con las flechas del teclado.
+  const [clienteBusqueda, setClienteBusqueda] = useState<string>("TODOS");
+  const [clienteListaAbierta, setClienteListaAbierta] = useState(false);
+  const [clienteHighlight, setClienteHighlight] = useState(0);
+  const clienteHighlightRef = useRef<HTMLLIElement | null>(null);
   const [fechaDesde, setFechaDesde] = useState(() => {
     const hoy = new Date();
     const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -322,11 +328,22 @@ const ReportesPage: React.FC = () => {
   });
   const [fechaHastaVend, setFechaHastaVend] = useState(() => getHoyISO());
   // Porcentaje de comisión que se aplica al total vendido (texto: admite coma o
-  // punto como separador decimal). Se parsea al generar.
-  const [comisionPorcentaje, setComisionPorcentaje] = useState("");
+  // punto como separador decimal). Se parsea al generar. Default 0,2% editable.
+  const [comisionPorcentaje, setComisionPorcentaje] = useState("0,2");
 
   // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
   const [reporteActivo, setReporteActivo] = useState<string | null>(null);
+
+  // Clientes que matchean el texto del buscador (por nombre, apellido o RUC).
+  const clientesFiltrados = useMemo(() => {
+    const q = clienteBusqueda.trim().toLowerCase();
+    if (!q || q === "todos") return clientes;
+    return clientes.filter((c) =>
+      `${c.ClienteNombre} ${c.ClienteApellido} ${c.ClienteRUC ?? ""}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [clientes, clienteBusqueda]);
 
   const totalPaginasCierre = Math.max(
     1,
@@ -381,6 +398,11 @@ const ReportesPage: React.FC = () => {
     cargarClientes();
   }, []);
 
+  // Mantiene visible el item resaltado al navegar con las flechas.
+  useEffect(() => {
+    clienteHighlightRef.current?.scrollIntoView({ block: "nearest" });
+  }, [clienteHighlight]);
+
   if (!puedeLeer) return <PermissionDenied resource="los reportes" />;
 
   // Función para formatear fecha de aaaa-mm-dd a dd-mm-aaaa
@@ -399,6 +421,47 @@ const ReportesPage: React.FC = () => {
     const h = String(d.getHours()).padStart(2, "0");
     const min = String(d.getMinutes()).padStart(2, "0");
     return `${dia}/${mes}/${año} ${h}:${min}`;
+  };
+
+  // Etiqueta visible de un cliente en el buscador (nombre + RUC si tiene).
+  const etiquetaCliente = (c: Cliente): string =>
+    `${c.ClienteNombre} ${c.ClienteApellido}${c.ClienteRUC ? ` - ${c.ClienteRUC}` : ""}`.trim();
+
+  // Confirma la selección del cliente desde el buscador.
+  const seleccionarCliente = (id: string, label: string) => {
+    setClienteSeleccionado(id);
+    setClienteBusqueda(label);
+    setClienteListaAbierta(false);
+  };
+
+  // Opciones del buscador: "TODOS" primero + los clientes filtrados. El índice
+  // en este array es el que navegan las flechas (clienteHighlight).
+  const opcionesCliente: { id: string; label: string }[] = [
+    { id: "TODOS", label: "TODOS" },
+    ...clientesFiltrados.map((c) => ({
+      id: String(c.ClienteId),
+      label: etiquetaCliente(c),
+    })),
+  ];
+
+  // Navegación con teclado en el buscador de cliente.
+  const onKeyDownCliente = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setClienteListaAbierta(true);
+      setClienteHighlight((h) => Math.min(h + 1, opcionesCliente.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setClienteHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      if (clienteListaAbierta && opcionesCliente[clienteHighlight]) {
+        e.preventDefault();
+        const op = opcionesCliente[clienteHighlight];
+        seleccionarCliente(op.id, op.label);
+      }
+    } else if (e.key === "Escape") {
+      setClienteListaAbierta(false);
+    }
   };
 
   const handleGenerarPDF = async () => {
@@ -1416,13 +1479,16 @@ const ReportesPage: React.FC = () => {
             formatearFechaHora(v.VentaFecha),
             cliente,
             formatMiles(v.Total),
+            v.formaPago || "-",
             formatMiles(v.VentaEntrega),
             formatMiles(v.Pendiente),
           ];
         });
 
         autoTable(doc, {
-          head: [["ID", "FECHA", "CLIENTE", "TOTAL", "ENTREGA", "PENDIENTE"]],
+          head: [
+            ["ID", "FECHA", "CLIENTE", "TOTAL", "FORMA PAGO", "COBRADO", "PENDIENTE"],
+          ],
           body: rows,
           startY: y,
           theme: "grid",
@@ -1430,11 +1496,12 @@ const ReportesPage: React.FC = () => {
           styles: { fontSize: 9 },
           margin: { left: 14, right: 14 },
           columnStyles: {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 38 },
-            3: { cellWidth: 35, halign: "right" },
-            4: { cellWidth: 35, halign: "right" },
-            5: { cellWidth: 35, halign: "right" },
+            0: { cellWidth: 16 },
+            1: { cellWidth: 34 },
+            3: { cellWidth: 32, halign: "right" },
+            4: { cellWidth: 40 },
+            5: { cellWidth: 32, halign: "right" },
+            6: { cellWidth: 32, halign: "right" },
           },
         });
         y = getFinalY() + 6;
@@ -1488,9 +1555,25 @@ const ReportesPage: React.FC = () => {
     }
   };
 
-  // Reporte de ventas por vendedor (para comisiones). Solo mayorista. Aplica un
-  // % de comisión (ingresado por el usuario) sobre el total vendido de cada
-  // vendedor en el período. Genera un PDF con una fila por vendedor.
+  // Etiqueta de forma de pago a partir del VentaTipo (CO/CR/PO/TR).
+  const formaPagoVentaTipo = (tipo?: string): string => {
+    switch (tipo) {
+      case "CO":
+        return "Contado";
+      case "CR":
+        return "Crédito";
+      case "PO":
+        return "POS";
+      case "TR":
+        return "Transferencia";
+      default:
+        return tipo || "-";
+    }
+  };
+
+  // Reporte de ventas por vendedor (para comisiones). Solo mayorista. Detalla
+  // cada venta (monto + forma de pago) agrupada por vendedor, con subtotales por
+  // vendedor (total vendido y comisión = total × %) y totales generales al final.
   const handleGenerarReporteVentasVendedor = async () => {
     if (!fechaDesdeVend || !fechaHastaVend) {
       setError("Debes seleccionar ambas fechas");
@@ -1502,9 +1585,12 @@ const ReportesPage: React.FC = () => {
     }
     const pct = Number(String(comisionPorcentaje).replace(",", "."));
     if (isNaN(pct) || pct < 0) {
-      setError("Ingresá un porcentaje de comisión válido (ej: 2,5)");
+      setError("Ingresá un porcentaje de comisión válido (ej: 0,2)");
       return;
     }
+    // El % puede tener decimales (ej. 0,2). formatMiles redondea, así que para
+    // mostrar el porcentaje lo formateamos aparte preservando los decimales.
+    const pctStr = pct.toLocaleString("es-ES", { maximumFractionDigits: 4 });
     setLoading(true);
     setError(null);
     try {
@@ -1514,7 +1600,8 @@ const ReportesPage: React.FC = () => {
       });
 
       const { jsPDF, autoTable } = await loadPdf();
-      const doc = new jsPDF();
+      const doc = new jsPDF({ orientation: "landscape" });
+      const anchoPagina = doc.internal.pageSize.getWidth();
       let y = 18;
       doc.setFontSize(18);
       doc.text("Ventas por vendedor - comisiones", 14, y);
@@ -1526,7 +1613,7 @@ const ReportesPage: React.FC = () => {
         y,
       );
       y += 6;
-      doc.text(`Comisión aplicada: ${formatMiles(pct)}% sobre el total vendido`, 14, y);
+      doc.text(`Comisión aplicada: ${pctStr}% sobre el total vendido`, 14, y);
       y += 8;
 
       if (!data.vendedores.length) {
@@ -1534,8 +1621,12 @@ const ReportesPage: React.FC = () => {
         doc.text("No hay ventas en el período seleccionado.", 14, y + 4);
       }
 
+      const getFinalY = () =>
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY;
+
       let totalComision = 0;
-      const rows = data.vendedores.map((v) => {
+      data.vendedores.forEach((v) => {
         const nombre =
           v.vendedorId == null
             ? "Sin vendedor"
@@ -1543,38 +1634,77 @@ const ReportesPage: React.FC = () => {
               `Vendedor ${v.vendedorId}`;
         const comision = Math.round((v.totalVendido * pct) / 100);
         totalComision += comision;
-        return [
-          nombre,
-          String(v.cantidad),
-          formatMiles(v.totalVendido),
-          `${formatMiles(pct)}%`,
-          formatMiles(comision),
-        ];
-      });
 
-      if (data.vendedores.length) {
+        if (y > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setFontSize(13);
+        doc.text(nombre, 14, y);
+        y += 6;
+        doc.setFontSize(10);
+        doc.text(
+          `Ventas: ${v.cantidad}  |  Total vendido: Gs. ${formatMiles(v.totalVendido)}`,
+          14,
+          y,
+        );
+        y += 4;
+
+        const rows = v.ventas.map((venta) => {
+          const cliente =
+            [venta.ClienteNombre, venta.ClienteApellido]
+              .filter(Boolean)
+              .join(" ")
+              .trim() || "-";
+          return [
+            venta.VentaId.toString(),
+            formatearFechaHora(venta.VentaFecha),
+            cliente,
+            formaPagoVentaTipo(venta.VentaTipo),
+            formatMiles(venta.Total),
+            formatMiles(venta.Pendiente),
+          ];
+        });
+
         autoTable(doc, {
-          head: [["VENDEDOR", "VENTAS", "TOTAL VENDIDO", "%", "COMISIÓN"]],
+          head: [
+            ["ID", "FECHA", "CLIENTE", "FORMA PAGO", "TOTAL", "PENDIENTE"],
+          ],
           body: rows,
           startY: y,
           theme: "grid",
           headStyles: { fillColor: [37, 99, 235] },
-          styles: { fontSize: 10 },
+          styles: { fontSize: 9 },
           margin: { left: 14, right: 14 },
           columnStyles: {
-            1: { halign: "right" },
-            2: { halign: "right" },
-            3: { halign: "right" },
-            4: { halign: "right" },
+            0: { cellWidth: 16 },
+            1: { cellWidth: 36 },
+            3: { cellWidth: 36 },
+            4: { cellWidth: 38, halign: "right" },
+            5: { cellWidth: 38, halign: "right" },
           },
         });
-        y =
-          (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
-            .finalY + 10;
+        y = getFinalY() + 6;
 
+        doc.setFontSize(10);
+        doc.text(
+          `Subtotal vendido: Gs. ${formatMiles(v.totalVendido)}   |   Comisión (${pctStr}%): Gs. ${formatMiles(comision)}`,
+          14,
+          y,
+        );
+        y += 10;
+      });
+
+      if (data.vendedores.length) {
+        if (y > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setDrawColor(200);
+        doc.line(14, y - 4, anchoPagina - 14, y - 4);
         doc.setFontSize(12);
-        doc.text("TOTALES", 14, y);
-        y += 6;
+        doc.text("TOTALES GENERALES", 14, y + 2);
+        y += 8;
         doc.setFontSize(10);
         doc.text(
           `Ventas: ${data.totales.cantidad}  |  Total vendido: Gs. ${formatMiles(data.totales.totalVendido)}`,
@@ -2036,24 +2166,59 @@ const ReportesPage: React.FC = () => {
 
             {reporteActivo === "ventas" && (
               <div className="space-y-4">
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Cliente
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    value={clienteBusqueda}
+                    placeholder="Escribí para buscar, o TODOS"
+                    onChange={(e) => {
+                      setClienteBusqueda(e.target.value);
+                      setClienteListaAbierta(true);
+                      setClienteHighlight(0);
+                    }}
+                    onFocus={(e) => {
+                      e.target.select();
+                      setClienteListaAbierta(true);
+                      setClienteHighlight(0);
+                    }}
+                    onMouseUp={(e) => e.preventDefault()}
+                    onKeyDown={onKeyDownCliente}
+                    onBlur={() =>
+                      setTimeout(() => setClienteListaAbierta(false), 150)
+                    }
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
-                    value={clienteSeleccionado}
-                    onChange={(e) => setClienteSeleccionado(e.target.value)}
                     disabled={loading}
-                  >
-                    <option value="TODOS">TODOS</option>
-                    {clientes.map((cliente) => (
-                      <option key={cliente.ClienteId} value={cliente.ClienteId}>
-                        {cliente.ClienteNombre} {cliente.ClienteApellido}
-                        {cliente.ClienteRUC ? ` - ${cliente.ClienteRUC}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  />
+                  {clienteListaAbierta && (
+                    <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg text-sm">
+                      {opcionesCliente.map((op, idx) => {
+                        const activo = idx === clienteHighlight;
+                        return (
+                          <li
+                            key={op.id}
+                            ref={activo ? clienteHighlightRef : null}
+                            onMouseDown={() => seleccionarCliente(op.id, op.label)}
+                            onMouseEnter={() => setClienteHighlight(idx)}
+                            className={`px-3 py-2 cursor-pointer ${
+                              op.id === "TODOS" ? "font-medium" : ""
+                            } ${activo ? "bg-blue-100" : "hover:bg-slate-100"}`}
+                          >
+                            {op.label}
+                          </li>
+                        );
+                      })}
+                      {opcionesCliente.length === 1 &&
+                        clienteBusqueda.trim() &&
+                        clienteBusqueda.trim().toLowerCase() !== "todos" && (
+                          <li className="px-3 py-2 text-slate-400">
+                            Sin resultados
+                          </li>
+                        )}
+                    </ul>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -2240,7 +2405,7 @@ const ReportesPage: React.FC = () => {
                   <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="Ej: 2,5"
+                    placeholder="Ej: 0,2"
                     value={comisionPorcentaje}
                     onChange={(e) =>
                       setComisionPorcentaje(

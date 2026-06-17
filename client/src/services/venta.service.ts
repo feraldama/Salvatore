@@ -351,6 +351,7 @@ export interface EnvioVenta {
   VendedorId?: number | null;
   VendedorNombre?: string;
   VendedorApellido?: string;
+  formaPago?: string; // etiqueta de método(s) de cobro de la venta
 }
 
 export interface EnviosResumen {
@@ -471,6 +472,7 @@ export interface VentasVendedor {
   totalVendido: number;
   totalEntregado: number;
   totalPendiente: number;
+  ventas: EnvioVenta[];
 }
 
 export interface VentasPorVendedor {
