@@ -33,7 +33,7 @@ export const getTiposGastoPaginated = async (
 
 export const getTipoGastoById = async (id: string | number) => {
   try {
-    const response = await api.get(`/tipogastos/${id}`);
+    const response = await api.get(`/tipogasto/${id}`);
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
@@ -45,7 +45,7 @@ export const getTipoGastoById = async (id: string | number) => {
 
 export const createTipoGasto = async (data: Record<string, unknown>) => {
   try {
-    const response = await api.post("/tipogastos", data);
+    const response = await api.post("/tipogasto", data);
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
@@ -60,7 +60,7 @@ export const updateTipoGasto = async (
   data: Record<string, unknown>
 ) => {
   try {
-    const response = await api.put(`/tipogastos/${id}`, data);
+    const response = await api.put(`/tipogasto/${id}`, data);
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
@@ -74,7 +74,7 @@ export const updateTipoGasto = async (
 
 export const deleteTipoGasto = async (id: string | number) => {
   try {
-    const response = await api.delete(`/tipogastos/${id}`);
+    const response = await api.delete(`/tipogasto/${id}`);
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
@@ -101,7 +101,7 @@ export const searchTiposGasto = async (
   if (sortBy) params.sortBy = sortBy;
   if (sortOrder) params.sortOrder = sortOrder;
   try {
-    const response = await api.get("/tipogastos/search", { params });
+    const response = await api.get("/tipogasto/search", { params });
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
