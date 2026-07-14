@@ -20,6 +20,13 @@ types.setTypeParser(20, (v) => (v === null ? null : Number(v)));
 // DATE: return as ISO string (YYYY-MM-DD) to avoid timezone shifts that occur
 // when pg's default parser builds a JS Date at local midnight.
 types.setTypeParser(1082, (v) => v); // raw string
+// TIMESTAMP without time zone: devolver el string crudo ("YYYY-MM-DD HH:mm:ss")
+// en vez de dejar que pg construya un Date. El parser por defecto interpreta el
+// timestamp naive en la zona local del server y, al serializarse a JSON, queda
+// como ISO en UTC — corriendo la hora mostrada por el offset local (+3 en PY).
+// El frontend (formatFechaHora) parsea los componentes del string, así que
+// devolver el string crudo preserva la hora local tal como se guardó.
+types.setTypeParser(1114, (v) => v); // raw string
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
