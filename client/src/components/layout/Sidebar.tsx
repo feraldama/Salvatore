@@ -74,6 +74,13 @@ const sections: NavigationSection[] = [
         permiso: "DELIVERIES",
         empresaTipos: ["M"], // delivery es solo de minorista
       },
+      {
+        name: "Tarifas de Delivery",
+        href: "/delivery-tarifas",
+        icon: BanknotesIcon,
+        permiso: "DELIVERYTARIFAS",
+        empresaTipos: ["M"], // tarifas de delivery solo en minorista
+      },
       { name: "Compras", href: "/compras", icon: ShoppingCartIcon, permiso: "NUEVACOMPRA" },
       {
         name: "Cobro de Créditos",

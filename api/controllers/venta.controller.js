@@ -712,6 +712,7 @@ exports.confirmar = async (req, res) => {
     EnvioVehiculoId = null,
     EsDelivery = false,
     DeliveryChoferId = null,
+    DeliveryTarifaId = null,
   } = req.body || {};
 
   // ENVÍO: la mercadería se entrega ahora y el pago lo cobra el repartidor / al
@@ -797,9 +798,30 @@ exports.confirmar = async (req, res) => {
         : Number(p.VentaProductoPrecioTotal);
       return acc + (Number.isFinite(lineaTotal) ? lineaTotal : 0);
     }, 0);
+
+    // Costo de delivery: se resuelve SIEMPRE desde la tarifa en BD (no se confía
+    // en un monto enviado por el cliente), scopeada a la empresa activa y activa.
+    // Se suma al total y queda como monto_pendiente a cobrar contra entrega.
+    let costoDelivery = 0;
+    if (esDelivery) {
+      const tarifaId = Math.round(Number(DeliveryTarifaId) || 0);
+      if (!tarifaId) {
+        throw new Error("Seleccione la tarifa de delivery");
+      }
+      const [tarRows] = await conn.query(
+        `SELECT monto FROM delivery_tarifa
+          WHERE id = ? AND empresa_id = ? AND activo = 'S'`,
+        [tarifaId, req.empresaId || 1]
+      );
+      if (!tarRows.length) {
+        throw new Error("La tarifa de delivery seleccionada no es válida");
+      }
+      costoDelivery = Math.round(Number(tarRows[0].monto) || 0);
+    }
+
     const ventaEntrega = esDelivery ? 0 : efectivo + banco + voucher + transferencia;
     const total = esDelivery
-      ? Math.round(productosTotal)
+      ? Math.round(productosTotal) + costoDelivery
       : efectivo + banco + cuentaCliente + voucher + transferencia;
 
     // 3. Cabecera de venta. EmpresaId scopea la venta a minorista/distribuidora
@@ -847,9 +869,9 @@ exports.confirmar = async (req, res) => {
     // fuera de columnMap.
     if (esDelivery) {
       await conn.query(
-        `INSERT INTO venta_delivery (venta_id, chofer_id, monto_pendiente)
-         VALUES (?, ?, ?)`,
-        [ultorden, deliveryChoferId, total]
+        `INSERT INTO venta_delivery (venta_id, chofer_id, monto_pendiente, costo_delivery)
+         VALUES (?, ?, ?, ?)`,
+        [ultorden, deliveryChoferId, total, costoDelivery]
       );
     }
 

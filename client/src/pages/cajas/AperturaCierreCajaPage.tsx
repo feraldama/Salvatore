@@ -222,6 +222,10 @@ export default function AperturaCierreCajaPage() {
     let ingresosVoucher = 0;
     let ingresosTransfer = 0;
     let ingresosCuentaCorriente = 0;
+    // Costo de delivery cobrado en la sesión (grupo 12, informativo): ya está
+    // incluido en los ingresos de arriba, solo se desglosa cuánto fue envío.
+    let costoDeliveryTotal = 0;
+    let costoDeliveryCant = 0;
     for (const reg of registrosFiltrados) {
       // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
       // de venta a crédito (3). POS(4)/voucher(5)/transferencia(6) no son efectivo,
@@ -248,6 +252,11 @@ export default function AperturaCierreCajaPage() {
       // dinero recibido: se muestra aparte y NO entra al efectivo de la caja.
       if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 11) {
         ingresosCuentaCorriente += reg.RegistroDiarioCajaMonto;
+      }
+      // Costo de delivery (grupo 12): informativo, NO se suma a ingresos.
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 12) {
+        costoDeliveryTotal += reg.RegistroDiarioCajaMonto;
+        costoDeliveryCant += 1;
       }
     }
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
@@ -320,6 +329,17 @@ export default function AperturaCierreCajaPage() {
       ingresosCuentaCorriente;
     doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
     y += 8;
+    // Costo de delivery cobrado (informativo: ya incluido en los ingresos).
+    if (costoDeliveryTotal > 0) {
+      doc.text(
+        `(incl.) Costo delivery (${costoDeliveryCant}): ${formatMiles(
+          costoDeliveryTotal
+        )}`,
+        10,
+        y
+      );
+      y += 8;
+    }
     // Línea nueva para Total Egresos
     doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
     y += 8;

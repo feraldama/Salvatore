@@ -116,6 +116,7 @@ async function registrarPagosEnCaja(conn, {
   cuentaCliente = 0,
   esEnvio = false,
   etiqueta = "",
+  costoDelivery = 0,
 }) {
   const usr = usuarioId || "";
 
@@ -190,6 +191,19 @@ async function registrarPagosEnCaja(conn, {
          RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
        ) VALUES (?, ?, 2, 11, ?, ?, ?)`,
       [cajaId, fecha, `Venta Cuenta Corriente N°: ${ventaId}${etiqueta}`, cuentaCliente, usr]
+    );
+  }
+
+  // Costo de delivery: grupo 12 dedicado, informativo. NO entra a la caja
+  // física ni a los ingresos del cierre (el monto ya está incluido en los
+  // grupos de pago de arriba); solo permite desglosar cuánto fue envío.
+  if (costoDelivery > 0) {
+    await conn.query(
+      `INSERT INTO registrodiariocaja (
+         CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+         RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+       ) VALUES (?, ?, 2, 12, ?, ?, ?)`,
+      [cajaId, fecha, `Costo Delivery N°: ${ventaId}`, costoDelivery, usr]
     );
   }
 
@@ -1141,6 +1155,7 @@ const Venta = {
               d.creado_en AS creado_en,
               d.efectivo_pendiente AS efectivo_pendiente,
               d.monto_pendiente AS monto_pendiente,
+              d.costo_delivery AS costo_delivery,
               d.cobrado_en AS cobrado_en,
               TRIM(d.chofer_id) AS chofer_id,
               u.usuarionombre  AS chofer_nombre,
@@ -1295,6 +1310,7 @@ const Venta = {
       const [rows] = await conn.query(
         `SELECT d.monto_pendiente AS monto_pendiente,
                 d.efectivo_pendiente AS efectivo_pendiente,
+                d.costo_delivery AS costo_delivery,
                 d.estado AS estado,
                 d.cobrado_en AS cobrado_en
            FROM venta_delivery d
@@ -1337,6 +1353,7 @@ const Venta = {
         cuentaCliente,
         esEnvio: false,
         etiqueta: " (DELIVERY)",
+        costoDelivery: Number(rows[0].costo_delivery) || 0,
       });
 
       // Reflejar en la cabecera lo realmente cobrado (al despachar quedó como

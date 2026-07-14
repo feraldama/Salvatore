@@ -28,6 +28,7 @@ import VentasPage from "./pages/ventas/VentasPage";
 import CreditoPagosPage from "./pages/ventas/CreditoPagosPage";
 import ReportesPage from "./pages/dashboard/ReportesPage";
 import DeliveriesPage from "./pages/dashboard/DeliveriesPage";
+import DeliveryTarifasPage from "./pages/delivery/DeliveryTarifasPage";
 import FacturasPage from "./pages/facturas/FacturasPage";
 import Compras from "./pages/compras/Compras";
 import ComprasPage from "./pages/compras/ComprasPage";
@@ -104,6 +105,7 @@ function App() {
             <Route path="/credito-pagos" element={<CreditoPagosPage />} />
             <Route path="/reportes" element={<ReportesPage />} />
             <Route path="/deliveries" element={<DeliveriesPage />} />
+            <Route path="/delivery-tarifas" element={<DeliveryTarifasPage />} />
             <Route path="/facturas" element={<FacturasPage />} />
             <Route path="/vendedores" element={<VendedoresPage />} />
             <Route path="/empresas" element={<EmpresasPage />} />

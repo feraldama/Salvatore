@@ -15,6 +15,10 @@ import {
   getDeliveriesPorCobrarCount,
 } from "../../services/venta.service";
 import { getChoferes, type Chofer } from "../../services/flota.service";
+import {
+  getDeliveryTarifasActivas,
+  type DeliveryTarifa,
+} from "../../services/deliveryTarifa.service";
 import CobrarDeliveryModal from "../../components/common/CobrarDeliveryModal";
 import { usePermiso } from "../../hooks/usePermiso";
 import { PermissionDenied } from "../../components/common/ui";
@@ -152,6 +156,11 @@ export default function Sales() {
   const [esDelivery, setEsDelivery] = useState(false);
   const [choferDeliveryId, setChoferDeliveryId] = useState("");
   const [choferes, setChoferes] = useState<Chofer[]>([]);
+  // Tarifas de delivery configurables (catálogo en BD). Al marcar delivery se
+  // carga la lista y se preselecciona la default (la de menor `orden`, ej.
+  // "Estándar" 10.000). El cajero puede elegir otra (15.000, 20.000…).
+  const [tarifasDelivery, setTarifasDelivery] = useState<DeliveryTarifa[]>([]);
+  const [tarifaDeliveryId, setTarifaDeliveryId] = useState<number | "">("");
   // Cargar los choferes (perfil CHOFER) la primera vez que se marca delivery.
   useEffect(() => {
     if (!esDelivery || choferes.length > 0) return;
@@ -159,6 +168,29 @@ export default function Sales() {
       .then((data) => setChoferes(data.filter((c) => c.estado === "A")))
       .catch((e) => console.error("Error al cargar choferes:", e));
   }, [esDelivery, choferes.length]);
+  // Cargar las tarifas de delivery cada vez que se marca delivery (así toma
+  // precios frescos si el admin los cambió). Conserva la tarifa elegida si sigue
+  // vigente; si no, preselecciona la default (la primera, ordenada por `orden`).
+  useEffect(() => {
+    if (!esDelivery) return;
+    getDeliveryTarifasActivas()
+      .then((data) => {
+        setTarifasDelivery(data);
+        setTarifaDeliveryId((prev) =>
+          prev !== "" && data.some((t) => t.id === prev)
+            ? prev
+            : data.length > 0
+              ? data[0].id
+              : "",
+        );
+      })
+      .catch((e) => console.error("Error al cargar tarifas de delivery:", e));
+  }, [esDelivery]);
+  // Costo de delivery de la tarifa elegida (0 si no es delivery o no hay tarifa).
+  const costoDelivery =
+    esDelivery && tarifaDeliveryId !== ""
+      ? tarifasDelivery.find((t) => t.id === tarifaDeliveryId)?.monto ?? 0
+      : 0;
   const [combos, setCombos] = useState<Combo[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null,
@@ -286,6 +318,8 @@ export default function Sales() {
   };
 
   const total = carrito.reduce((acc, p) => acc + obtenerTotal(p), 0);
+  // Total que ve/cobra el cliente: en delivery se suma el costo de envío.
+  const totalConDelivery = total + costoDelivery;
 
   // Función para cargar productos con paginación
   const fetchProductos = useCallback(async () => {
@@ -530,6 +564,7 @@ export default function Sales() {
     // Volver a "ventana" para la próxima venta.
     setEsDelivery(false);
     setChoferDeliveryId("");
+    setTarifaDeliveryId("");
     // Si fue delivery, ahora hay uno más por cobrar.
     refreshDeliveriesPorCobrar();
     setClienteSeleccionado({
@@ -554,7 +589,8 @@ export default function Sales() {
     items: typeof carrito,
     fechaIso: string,
   ) => {
-    const totalFactura = items.reduce((acc, p) => acc + obtenerTotal(p), 0);
+    const totalFactura =
+      items.reduce((acc, p) => acc + obtenerTotal(p), 0) + costoDelivery;
     const productosFactura = items.map((p) => {
       const lineaTotal = obtenerTotal(p);
       return {
@@ -566,6 +602,15 @@ export default function Sales() {
         VentaProductoPrecioTotal: lineaTotal,
       };
     });
+    // Línea de DELIVERY como ítem en la factura (el Total ya lo incluye).
+    if (costoDelivery > 0) {
+      productosFactura.push({
+        ProductoNombre: "DELIVERY",
+        VentaProductoCantidad: 1,
+        VentaProductoPrecio: costoDelivery,
+        VentaProductoPrecioTotal: costoDelivery,
+      });
+    }
     const ventaFactura = {
       VentaId: ventaId,
       VentaFecha: fechaIso,
@@ -700,6 +745,10 @@ export default function Sales() {
               : "0",
           EsDelivery: esDelivery,
           DeliveryChoferId: esDelivery ? choferDeliveryId : undefined,
+          DeliveryTarifaId:
+            esDelivery && tarifaDeliveryId !== ""
+              ? Number(tarifaDeliveryId)
+              : undefined,
           Pagos: {
             Efectivo: Number(efectivo) + Number(totalRest),
             Banco: Number(bancoDebito) + Number(bancoCredito),
@@ -863,6 +912,16 @@ export default function Sales() {
       ];
     });
 
+    // Línea de DELIVERY en el ticket (solo en venta delivery con costo).
+    if (esDelivery && costoDelivery > 0) {
+      tableData.push([
+        "DELIVERY",
+        1,
+        `Gs. ${costoDelivery.toLocaleString("es-ES")}\nEnvío`,
+        `Gs. ${costoDelivery.toLocaleString("es-ES")}`,
+      ]);
+    }
+
     // Agregar la tabla al PDF
     autoTable(doc, {
       head: headers,
@@ -884,11 +943,10 @@ export default function Sales() {
       margin: { left: 0 }, // Margen izquierdo
     });
 
-    // Total de la compra
-    const totalCost = carrito.reduce(
-      (sum, item) => sum + obtenerTotal(item),
-      0,
-    );
+    // Total de la compra (incluye el costo de delivery si corresponde).
+    const totalCost =
+      carrito.reduce((sum, item) => sum + obtenerTotal(item), 0) +
+      (esDelivery ? costoDelivery : 0);
     const lastAutoTable = (
       doc as unknown as { lastAutoTable: { finalY: number } }
     ).lastAutoTable;
@@ -1221,9 +1279,16 @@ export default function Sales() {
                 isDevolucion ? "text-danger-700" : "text-brand-700"
               }`}
             >
-              Gs. {formatMiles(total)}
+              Gs. {formatMiles(totalConDelivery)}
             </span>
           </div>
+          {/* Desglose del costo de delivery (solo cuando aplica). */}
+          {esDelivery && costoDelivery > 0 && (
+            <div className="flex justify-between items-center mb-3 text-sm text-slate-600">
+              <span>Incluye delivery</span>
+              <span className="font-num">Gs. {formatMiles(costoDelivery)}</span>
+            </div>
+          )}
           {/* Modalidad de venta: Ventana (default) | Delivery. No aplica en
               modo devolución. */}
           {!isDevolucion && (
@@ -1273,6 +1338,28 @@ export default function Sales() {
                       </option>
                     ))}
                   </select>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1 mt-2">
+                    Tarifa de delivery{" "}
+                    <span className="text-danger-600">*</span>
+                  </label>
+                  <select
+                    value={tarifaDeliveryId}
+                    onChange={(e) =>
+                      setTarifaDeliveryId(
+                        e.target.value ? Number(e.target.value) : "",
+                      )
+                    }
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                  >
+                    {tarifasDelivery.length === 0 && (
+                      <option value="">Sin tarifas configuradas</option>
+                    )}
+                    {tarifasDelivery.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nombre} — Gs. {formatMiles(t.monto)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>
@@ -1295,6 +1382,15 @@ export default function Sales() {
                       icon: "warning",
                       title: "Falta el chofer",
                       text: "Seleccioná el chofer del delivery antes de despachar.",
+                      confirmButtonColor: "#3085d6",
+                    });
+                    return;
+                  }
+                  if (tarifaDeliveryId === "") {
+                    Swal.fire({
+                      icon: "warning",
+                      title: "Falta la tarifa",
+                      text: "Seleccioná la tarifa de delivery antes de despachar.",
                       confirmButtonColor: "#3085d6",
                     });
                     return;

@@ -26,7 +26,7 @@ const VentaProducto = {
   getByVentaId: (ventaId) => {
     return new Promise((resolve, reject) => {
       const query = `
-        SELECT 
+        SELECT
           vp.*,
           p.ProductoNombre,
           p.ProductoCodigo,
@@ -39,7 +39,29 @@ const VentaProducto = {
 
       db.query(query, [ventaId], (err, results) => {
         if (err) return reject(err);
-        resolve(results);
+        // Si la venta es un delivery con costo, se agrega una línea sintética
+        // "DELIVERY" para que la factura/reimpresión cuadre con el Total (el
+        // costo de envío no es un ventaproducto, vive en venta_delivery).
+        db.query(
+          "SELECT costo_delivery FROM venta_delivery WHERE venta_id = ?",
+          [ventaId],
+          (err2, delRows) => {
+            if (err2) return reject(err2);
+            const costo = Number(delRows?.[0]?.costo_delivery) || 0;
+            if (costo > 0) {
+              results.push({
+                VentaId: Number(ventaId),
+                ProductoId: 0,
+                ProductoNombre: "DELIVERY",
+                ProductoCodigo: "",
+                VentaProductoCantidad: 1,
+                VentaProductoPrecio: costo,
+                VentaProductoPrecioTotal: costo,
+              });
+            }
+            resolve(results);
+          }
+        );
       });
     });
   },

@@ -277,6 +277,9 @@ export interface ConfirmarVentaPayload {
   // Chofer (usuario perfil CHOFER) que reparte el delivery (obligatorio si
   // EsDelivery). El backend lo registra en venta_delivery con estado PENDIENTE.
   DeliveryChoferId?: string;
+  // Tarifa de delivery elegida (obligatoria si EsDelivery). El backend resuelve
+  // el monto desde la BD y lo suma al total (no se confía en un monto del front).
+  DeliveryTarifaId?: number;
   Pagos: {
     Efectivo?: number;
     Banco?: number;
@@ -617,6 +620,8 @@ export interface Delivery {
   monto_pendiente: number;
   efectivo_pendiente: number;
   cobrado_en: string | null;
+  // Costo de delivery aplicado a la venta (ya incluido en Total / monto_pendiente).
+  costo_delivery?: number;
 }
 
 // Lista de ventas marcadas como delivery, con su chofer y estado de reparto.

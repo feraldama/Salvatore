@@ -24,6 +24,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/credito-pagos": "Crédito y pagos",
   "/reportes": "Reportes",
   "/deliveries": "Deliveries",
+  "/delivery-tarifas": "Tarifas de Delivery",
   "/facturas": "Facturas",
   "/vendedores": "Vendedores",
   "/empresas": "Empresas",
