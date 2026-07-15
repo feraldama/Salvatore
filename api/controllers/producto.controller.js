@@ -25,6 +25,10 @@ function extractProductoFilters(query, empresaId, almacenId) {
     filters.precioMin = query.precioMin;
   if (query.precioMax !== undefined && query.precioMax !== "")
     filters.precioMax = query.precioMax;
+  // Solo la gestión de productos incluye los dados de baja (para reactivarlos).
+  // El POS no envía este flag, así que siempre ve solo activos.
+  if (query.incluirInactivos === "true" || query.incluirInactivos === "1")
+    filters.incluirInactivos = true;
   return filters;
 }
 

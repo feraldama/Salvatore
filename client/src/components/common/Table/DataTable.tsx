@@ -35,6 +35,9 @@ interface DataTableProps<T extends DataTableRow> {
   emptyMessage?: string;
   actions?: boolean;
   customActions?: (item: T) => React.ReactNode;
+  /** Botón(es) extra dentro del grupo de acciones por defecto (entre editar y
+   *  eliminar). No se usa si se pasa `customActions`. */
+  extraActions?: (item: T) => React.ReactNode;
   getStatusColor?: (status: unknown) => string;
   getStatusText?: (status: unknown) => string;
   sortKey?: string;
@@ -85,6 +88,7 @@ function DataTable<T extends DataTableRow>({
   emptyMessage = "No se encontraron registros",
   actions = true,
   customActions,
+  extraActions,
   getStatusColor,
   getStatusText,
   sortKey,
@@ -212,6 +216,7 @@ function DataTable<T extends DataTableRow>({
                           <PencilSquareIcon className="h-5 w-5" />
                         </button>
                       )}
+                      {extraActions?.(item)}
                       {onViewCredit && item.VentaTipo === "CR" && (
                         <button
                           onClick={() => onViewCredit(item)}

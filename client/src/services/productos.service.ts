@@ -8,6 +8,8 @@ export interface ProductoFilters {
   stockMax?: number | string;
   precioMin?: number | string;
   precioMax?: number | string;
+  /** Incluir productos dados de baja (solo la gestión de productos). */
+  incluirInactivos?: boolean;
 }
 
 const applyProductoFilters = (
@@ -27,6 +29,7 @@ const applyProductoFilters = (
     params.precioMin = filters.precioMin;
   if (filters.precioMax != null && filters.precioMax !== "")
     params.precioMax = filters.precioMax;
+  if (filters.incluirInactivos) params.incluirInactivos = "true";
 };
 
 // Traer todos los productos sin paginación
@@ -142,6 +145,27 @@ export const updateProducto = async (
     const axiosError = error as AxiosError<{ message?: string }>;
     throw (
       axiosError.response?.data || { message: "Error al actualizar producto" }
+    );
+  }
+};
+
+// Dar de baja ('I') o reactivar ('A') un producto. Un producto dado de baja
+// desaparece del catálogo de venta pero se conserva (con su historial).
+export const setProductoEstado = async (
+  id: string | number,
+  estado: "A" | "I"
+) => {
+  try {
+    const response = await api.put(`/productos/${id}`, {
+      ProductoEstado: estado,
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al cambiar el estado del producto",
+      }
     );
   }
 };

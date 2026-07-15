@@ -6,6 +6,7 @@ import {
   searchProductos,
   createProducto,
   updateProducto,
+  setProductoEstado,
   type ProductoFilters,
 } from "../../services/productos.service";
 import ProductsList from "../../components/products/ProductsList";
@@ -44,6 +45,7 @@ interface Producto {
   ProductoImagen_GXI?: string;
   LocalId: number;
   LocalNombre: string;
+  ProductoEstado?: string;
   productoAlmacen?: ProductoAlmacenItem[];
   [key: string]: unknown;
 }
@@ -82,6 +84,9 @@ export default function ProductsPage() {
   const fetchProductos = useCallback(async () => {
     try {
       setLoading(true);
+      // La gestión de productos ve también los dados de baja (para reactivarlos);
+      // el POS no envía este flag, así que solo ve los activos.
+      const fetchFilters = { ...filters, incluirInactivos: true };
       let data;
       if (appliedSearchTerm) {
         data = await searchProductos(
@@ -90,7 +95,7 @@ export default function ProductsPage() {
           itemsPerPage,
           sortKey,
           sortOrder,
-          filters
+          fetchFilters
         );
       } else {
         data = await getProductosPaginated(
@@ -98,7 +103,7 @@ export default function ProductsPage() {
           itemsPerPage,
           sortKey,
           sortOrder,
-          filters
+          fetchFilters
         );
       }
       setProductosData({
@@ -182,6 +187,41 @@ export default function ProductsPage() {
         }
       }
     });
+  };
+
+  const handleToggleEstado = async (product: Producto) => {
+    const darDeBaja = product.ProductoEstado !== "I";
+    const result = await Swal.fire({
+      title: darDeBaja ? "¿Dar de baja el producto?" : "¿Reactivar el producto?",
+      text: darDeBaja
+        ? `"${product.ProductoNombre}" dejará de aparecer en la venta. Podés reactivarlo cuando quieras.`
+        : `"${product.ProductoNombre}" volverá a aparecer en la venta.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: darDeBaja ? "#d97706" : "#059669",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: darDeBaja ? "Sí, dar de baja" : "Sí, reactivar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await setProductoEstado(product.ProductoId, darDeBaja ? "I" : "A");
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: darDeBaja ? "Producto dado de baja" : "Producto reactivado",
+        showConfirmButton: false,
+        timer: 2000,
+      });
+      fetchProductos();
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: err?.message || "No se pudo cambiar el estado del producto",
+      });
+    }
   };
 
   const handleCreate = () => {
@@ -276,6 +316,7 @@ export default function ProductsPage() {
                 })
             : undefined
         }
+        onToggleEstado={puedeEditar ? handleToggleEstado : undefined}
         onCreate={puedeCrear ? handleCreate : undefined}
         pagination={productosData.pagination}
         onSearch={handleSearch}

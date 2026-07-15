@@ -7,6 +7,8 @@ import {
   TrashIcon,
   FunnelIcon,
   XMarkIcon,
+  NoSymbolIcon,
+  ArrowUturnLeftIcon,
 } from "@heroicons/react/24/outline";
 import { getLocales } from "../../services/locales.service";
 import { getAlmacenes } from "../../services/almacenes.service";
@@ -37,6 +39,8 @@ interface Producto {
   ProductoImagen?: string;
   ProductoImagen_GXI?: string;
   LocalId: number;
+  /** 'A' = Activo, 'I' = dado de baja (oculto para la venta). */
+  ProductoEstado?: string;
   productoAlmacen?: ProductoAlmacenRow[];
   [key: string]: unknown;
 }
@@ -49,6 +53,7 @@ interface ProductsListProps {
   productos: Producto[];
   onDelete?: (item: Producto) => void;
   onEdit?: (item: Producto) => void;
+  onToggleEstado?: (item: Producto) => void;
   onCreate?: () => void;
   pagination?: Pagination;
   onSearch: (value: string) => void;
@@ -74,6 +79,7 @@ export default function ProductsList({
   productos,
   onDelete,
   onEdit,
+  onToggleEstado,
   onCreate,
   pagination,
   onSearch,
@@ -391,7 +397,46 @@ export default function ProductsList({
       render: (item: Producto) =>
         String(item.LocalNombre || item.LocalId || "-"),
     },
+    {
+      key: "ProductoEstado",
+      label: "Estado",
+      sortable: false,
+      render: (item: Producto) =>
+        item.ProductoEstado === "I" ? (
+          <span className="inline-flex items-center rounded-full bg-danger-50 px-2.5 py-0.5 text-xs font-medium text-danger-700">
+            Dado de baja
+          </span>
+        ) : (
+          <span className="inline-flex items-center rounded-full bg-success-50 px-2.5 py-0.5 text-xs font-medium text-success-700">
+            Activo
+          </span>
+        ),
+    },
   ];
+
+  // Botón de dar de baja / reactivar, insertado en el grupo de acciones.
+  const renderEstadoAction = onToggleEstado
+    ? (item: Producto) =>
+        item.ProductoEstado === "I" ? (
+          <button
+            onClick={() => onToggleEstado(item)}
+            aria-label="Reactivar producto"
+            title="Reactivar (volver a mostrar en la venta)"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md text-success-700 hover:bg-success-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-success-600/40"
+          >
+            <ArrowUturnLeftIcon className="h-5 w-5" />
+          </button>
+        ) : (
+          <button
+            onClick={() => onToggleEstado(item)}
+            aria-label="Dar de baja producto"
+            title="Dar de baja (ocultar de la venta)"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md text-warning-700 hover:bg-warning-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-warning-600/40"
+          >
+            <NoSymbolIcon className="h-5 w-5" />
+          </button>
+        )
+    : undefined;
 
   return (
     <>
@@ -615,6 +660,7 @@ export default function ProductsList({
         data={productos.map((p) => ({ ...p, id: p.ProductoId ?? 0 }))}
         onEdit={onEdit}
         onDelete={onDelete}
+        extraActions={renderEstadoAction}
         emptyMessage="No se encontraron productos"
         sortKey={sortKey}
         sortOrder={sortOrder}

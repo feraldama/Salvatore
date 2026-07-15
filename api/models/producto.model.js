@@ -33,7 +33,7 @@ function productoListCols(almacenId) {
   ${stockCols},
   p.ProductoCantidadCaja, p.ProductoIVA,
   p.ProductoStockMinimo, p.ProductoImagen_GXI,
-  p.LocalId, p.EmpresaId,
+  p.LocalId, p.EmpresaId, p.ProductoEstado,
   (LENGTH(p.ProductoImagen) > 0) AS HasImagen
 `;
 }
@@ -61,6 +61,12 @@ function buildProductoFiltersWhere(filters = {}) {
   if (filters.empresaId != null && filters.empresaId !== "") {
     conditions.push("p.EmpresaId = ?");
     params.push(Number(filters.empresaId));
+  }
+  // Por defecto solo productos activos (los dados de baja no se ofrecen a la
+  // venta). La gestión de productos pasa incluirInactivos para verlos todos y
+  // poder reactivarlos.
+  if (!filters.incluirInactivos) {
+    conditions.push("p.ProductoEstado = 'A'");
   }
   if (filters.localId != null && filters.localId !== "") {
     conditions.push("p.LocalId = ?");
@@ -135,7 +141,8 @@ const Producto = {
                p.ProductoCantidadCaja,
                COALESCE(p.ProductoStockMinimo, 0) AS ProductoStockMinimo
         FROM producto p
-        WHERE COALESCE(p.ProductoStock, 0) < ${umbralCase}`;
+        WHERE p.ProductoEstado = 'A'
+          AND COALESCE(p.ProductoStock, 0) < ${umbralCase}`;
       const params = [g]; // ? del WHERE
 
       if (empresaId != null) {
@@ -449,6 +456,7 @@ const Producto = {
         "ProductoImagen",
         "ProductoImagen_GXI",
         "LocalId",
+        "ProductoEstado",
       ];
       camposActualizables.forEach((campo) => {
         if (productoData[campo] === undefined) return;
@@ -473,7 +481,8 @@ const Producto = {
         // Si no se envía productoAlmacen desde el front, no tocamos el detalle.
         if (productoAlmacen === undefined) return callback();
 
-        // Si se envía un array vacío, tampoco borramos filas para no violar FKs.
+        // Si se envía un array vacío, no tocamos el detalle (protección ante un
+        // payload vacío por error, que borraría todo el stock del producto).
         if (productoAlmacen.length === 0) return callback();
 
         const placeholders = productoAlmacen
@@ -487,7 +496,20 @@ const Producto = {
           pa.ProductoAlmacenStockUnitario ?? 0,
         ]);
 
-        // Usamos UPSERT para solo actualizar stock, sin borrar ni cambiar claves.
+        // Sincronizamos el detalle con lo que envía el front (que trae el set
+        // completo de almacenes del producto): primero borramos las filas de
+        // almacenes que el usuario quitó del modal (ya no están en el array),
+        // y luego UPSERT de las que sí vienen. Así "quitar un almacén + guardar"
+        // realmente lo desengancha. Borrar filas de productoalmacen es seguro:
+        // ninguna tabla las referencia (las ventas apuntan a almacen, no aquí).
+        const almacenIds = productoAlmacen.map((pa) => pa.AlmacenId);
+        const notInPlaceholders = almacenIds.map(() => "?").join(", ");
+        const deleteQuery = `
+          DELETE FROM productoalmacen
+          WHERE ProductoId = ?
+            AND AlmacenId NOT IN (${notInPlaceholders})
+        `;
+
         const upsertQuery = `
           INSERT INTO productoalmacen (
             ProductoId,
@@ -500,9 +522,12 @@ const Producto = {
             ProductoAlmacenStockUnitario = EXCLUDED.ProductoAlmacenStockUnitario
         `;
 
-        db.query(upsertQuery, insertValues, (errPa) => {
-          if (errPa) return reject(errPa);
-          callback();
+        db.query(deleteQuery, [id, ...almacenIds], (errDel) => {
+          if (errDel) return reject(errDel);
+          db.query(upsertQuery, insertValues, (errPa) => {
+            if (errPa) return reject(errPa);
+            callback();
+          });
         });
       };
 
