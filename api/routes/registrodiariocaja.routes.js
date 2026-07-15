@@ -4,8 +4,9 @@ const registroDiarioCajaController = require("../controllers/registrodiariocaja.
 const authMiddleware = require("../middlewares/auth");
 const resolveEmpresa = require("../middlewares/resolveEmpresa");
 
-// Aplicar middleware de autenticación a todas las rutas
+// Aplicar autenticación + scope (empresa/sucursal activa) a todas las rutas.
 router.use(authMiddleware);
+router.use(resolveEmpresa);
 
 // Rutas para registros diarios de caja
 router.get("/", authMiddleware, registroDiarioCajaController.getAll);

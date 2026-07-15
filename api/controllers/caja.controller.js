@@ -50,7 +50,9 @@ exports.create = async (req, res) => {
     const caja = await Caja.create({
       ...req.body,
       EmpresaId: req.empresaId,
-      LocalId: req.localId ?? req.body.LocalId ?? null,
+      // La sucursal elegida en el modal (body) manda; si no viene, se usa la
+      // sucursal activa del header (X-Local-Id) y, en última instancia, null.
+      LocalId: req.body.LocalId ?? req.localId ?? null,
     });
     res.status(201).json({ message: "Caja creada exitosamente", data: caja });
   } catch (error) {

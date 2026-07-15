@@ -4,6 +4,7 @@ import DataTable from "../common/Table/DataTable";
 import { Modal, Button, TextInput } from "../common/ui";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
+import { useAuth } from "../../contexts/useAuth";
 
 import type { Caja } from "../../types";
 
@@ -48,11 +49,19 @@ export default function CajasList({
   sortOrder,
   onSort,
 }: CajasListProps) {
-  const [formData, setFormData] = useState({
+  const { locales, localActiva } = useAuth();
+  const [formData, setFormData] = useState<{
+    id: string;
+    CajaId: string;
+    CajaDescripcion: string;
+    CajaMonto: number;
+    LocalId: number | "";
+  }>({
     id: "",
     CajaId: "",
     CajaDescripcion: "",
     CajaMonto: 0,
+    LocalId: "",
   });
 
   useEffect(() => {
@@ -62,6 +71,7 @@ export default function CajasList({
         CajaId: String(currentCaja.CajaId),
         CajaDescripcion: currentCaja.CajaDescripcion,
         CajaMonto: currentCaja.CajaMonto,
+        LocalId: (currentCaja.LocalId as number) ?? "",
       });
     } else {
       setFormData({
@@ -69,9 +79,12 @@ export default function CajasList({
         CajaId: "",
         CajaDescripcion: "",
         CajaMonto: 0,
+        // Preselecciona la sucursal activa (si hay una elegida); si está en
+        // "Todas", queda vacío y el usuario debe elegir.
+        LocalId: localActiva?.LocalId ?? "",
       });
     }
-  }, [currentCaja]);
+  }, [currentCaja, localActiva]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -189,6 +202,30 @@ export default function CajasList({
             }}
             required
           />
+          <div className="sm:col-span-2">
+            <label className="block mb-1.5 text-sm font-medium text-text">
+              Sucursal <span className="text-danger-600">*</span>
+            </label>
+            <select
+              name="LocalId"
+              value={formData.LocalId}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  LocalId: e.target.value === "" ? "" : Number(e.target.value),
+                }))
+              }
+              required
+              className="w-full bg-surface border border-border text-text text-sm rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 p-2.5"
+            >
+              <option value="">Seleccione una sucursal</option>
+              {locales.map((l) => (
+                <option key={l.LocalId} value={l.LocalId}>
+                  {l.LocalNombre}
+                </option>
+              ))}
+            </select>
+          </div>
         </form>
       </Modal>
     </>

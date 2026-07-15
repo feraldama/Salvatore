@@ -20,6 +20,7 @@ import {
   PermissionDenied,
 } from "../../components/common/ui";
 import { formatCurrency, formatFechaHora } from "../../utils/utils";
+import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
 
 interface Pagination {
@@ -43,6 +44,9 @@ export default function VentasPage() {
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [filters, setFilters] = useState<VentaFilters>({});
   const [showFilters, setShowFilters] = useState(false);
+  // Empresa/sucursal activas: al cambiarlas hay que re-pedir las ventas, porque
+  // el listado se scopea por empresa (X-Empresa-Id) y sucursal (X-Local-Id).
+  const { empresaActiva, localActiva } = useAuth();
   const [almacenes, setAlmacenes] = useState<
     { AlmacenId: number; AlmacenNombre: string }[]
   >([]);
@@ -119,6 +123,8 @@ export default function VentasPage() {
     sortKey,
     sortOrder,
     filters,
+    empresaActiva?.EmpresaId,
+    localActiva?.LocalId,
   ]);
 
   useEffect(() => {

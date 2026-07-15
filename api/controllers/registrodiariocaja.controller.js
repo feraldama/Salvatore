@@ -3,8 +3,11 @@ const Venta = require("../models/venta.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
 
-function extractRegistroFilters(query) {
+function extractRegistroFilters(query, empresaId, localId) {
   const filters = {};
+  // Scope autoritativo (de resolveEmpresa, no del query).
+  if (empresaId != null) filters.empresaId = Number(empresaId);
+  if (localId != null) filters.localId = Number(localId);
   if (query.cajaId !== undefined && query.cajaId !== "")
     filters.cajaId = query.cajaId;
   if (query.tipoGastoId !== undefined && query.tipoGastoId !== "")
@@ -25,7 +28,7 @@ exports.getAll = async (req, res) => {
   const offset = (page - 1) * limit;
   const sortBy = req.query.sortBy || "RegistroDiarioCajaFecha";
   const sortOrder = req.query.sortOrder || "DESC";
-  const filters = extractRegistroFilters(req.query);
+  const filters = extractRegistroFilters(req.query, req.empresaId, req.localId);
   try {
     const result = await RegistroDiarioCaja.getAllPaginated(
       limit,
@@ -57,7 +60,7 @@ exports.search = async (req, res) => {
         .json({ error: "El término de búsqueda no puede estar vacío" });
     }
 
-    const filters = extractRegistroFilters(req.query);
+    const filters = extractRegistroFilters(req.query, req.empresaId, req.localId);
 
     const result = await RegistroDiarioCaja.search(
       searchTerm,

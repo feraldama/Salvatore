@@ -15,6 +15,7 @@ import {
   ErrorState,
   PermissionDenied,
 } from "../../components/common/ui";
+import { useAuth } from "../../contexts/useAuth";
 
 import type { Caja } from "../../types";
 
@@ -45,6 +46,9 @@ export default function CajasPage() {
   const puedeEliminar = usePermiso("CAJAS", "eliminar");
   const puedeLeer = usePermiso("CAJAS", "leer");
 
+  // Las cajas se scopean por empresa + sucursal activa: refetch al cambiarlas.
+  const { empresaActiva, localActiva } = useAuth();
+
   const fetchCajas = useCallback(async () => {
     try {
       setLoading(true);
@@ -73,7 +77,15 @@ export default function CajasPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, appliedSearchTerm, itemsPerPage, sortKey, sortOrder]);
+  }, [
+    currentPage,
+    appliedSearchTerm,
+    itemsPerPage,
+    sortKey,
+    sortOrder,
+    empresaActiva?.EmpresaId,
+    localActiva?.LocalId,
+  ]);
 
   useEffect(() => {
     fetchCajas();

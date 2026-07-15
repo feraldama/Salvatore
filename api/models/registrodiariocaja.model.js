@@ -17,6 +17,16 @@ function buildRegistroFiltersWhere(filters = {}) {
   const conditions = [];
   const params = [];
 
+  // Scope por empresa + sucursal (vía la caja del movimiento). Sin esto el
+  // listado mezclaría movimientos de ambas empresas y todas las sucursales.
+  if (filters.empresaId != null && filters.empresaId !== "") {
+    conditions.push("c.EmpresaId = ?");
+    params.push(Number(filters.empresaId));
+  }
+  if (filters.localId != null && filters.localId !== "") {
+    conditions.push("c.LocalId = ?");
+    params.push(Number(filters.localId));
+  }
   if (filters.cajaId != null && filters.cajaId !== "") {
     conditions.push("r.CajaId = ?");
     params.push(Number(filters.cajaId));
@@ -141,6 +151,7 @@ const RegistroDiarioCaja = {
 
         const countQuery = `
           SELECT COUNT(*) as total FROM registrodiariocaja r
+          LEFT JOIN Caja c ON r.CajaId = c.CajaId
           ${whereSql}`;
 
         db.query(countQuery, filterParams, (err, countResult) => {
@@ -235,6 +246,7 @@ const RegistroDiarioCaja = {
 
           const countQuery = `
             SELECT COUNT(*) as total FROM registrodiariocaja r
+            LEFT JOIN Caja c ON r.CajaId = c.CajaId
             WHERE (r.RegistroDiarioCajaDetalle LIKE ?
               OR CAST(r.UsuarioId AS CHAR) LIKE ?
               OR CAST(r.CajaId AS CHAR) LIKE ?

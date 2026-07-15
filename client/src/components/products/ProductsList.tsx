@@ -10,7 +10,6 @@ import {
   NoSymbolIcon,
   ArrowUturnLeftIcon,
 } from "@heroicons/react/24/outline";
-import { getLocales } from "../../services/locales.service";
 import { getAlmacenes } from "../../services/almacenes.service";
 import { formatMiles, formatMilesWithDecimals } from "../../utils/utils";
 import type { ProductoFilters } from "../../services/productos.service";
@@ -165,9 +164,6 @@ export default function ProductsList({
     LocalId: 1,
   });
   const { empresaActiva } = useAuth();
-  const [locales, setLocales] = useState<
-    { LocalId: number; LocalNombre: string }[]
-  >([]);
   const [almacenes, setAlmacenes] = useState<
     { AlmacenId: number; AlmacenNombre: string }[]
   >([]);
@@ -242,9 +238,6 @@ export default function ProductsList({
       });
     }
     setPrecioCostoFocused(false); // Resetear el estado de foco cuando cambia el producto
-    getLocales(1, 200).then((res) => {
-      setLocales(res.data || []);
-    });
   }, [currentProduct]);
 
   // Manejar cambios en el formulario
@@ -392,12 +385,6 @@ export default function ProductsList({
       numeric: true,
     },
     {
-      key: "LocalId",
-      label: "Local",
-      render: (item: Producto) =>
-        String(item.LocalNombre || item.LocalId || "-"),
-    },
-    {
       key: "ProductoEstado",
       label: "Estado",
       sortable: false,
@@ -475,26 +462,7 @@ export default function ProductsList({
       </div>
       {onFiltersChange && showFilters && (
         <div className="bg-surface-sunken border border-border rounded-lg p-4 mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block mb-1 text-xs font-medium text-text-muted">
-                Local
-              </label>
-              <select
-                value={activeFilters.localId ?? ""}
-                onChange={(e) =>
-                  updateFilter("localId", e.target.value || "")
-                }
-                className="w-full bg-surface border border-border text-text text-sm rounded-md focus:ring-brand-500/30 focus:border-brand-600 p-2"
-              >
-                <option value="">Todos</option>
-                {locales.map((l) => (
-                  <option key={l.LocalId} value={l.LocalId}>
-                    {l.LocalNombre}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block mb-1 text-xs font-medium text-text-muted">
                 Stock mín.

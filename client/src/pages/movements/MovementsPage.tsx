@@ -18,6 +18,7 @@ import {
   ErrorState,
   PermissionDenied,
 } from "../../components/common/ui";
+import { useAuth } from "../../contexts/useAuth";
 
 // Tipos auxiliares
 interface Movimiento {
@@ -71,6 +72,9 @@ export default function MovementsPage() {
   const puedeEliminar = usePermiso("REGISTRODIARIOCAJA", "eliminar");
   const puedeLeer = usePermiso("REGISTRODIARIOCAJA", "leer");
 
+  // Los movimientos se scopean por empresa + sucursal activa: refetch al cambiarlas.
+  const { empresaActiva, localActiva } = useAuth();
+
   const fetchMovimientos = useCallback(async () => {
     try {
       setLoading(true);
@@ -113,6 +117,8 @@ export default function MovementsPage() {
     sortKey,
     sortOrder,
     filters,
+    empresaActiva?.EmpresaId,
+    localActiva?.LocalId,
   ]);
 
   useEffect(() => {

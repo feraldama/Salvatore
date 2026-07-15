@@ -47,8 +47,16 @@ const Caja = {
 
   update: (id, cajaData, empresaId) => {
     return new Promise((resolve, reject) => {
-      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ? WHERE CajaId = ? AND EmpresaId = ?`;
-      const values = [cajaData.CajaDescripcion, cajaData.CajaMonto, id, empresaId];
+      // COALESCE: solo cambia LocalId si el update lo trae; si viene null/undefined
+      // se preserva la sucursal actual de la caja.
+      const query = `UPDATE Caja SET CajaDescripcion = ?, CajaMonto = ?, LocalId = COALESCE(?, LocalId) WHERE CajaId = ? AND EmpresaId = ?`;
+      const values = [
+        cajaData.CajaDescripcion,
+        cajaData.CajaMonto,
+        cajaData.LocalId ?? null,
+        id,
+        empresaId,
+      ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
         if (result.affectedRows === 0) return resolve(null);
