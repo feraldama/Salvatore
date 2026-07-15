@@ -164,7 +164,13 @@ exports.updateProducto = async (req, res) => {
   try {
     const { id } = req.params;
     const productoData = req.body;
-    if (!productoData.ProductoNombre) {
+    // Solo validamos el nombre cuando el update lo incluye (edición del
+    // formulario completo). Los updates parciales —ej. dar de baja/reactivar,
+    // que solo mandan ProductoEstado— no lo traen y son válidos.
+    if (
+      productoData.ProductoNombre !== undefined &&
+      !String(productoData.ProductoNombre).trim()
+    ) {
       return res.status(400).json({
         success: false,
         message: "ProductoNombre es un campo requerido",
