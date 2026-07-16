@@ -161,7 +161,10 @@ export default function ProductsList({
     ProductoStockMinimo: 0,
     ProductoImagen: "",
     ProductoImagen_GXI: "",
-    LocalId: 1,
+    // El catálogo se scopea por empresa (EmpresaId), no por local. LocalId=0
+    // = universal dentro de la empresa, así el producto aparece en compras/POS
+    // para todos los locales de la empresa activa al momento de crearlo.
+    LocalId: 0,
   });
   const { empresaActiva } = useAuth();
   const [almacenes, setAlmacenes] = useState<
@@ -234,7 +237,7 @@ export default function ProductsList({
         ProductoStockMinimo: 0,
         ProductoImagen: "",
         ProductoImagen_GXI: "",
-        LocalId: 1,
+        LocalId: 0,
       });
     }
     setPrecioCostoFocused(false); // Resetear el estado de foco cuando cambia el producto
