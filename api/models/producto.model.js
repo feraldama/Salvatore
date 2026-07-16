@@ -362,6 +362,28 @@ const Producto = {
       const imagenBuffer = productoData.ProductoImagen
         ? Buffer.from(productoData.ProductoImagen, "base64")
         : Buffer.from([]);
+      const empresaId = productoData.EmpresaId || 1;
+      // El catálogo se scopea por empresa. Cada producto debe pertenecer al
+      // local primario de su empresa (empresa 1 -> local 1, empresa 2 ->
+      // local 2/SALON): así aparece en compras/POS para los usuarios de esa
+      // empresa. No se confía en el LocalId que manda el front (el form no
+      // conoce el mapeo y antes mandaba 1 fijo, dejando productos de Bodega
+      // colgados del local de Distribuidora). LocalId=0 no existe (viola la FK
+      // producto.localid -> local.localid), por eso hay que resolver uno real.
+      db.query(
+        "SELECT MIN(LocalId) AS primary_local FROM local WHERE EmpresaId = ?",
+        [empresaId],
+        (errLoc, locRows) => {
+          if (errLoc) return reject(errLoc);
+          const localId =
+            (locRows && locRows[0] && locRows[0].primary_local) ||
+            productoData.LocalId ||
+            1;
+          doInsert(localId);
+        }
+      );
+
+      function doInsert(localId) {
       const query = `
         INSERT INTO producto (
           ProductoCodigo,
@@ -395,8 +417,8 @@ const Producto = {
         productoData.ProductoStockMinimo,
         imagenBuffer,
         productoData.ProductoImagen_GXI || null,
-        productoData.LocalId ?? 0,
-        productoData.EmpresaId || 1,
+        localId,
+        empresaId,
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -434,6 +456,7 @@ const Producto = {
           });
         }
       });
+      }
     });
   },
 

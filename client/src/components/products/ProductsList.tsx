@@ -161,9 +161,8 @@ export default function ProductsList({
     ProductoStockMinimo: 0,
     ProductoImagen: "",
     ProductoImagen_GXI: "",
-    // El catálogo se scopea por empresa (EmpresaId), no por local. LocalId=0
-    // = universal dentro de la empresa, así el producto aparece en compras/POS
-    // para todos los locales de la empresa activa al momento de crearlo.
+    // El backend asigna el LocalId real (local primario de la empresa activa)
+    // al crear; este valor es solo un placeholder para el estado del form.
     LocalId: 0,
   });
   const { empresaActiva } = useAuth();
