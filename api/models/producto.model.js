@@ -504,9 +504,19 @@ const Producto = {
         // Si no se envía productoAlmacen desde el front, no tocamos el detalle.
         if (productoAlmacen === undefined) return callback();
 
-        // Si se envía un array vacío, no tocamos el detalle (protección ante un
-        // payload vacío por error, que borraría todo el stock del producto).
-        if (productoAlmacen.length === 0) return callback();
+        // Array vacío = el usuario quitó todos los almacenes en el modal. El
+        // front siempre manda el set completo (al editar carga el detalle real
+        // vía getProductoById), así que un [] es intencional: borramos todo el
+        // detalle de stock del producto y no hay nada que insertar. El caso
+        // "campo omitido por error" ya está cubierto por el chequeo
+        // `productoAlmacen === undefined` de arriba.
+        if (productoAlmacen.length === 0) {
+          return db.query(
+            "DELETE FROM productoalmacen WHERE ProductoId = ?",
+            [id],
+            (errDel) => (errDel ? reject(errDel) : callback())
+          );
+        }
 
         const placeholders = productoAlmacen
           .map(() => "(?, ?, ?, ?)")
