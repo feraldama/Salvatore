@@ -47,6 +47,7 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
   setBancoDebito,
   bancoCredito,
   setBancoCredito,
+  cuentaCliente,
   setCuentaCliente,
   sendRequest,
   setPrintTicket,
@@ -58,9 +59,9 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
 }) => {
   const esEnvio = tipoVenta === "ENVIO";
   // En CONTADO el pad escribe sobre el método enfocado; en ENVIO siempre la seña.
-  const [pagoTipo, setPagoTipoLocal] = useState<"E" | "B" | "D" | "CR" | "V">(
-    "E",
-  );
+  const [pagoTipo, setPagoTipoLocal] = useState<
+    "E" | "B" | "D" | "CR" | "V" | "C"
+  >("E");
   const [isSubmitting, setIsSubmitting] = useState(false);
   // En ENVÍO hay que cobrar el total para confirmar. El saldo solo puede
   // quedar pendiente en cuenta corriente si el usuario lo habilita acá.
@@ -124,6 +125,7 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     bancoDebito: number;
     bancoCredito: number;
     voucher: number;
+    cuentaCliente: number;
   }> = {}) => {
     const efe = over.efectivo ?? efectivo;
     const ban = over.banco ?? banco;
@@ -132,10 +134,14 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     const vou = over.voucher ?? voucher;
     const restante = totalCost - efe - ban - deb * 1.03 - cred * 1.05 - vou;
     if (esEnvio) {
+      // En ENVÍO la cuenta corriente se calcula sola (lo no cobrado).
       setCuentaCliente(Math.max(0, restante));
       setTotalRest(restante < 0 ? restante : 0);
     } else {
-      setTotalRest(restante);
+      // En CONTADO el usuario puede cargar manualmente un saldo a cuenta
+      // del cliente (venta a crédito); ese monto también cubre el total.
+      const cta = over.cuentaCliente ?? cuentaCliente;
+      setTotalRest(restante - cta);
     }
   };
 
@@ -163,6 +169,10 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
       const v = append(voucher, label);
       setVoucher(v);
       recomputeContado({ voucher: v });
+    } else if (pagoTipo === "C") {
+      const v = append(cuentaCliente, label);
+      setCuentaCliente(v);
+      recomputeContado({ cuentaCliente: v });
     }
   };
 
@@ -182,6 +192,9 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     } else if (pagoTipo === "V") {
       setVoucher(0);
       recomputeContado({ voucher: 0 });
+    } else if (pagoTipo === "C") {
+      setCuentaCliente(0);
+      recomputeContado({ cuentaCliente: 0 });
     }
   };
 
@@ -323,109 +336,40 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
                 />
               </div>
 
-              {/* Tarjeta Débito */}
-              <div className={rowCls}>
-                <label htmlFor="debito-input" className={labelCls}>
-                  Tarjeta Débito (3% adicional):
-                </label>
-                <input
-                  id="debito-input"
-                  type="text"
-                  readOnly
-                  aria-label="Monto con tarjeta de débito"
-                  value={formatMiles(bancoDebito)}
-                  onFocus={(e) => {
-                    setPagoTipoLocal("D");
-                    if (bancoDebito === 0 && totalRest > 0) {
-                      setBancoDebito(Number((totalRest * 1.03).toFixed(0)));
-                      setTotalRest(0);
-                    }
-                    e.target.select();
-                    setTimeout(() => {
-                      document.getElementById("venta-nro-pos-input")?.focus();
-                    }, 100);
-                  }}
-                  className={moneyInputCls(pagoTipo === "D")}
-                />
-              </div>
+              {/* Nota: en mayorista no se usan Tarjeta Débito/Crédito ni
+                  Voucher, por eso esos campos no se muestran acá. */}
 
-              {/* Tarjeta Crédito */}
-              <div className={rowCls}>
-                <label htmlFor="credito-input" className={labelCls}>
-                  Tarjeta Crédito (5% adicional):
-                </label>
-                <input
-                  id="credito-input"
-                  type="text"
-                  readOnly
-                  aria-label="Monto con tarjeta de crédito"
-                  value={formatMiles(bancoCredito)}
-                  onFocus={(e) => {
-                    setPagoTipoLocal("CR");
-                    if (bancoCredito === 0 && totalRest > 0) {
-                      setBancoCredito(Number((totalRest * 1.05).toFixed(0)));
-                      setTotalRest(0);
-                    }
-                    e.target.select();
-                    setTimeout(() => {
-                      document.getElementById("venta-nro-pos-input")?.focus();
-                    }, 100);
-                  }}
-                  className={moneyInputCls(pagoTipo === "CR")}
-                />
-              </div>
-
-              {/* Nro. POS - solo con tarjeta */}
-              {pagoConTarjeta && (
+              {/* Cuenta de cliente (venta a crédito) - solo en CONTADO.
+                  En ENVÍO el saldo a cuenta corriente se maneja con el
+                  checkbox de más abajo. */}
+              {!esEnvio && (
                 <div className={rowCls}>
-                  <label htmlFor="venta-nro-pos-input" className={labelCls}>
-                    Nro. POS (mín. 4 dígitos):
+                  <label htmlFor="cuenta-cliente-input" className={labelCls}>
+                    Crédito:
                   </label>
                   <input
-                    id="venta-nro-pos-input"
+                    id="cuenta-cliente-input"
                     type="text"
                     inputMode="numeric"
-                    maxLength={6}
-                    aria-label="Número de comprobante POS"
-                    value={ventaNroPOS}
-                    onChange={(e) =>
-                      setVentaNroPOS(
-                        e.target.value.replace(/\D/g, "").slice(0, 6),
-                      )
-                    }
-                    placeholder="Ej: 1234"
-                    className={moneyInputCls(
-                      false,
-                      ventaNroPOS.trim().length > 0 &&
-                        ventaNroPOS.trim().length < 4,
-                    )}
+                    aria-label="Monto a cuenta de cliente"
+                    value={cuentaCliente ? formatMiles(cuentaCliente) : ""}
+                    onFocus={(e) => {
+                      setPagoTipoLocal("C");
+                      if (cuentaCliente === 0 && totalRest > 0) {
+                        setCuentaCliente(totalRest);
+                        setTotalRest(0);
+                      }
+                      e.target.select();
+                    }}
+                    onChange={(e) => {
+                      const v = Number(e.target.value.replace(/\D/g, ""));
+                      setCuentaCliente(v);
+                      recomputeContado({ cuentaCliente: v });
+                    }}
+                    className={moneyInputCls(pagoTipo === "C")}
                   />
                 </div>
               )}
-
-              {/* Voucher / Descuento */}
-              <div className={rowCls}>
-                <label htmlFor="voucher-input" className={labelCls}>
-                  Voucher / Descuento:
-                </label>
-                <input
-                  id="voucher-input"
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="Monto en voucher o descuento"
-                  value={voucher ? formatMiles(voucher) : ""}
-                  onFocus={(e) => {
-                    setPagoTipoLocal("V");
-                    e.target.select();
-                  }}
-                  onChange={(e) => {
-                    const v = Number(e.target.value.replace(/\D/g, ""));
-                    setVoucher(v);
-                    recomputeContado({ voucher: v });
-                  }}
-                  className={moneyInputCls(pagoTipo === "V")}
-                />
-              </div>
 
           {/* ENVÍO: hay que cobrar el total. El saldo solo queda en cuenta
               corriente si el usuario lo habilita explícitamente. */}

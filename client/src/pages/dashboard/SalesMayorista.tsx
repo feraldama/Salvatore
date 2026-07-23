@@ -516,21 +516,21 @@ export default function SalesMayorista() {
     // Node/PG directo y no hace falta.
     const fechaAjustada = new Date();
 
-    // Los ítems nuevos entran al carrito con cantidad 0; vender uno así produce
-    // total 0 y, en el backend, precio unitario = 0/0 = NaN (revienta el INSERT
-    // BIGINT). Excluir los de cantidad 0 y bloquear si no queda nada que vender.
-    const itemsValidos = carrito.filter((p) => Number(p.cantidad) > 0);
-    if (itemsValidos.length === 0) {
+    // No se puede vender con ítems en cantidad 0: producen total 0 y en el
+    // backend precio unitario = 0/0 = NaN (revienta el INSERT BIGINT). Antes
+    // se los excluía en silencio; ahora se bloquea la venta para que el
+    // usuario corrija la cantidad o elimine el producto.
+    if (carrito.length === 0 || carrito.some((p) => Number(p.cantidad) <= 0)) {
       await Swal.fire({
         icon: "warning",
-        title: "Sin cantidades",
-        text: "Cargá una cantidad mayor a 0 en al menos un producto.",
+        title: "Cantidad en cero",
+        text: "Hay productos con cantidad 0. Cargá una cantidad mayor a 0 o eliminá esos productos para poder vender.",
         confirmButtonColor: "#3085d6",
       });
       return;
     }
 
-    const SDTProductoItem = itemsValidos.map((p) => {
+    const SDTProductoItem = carrito.map((p) => {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
       // Usar el precio unitario guardado en el carrito
       const precioUnitario = p.precioUnitario;
@@ -1424,6 +1424,19 @@ export default function SalesMayorista() {
               <button
                 className="text-white font-semibold rounded-lg flex items-center justify-center text-base h-[64px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
                 onClick={() => {
+                  // No permitir vender con el carrito vacío o con productos
+                  // en cantidad 0.
+                  if (
+                    carrito.length === 0 ||
+                    carrito.some((p) => Number(p.cantidad) <= 0)
+                  ) {
+                    Swal.fire({
+                      icon: "warning",
+                      title: "Cantidad en cero",
+                      text: "Hay productos con cantidad 0. Cargá una cantidad mayor a 0 o eliminá esos productos para poder vender.",
+                    });
+                    return;
+                  }
                   // Un ENVÍO no puede confirmarse sin vehículo asignado.
                   if (tipoVenta === "ENVIO" && vehiculoEnvioId === "") {
                     Swal.fire({
