@@ -316,7 +316,17 @@ export default function ProductsPage() {
                 })
             : undefined
         }
-        onToggleEstado={puedeEditar ? handleToggleEstado : undefined}
+        onToggleEstado={
+          puedeEditar
+            ? (p) =>
+                handleToggleEstado({
+                  ...p,
+                  ProductoId: Number(p.ProductoId),
+                  LocalNombre:
+                    typeof p.LocalNombre === "string" ? p.LocalNombre : "",
+                })
+            : undefined
+        }
         onCreate={puedeCrear ? handleCreate : undefined}
         pagination={productosData.pagination}
         onSearch={handleSearch}

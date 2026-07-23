@@ -276,13 +276,6 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
             </div>
           </div>
 
-          {esEnvio && (
-            <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-text-muted">
-              🚚 Cobro del envío: cargá cómo paga el cliente al recibir. Esa plata
-              la trae el móvil al volver (no entra a la caja ahora). El saldo no
-              cobrado queda en cuenta corriente.
-            </p>
-          )}
           {/* Métodos de pago (iguales para contado y envío) */}
           {/* Efectivo */}
               <div className={rowCls}>
@@ -382,15 +375,13 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
                   onChange={(e) => setPermitirCC(e.target.checked)}
                   className="h-4 w-4 rounded border-border text-brand-700 focus:ring-2 focus:ring-brand-500/40"
                 />
-                <span className="text-sm font-medium">
-                  Dejar saldo en cuenta corriente
-                </span>
+                <span className="text-sm font-medium">Crédito</span>
               </label>
 
               {pendienteCC > 0 &&
                 (permitirCC ? (
                   <div className={`${rowCls} mt-2`}>
-                    <span className={labelCls}>Queda en cuenta corriente:</span>
+                    <span className={labelCls}>Crédito:</span>
                     <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
                       {formatMiles(pendienteCC)}
                     </div>
