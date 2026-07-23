@@ -144,14 +144,18 @@ exports.updateMonto = async (req, res) => {
     if (typeof CajaMonto !== "number") {
       return res.status(400).json({ message: "Monto inválido" });
     }
-    await db.query(
+    const pe = db.promise();
+    await pe.query(
       "UPDATE Caja SET CajaMonto = ? WHERE CajaId = ? AND EmpresaId = ?",
       [CajaMonto, id, req.empresaId]
     );
-    const updatedCaja = await db.query(
+    const [updatedCaja] = await pe.query(
       "SELECT * FROM Caja WHERE CajaId = ? AND EmpresaId = ?",
       [id, req.empresaId]
     );
+    if (!updatedCaja || updatedCaja.length === 0) {
+      return res.status(404).json({ message: "Caja no encontrada" });
+    }
     res.json(updatedCaja[0]);
   } catch (error) {
     console.error(error);
