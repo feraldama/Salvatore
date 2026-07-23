@@ -9,7 +9,7 @@ import {
 import { useAuth } from "../../contexts/useAuth";
 import PaymentModalMayorista from "../../components/common/PaymentModalMayorista";
 import Swal from "sweetalert2";
-import { confirmarVenta } from "../../services/venta.service";
+import { confirmarVenta, devolverVenta } from "../../services/venta.service";
 import {
   getVehiculosActivos,
   type VehiculoFlota,
@@ -127,6 +127,11 @@ export default function SalesMayorista() {
   // Tipo de venta mayorista: CONTADO (cobro inmediato) o ENVIO (se entregan los
   // productos y el cliente paga al recibir; se registra como cuenta corriente).
   const [tipoVenta, setTipoVenta] = useState<"CONTADO" | "ENVIO">("CONTADO");
+  // Modo devolución: reutiliza la misma pantalla y carrito, pero en vez de una
+  // venta hace una devolución (repone stock al almacén y descuenta el total de
+  // la caja). No parte de una factura previa; se arman libremente los productos
+  // y cantidades a devolver, igual que en la pantalla de bodega (Sales.tsx).
+  const [isDevolucion, setIsDevolucion] = useState(false);
   // Vehículos activos de la flota y el elegido para el envío (obligatorio en
   // ENVIO; el backend lo registra en venta_envio para la app mobile de flota).
   const [vehiculos, setVehiculos] = useState<VehiculoFlota[]>([]);
@@ -494,18 +499,18 @@ export default function SalesMayorista() {
   }
 
   const sendRequest = async () => {
-    // Guardrail: el descuento de stock necesita un almacén real. Los usuarios
+    // Guardrail: el movimiento de stock necesita un almacén real. Los usuarios
     // en local "TODOS" (LocalId 0) resuelven al almacén 0, que no tiene stock
-    // (el stock vive en los almacenes de cada local). Bloqueamos la venta con
-    // un mensaje claro en vez de descontar de un almacén vacío.
+    // (el stock vive en los almacenes de cada local). Bloqueamos la operación
+    // con un mensaje claro en vez de mover stock de un almacén vacío.
     const almacenVenta = Number(user?.AlmacenId ?? user?.LocalId);
     if (!almacenVenta || Number(user?.LocalId) === 0) {
       await Swal.fire({
         icon: "warning",
-        title: "Sin local de venta asignado",
+        title: "Sin local asignado",
         text:
-          "Tu usuario no tiene un local de venta válido (figura como \"TODOS\"). " +
-          "Pedí al administrador que te asigne un local real (ej. SALON) para poder vender y descontar stock.",
+          "Tu usuario no tiene un local válido (figura como \"TODOS\"). " +
+          "Pedí al administrador que te asigne un local real (ej. SALON) para poder operar el stock.",
         confirmButtonColor: "#3085d6",
       });
       return;
@@ -565,49 +570,69 @@ export default function SalesMayorista() {
       `${pad(fechaAjustada.getMinutes())}:${pad(fechaAjustada.getSeconds())}`;
 
     try {
-      // En mayorista siempre es venta (no hay devolución).
-      await confirmarVenta({
-        VentaFecha: fechaIso,
-        AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
-        ClienteId: Number(clienteSeleccionado?.ClienteId),
-        CajaId: Number(cajaAperturada?.CajaId),
-        UsuarioId: String(user?.id ?? ""),
-        VentaPagoTipo: "E",
-        EsEnvio: tipoVenta === "ENVIO",
-        EnvioVehiculoId:
-          tipoVenta === "ENVIO" && vehiculoEnvioId !== ""
-            ? vehiculoEnvioId
-            : undefined,
-        VentaNroFactura: 0,
-        VentaTimbrado: 0,
-        VentaNroPOS:
-          bancoDebito > 0 || bancoCredito > 0
-            ? ventaNroPOS.trim() || "0"
-            : "0",
-        Pagos: {
-          Efectivo: Number(efectivo) + Number(totalRest),
-          Banco: Number(bancoDebito) + Number(bancoCredito),
-          CuentaCliente: Number(cuentaCliente),
-          Voucher: Number(voucher),
-          Transferencia: Number(banco),
-        },
-        Productos: SDTProductoItem.map((item) => ({
-          ProductoId: Number(item.Producto.ProductoId),
-          VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
-          ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
-          VentaProductoPrecioTotal: Number(
-            item.Producto.VentaProductoPrecioTotal
-          ),
-          Combo: item.Producto.Combo === "S",
-          ComboPrecio: Number(item.Producto.ComboPrecio),
-        })),
-      });
-      if (printTicket) {
+      if (isDevolucion) {
+        // Devolución: repone stock al almacén y descuenta el total de la caja.
+        // No crea una venta ni depende de una factura previa. El monto (Total2)
+        // se calcula con el precio mayorista/caja del carrito (obtenerTotal),
+        // coherente con cómo se vendió. Los métodos de pago del modal no aplican.
+        await devolverVenta({
+          VentaFecha: fechaIso,
+          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          CajaId: Number(cajaAperturada?.CajaId),
+          UsuarioId: String(user?.id ?? ""),
+          Total2: carrito.reduce((acc, p) => acc + obtenerTotal(p), 0),
+          Productos: SDTProductoItem.map((item) => ({
+            ProductoId: Number(item.Producto.ProductoId),
+            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
+            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
+          })),
+        });
+      } else {
+        await confirmarVenta({
+          VentaFecha: fechaIso,
+          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          ClienteId: Number(clienteSeleccionado?.ClienteId),
+          CajaId: Number(cajaAperturada?.CajaId),
+          UsuarioId: String(user?.id ?? ""),
+          VentaPagoTipo: "E",
+          EsEnvio: tipoVenta === "ENVIO",
+          EnvioVehiculoId:
+            tipoVenta === "ENVIO" && vehiculoEnvioId !== ""
+              ? vehiculoEnvioId
+              : undefined,
+          VentaNroFactura: 0,
+          VentaTimbrado: 0,
+          VentaNroPOS:
+            bancoDebito > 0 || bancoCredito > 0
+              ? ventaNroPOS.trim() || "0"
+              : "0",
+          Pagos: {
+            Efectivo: Number(efectivo) + Number(totalRest),
+            Banco: Number(bancoDebito) + Number(bancoCredito),
+            CuentaCliente: Number(cuentaCliente),
+            Voucher: Number(voucher),
+            Transferencia: Number(banco),
+          },
+          Productos: SDTProductoItem.map((item) => ({
+            ProductoId: Number(item.Producto.ProductoId),
+            VentaProductoCantidad: Number(item.Producto.VentaProductoCantidad),
+            ProductoUnidad: item.Producto.ProductoUnidad as "U" | "C",
+            VentaProductoPrecioTotal: Number(
+              item.Producto.VentaProductoPrecioTotal
+            ),
+            Combo: item.Producto.Combo === "S",
+            ComboPrecio: Number(item.Producto.ComboPrecio),
+          })),
+        });
+      }
+      if (!isDevolucion && printTicket) {
         await generateTicketPDF();
       }
 
       Swal.fire({
-        title: "Venta realizada con éxito!",
+        title: isDevolucion
+          ? "Devolución realizada con éxito!"
+          : "Venta realizada con éxito!",
         icon: "success",
         timer: 1000,
         showConfirmButton: false,
@@ -640,7 +665,9 @@ export default function SalesMayorista() {
       Swal.fire({
         icon: "error",
         title: "Error",
-        text: "Error al realizar la venta",
+        text: isDevolucion
+          ? "Error al realizar la devolución"
+          : "Error al realizar la venta",
       });
     }
     // Limpiar estados de pago
@@ -654,6 +681,7 @@ export default function SalesMayorista() {
     setTotalRest(0);
     setPrintTicket(true); // queda activo para la próxima venta
     setShowModal(false);
+    setIsDevolucion(false); // Resetear el modo devolución
   };
 
   const generateTicketPDF = async () => {
@@ -1355,7 +1383,25 @@ export default function SalesMayorista() {
         {/* Acciones de venta: movidas debajo del catálogo/paginación para que
             el carrito (izquierda) ocupe todo el alto. */}
         <div className="bg-white rounded-xl shadow p-4 mt-3 shrink-0">
-          {/* Selector de tipo de venta: CONTADO / ENVÍO (mayorista = siempre venta) */}
+          {/* Selector de modo: VENTA / DEVOLUCIÓN. En devolución se repone stock
+              y se descuenta el total de la caja (no hay envío ni cobro). */}
+          <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isDevolucion}
+              onChange={(e) => setIsDevolucion(e.target.checked)}
+              className="h-4 w-4 accent-danger-600 cursor-pointer"
+            />
+            <span
+              className={`text-sm font-semibold ${
+                isDevolucion ? "text-danger-700" : "text-text-muted"
+              }`}
+            >
+              {isDevolucion ? "🔴 MODO DEVOLUCIÓN" : "⚪ MODO VENTA"}
+            </span>
+          </label>
+          {/* Selector de tipo de venta: CONTADO / ENVÍO (no aplica en devolución) */}
+          {!isDevolucion && (
           <div className="grid grid-cols-2 gap-2 mb-3">
             <button
               type="button"
@@ -1380,8 +1426,9 @@ export default function SalesMayorista() {
               🚚 Envío
             </button>
           </div>
+          )}
           {/* Vehículo del envío (obligatorio para confirmar un ENVÍO) */}
-          {tipoVenta === "ENVIO" && (
+          {!isDevolucion && tipoVenta === "ENVIO" && (
             <div className="mb-3 flex items-center gap-2">
               <span className="text-sm text-text-muted shrink-0">
                 🚛 Vehículo:
@@ -1415,16 +1462,24 @@ export default function SalesMayorista() {
           <div className="flex items-center gap-4">
             <div className="flex items-baseline gap-2">
               <span className="font-bold text-lg text-text">Total</span>
-              <span className="font-num font-semibold text-xl text-brand-700">
+              <span
+                className={`font-num font-semibold text-xl ${
+                  isDevolucion ? "text-danger-700" : "text-brand-700"
+                }`}
+              >
                 Gs. {formatMiles(total)}
               </span>
             </div>
             <div className="flex-1 grid grid-cols-3 gap-3">
-              {/* Botón Pagar / Confirmar Envío */}
+              {/* Botón Pagar / Confirmar Envío / Devolver */}
               <button
-                className="text-white font-semibold rounded-lg flex items-center justify-center text-base h-[64px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
-                onClick={() => {
-                  // No permitir vender con el carrito vacío o con productos
+                className={`text-white font-semibold rounded-lg flex items-center justify-center text-base h-[64px] border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                  isDevolucion
+                    ? "bg-danger-600 border-danger-600 hover:bg-danger-700 focus-visible:ring-danger-500/50"
+                    : "bg-brand-700 border-brand-700 hover:bg-brand-800 focus-visible:ring-brand-500/50"
+                }`}
+                onClick={async () => {
+                  // No permitir operar con el carrito vacío o con productos
                   // en cantidad 0.
                   if (
                     carrito.length === 0 ||
@@ -1433,8 +1488,33 @@ export default function SalesMayorista() {
                     Swal.fire({
                       icon: "warning",
                       title: "Cantidad en cero",
-                      text: "Hay productos con cantidad 0. Cargá una cantidad mayor a 0 o eliminá esos productos para poder vender.",
+                      text: "Hay productos con cantidad 0. Cargá una cantidad mayor a 0 o eliminá esos productos para continuar.",
                     });
+                    return;
+                  }
+                  // Devolución: no cobra nada, así que no abre el modal de pago
+                  // (sus montos se ignoran). Pide una confirmación simple y
+                  // ejecuta directamente.
+                  if (isDevolucion) {
+                    const totalDevol = carrito.reduce(
+                      (acc, p) => acc + obtenerTotal(p),
+                      0,
+                    );
+                    const result = await Swal.fire({
+                      icon: "warning",
+                      title: "Confirmar devolución",
+                      html:
+                        `Se devolverán <b>${carrito.length}</b> producto(s) ` +
+                        `por un total de <b>Gs. ${formatMiles(totalDevol)}</b>.` +
+                        `<br/>Se repondrá el stock y se descontará ese monto de la caja.`,
+                      showCancelButton: true,
+                      confirmButtonText: "Devolver",
+                      confirmButtonColor: "#dc2626",
+                      cancelButtonText: "Cancelar",
+                    });
+                    if (result.isConfirmed) {
+                      await sendRequest();
+                    }
                     return;
                   }
                   // Un ENVÍO no puede confirmarse sin vehículo asignado.
@@ -1449,7 +1529,11 @@ export default function SalesMayorista() {
                   setShowModal(true);
                 }}
               >
-                {tipoVenta === "ENVIO" ? "Confirmar Envío" : "Pagar"}
+                {isDevolucion
+                  ? "Devolver"
+                  : tipoVenta === "ENVIO"
+                    ? "Confirmar Envío"
+                    : "Pagar"}
               </button>
               {/* Botón Presupuesto */}
               <button
