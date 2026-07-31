@@ -1422,7 +1422,9 @@ const Venta = {
   // porcentaje de comisión NO se calcula acá: el reporte lo aplica con un % que
   // ingresa el usuario sobre el total vendido. Scope por empresa; fechas opc.
   // Ventas del período agrupadas por tipo de venta. Los envíos (EsEnvio='S')
-  // forman su propio grupo; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
+  // forman su propio grupo, salvo los pagados por transferencia que van a un
+  // grupo aparte (ENVIO_TR) para no mezclarse con las transferencias de
+  // mostrador; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
   // El agrupado se arma en JS para devolver también el detalle de cada venta.
   getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
@@ -1451,7 +1453,12 @@ const Venta = {
 
     const grupos = new Map();
     for (const r of rows) {
-      const tipo = r.EsEnvio === "S" ? "ENVIO" : r.VentaTipo;
+      const tipo =
+        r.EsEnvio === "S"
+          ? r.VentaTipo === "TR"
+            ? "ENVIO_TR"
+            : "ENVIO"
+          : r.VentaTipo;
       if (!grupos.has(tipo)) {
         grupos.set(tipo, {
           tipo,
@@ -1479,7 +1486,7 @@ const Venta = {
       g.totalPendiente += Number(r.Pendiente) || 0;
     }
 
-    const ORDEN_TIPOS = ["ENVIO", "CO", "CR", "PO", "TR"];
+    const ORDEN_TIPOS = ["ENVIO", "ENVIO_TR", "CO", "CR", "PO", "TR"];
     const lista = [...grupos.values()].sort((a, b) => {
       const ia = ORDEN_TIPOS.indexOf(a.tipo);
       const ib = ORDEN_TIPOS.indexOf(b.tipo);
@@ -1497,6 +1504,70 @@ const Venta = {
     );
 
     return { grupos: lista, totales };
+  },
+
+  // Ventas de un producto en el período: en qué ventas salió y a qué cliente,
+  // con cantidad (cajas o unidades), precio y subtotal por renglón de venta.
+  getVentasPorProducto: async ({
+    empresaId,
+    productoId,
+    fechaDesde,
+    fechaHasta,
+  }) => {
+    const pe = db.promise();
+    const cond = ["vp.ProductoId = ?", "v.EmpresaId = ?"];
+    const params = [Number(productoId), Number(empresaId)];
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    const where = cond.join(" AND ");
+
+    const [rows] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.EsEnvio,
+              v.Total AS VentaTotal,
+              vp.VentaProductoCantidad, vp.VentaProductoUnitario,
+              vp.VentaProductoPrecio, vp.VentaProductoPrecioTotal,
+              c.ClienteNombre, c.ClienteApellido
+         FROM ventaproducto vp
+         JOIN venta v ON v.VentaId = vp.VentaId
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE ${where}
+        ORDER BY v.VentaFecha ASC, v.VentaId ASC`,
+      params
+    );
+
+    const ventas = rows.map((r) => ({
+      VentaId: r.VentaId,
+      VentaFecha: r.VentaFecha,
+      VentaTipo: r.VentaTipo,
+      EsEnvio: r.EsEnvio,
+      VentaTotal: Number(r.VentaTotal) || 0,
+      Cantidad: Number(r.VentaProductoCantidad) || 0,
+      Unitario: r.VentaProductoUnitario, // 'C' caja | 'U' unidad suelta
+      Precio: Number(r.VentaProductoPrecio) || 0,
+      Subtotal: Number(r.VentaProductoPrecioTotal) || 0,
+      ClienteNombre: r.ClienteNombre ?? null,
+      ClienteApellido: r.ClienteApellido ?? null,
+    }));
+
+    const totales = ventas.reduce(
+      (acc, vRow) => ({
+        cantidadVentas: acc.cantidadVentas + 1,
+        totalCajas:
+          acc.totalCajas + (vRow.Unitario === "U" ? 0 : vRow.Cantidad),
+        totalUnidades:
+          acc.totalUnidades + (vRow.Unitario === "U" ? vRow.Cantidad : 0),
+        totalMonto: acc.totalMonto + vRow.Subtotal,
+      }),
+      { cantidadVentas: 0, totalCajas: 0, totalUnidades: 0, totalMonto: 0 }
+    );
+
+    return { ventas, totales };
   },
 
   getVentasPorVendedor: async ({ empresaId, fechaDesde, fechaHasta }) => {

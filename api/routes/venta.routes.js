@@ -45,6 +45,11 @@ router.get(
   authMiddleware,
   ventaController.getVentasPorTipo
 );
+router.get(
+  "/reporte-por-producto",
+  authMiddleware,
+  ventaController.getVentasPorProducto
+);
 router.get("/deliveries", authMiddleware, ventaController.getDeliveries);
 router.get(
   "/deliveries/por-cobrar/count",

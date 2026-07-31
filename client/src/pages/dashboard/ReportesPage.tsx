@@ -23,6 +23,8 @@ import {
   type VentasPorVendedor,
   getVentasPorTipo,
   type VentasPorTipo,
+  getVentasPorProducto,
+  type VentasPorProducto,
 } from "../../services/venta.service";
 import { useAuth } from "../../contexts/useAuth";
 
@@ -280,6 +282,7 @@ function buildResumenesCierre(
 // Etiquetas de los grupos del reporte "Ventas por tipo de venta".
 const TIPO_VENTA_LABELS: Record<string, string> = {
   ENVIO: "Envío",
+  ENVIO_TR: "Transferencia envío",
   CO: "Contado",
   CR: "Crédito",
   PO: "POS",
@@ -345,6 +348,24 @@ const ReportesPage: React.FC = () => {
   const [ventasPorTipo, setVentasPorTipo] = useState<VentasPorTipo | null>(
     null,
   );
+
+  // Estado del reporte "Ventas por producto" (todas las empresas): buscador
+  // de producto (mismo patrón que el de "más vendidos", pero sin opción TODOS
+  // porque el reporte es de un producto concreto) + rango de fechas.
+  const [fechaDesdeVP, setFechaDesdeVP] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaVP, setFechaHastaVP] = useState(() => getHoyISO());
+  const [productoBusquedaVP, setProductoBusquedaVP] = useState("");
+  const [productoSeleccionadoVP, setProductoSeleccionadoVP] =
+    useState<ProductoOption | null>(null);
+  const [productoListaAbiertaVP, setProductoListaAbiertaVP] = useState(false);
+  const [productoHighlightVP, setProductoHighlightVP] = useState(0);
+  const productoHighlightVPRef = useRef<HTMLLIElement | null>(null);
+  const [ventasProducto, setVentasProducto] =
+    useState<VentasPorProducto | null>(null);
 
   // Estado del reporte "Productos vendidos y comprados"
   const [fechaDesdeMov, setFechaDesdeMov] = useState(() => {
@@ -417,6 +438,15 @@ const ReportesPage: React.FC = () => {
       `${p.ProductoNombre} ${p.ProductoCodigo ?? ""}`.toLowerCase().includes(q),
     );
   }, [productosTop, productoBusquedaTop]);
+
+  // Ídem para el buscador del reporte "Ventas por producto".
+  const productosFiltradosVP = useMemo(() => {
+    const q = productoBusquedaVP.trim().toLowerCase();
+    if (!q) return productosTop;
+    return productosTop.filter((p) =>
+      `${p.ProductoNombre} ${p.ProductoCodigo ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [productosTop, productoBusquedaVP]);
 
   const totalPaginasCierre = Math.max(
     1,
@@ -495,10 +525,13 @@ const ReportesPage: React.FC = () => {
     clienteHighlightRef.current?.scrollIntoView({ block: "nearest" });
   }, [clienteHighlight]);
 
-  // Carga los productos recién cuando se abre el modal de "más vendidos"
-  // (una sola vez), para no traer todo el catálogo al entrar a la página.
+  // Carga el catálogo de productos recién cuando algún buscador lo necesita
+  // (modal de "más vendidos" o el buscador de "Ventas por producto"), una sola
+  // vez, para no traer todo el catálogo al entrar a la página.
   useEffect(() => {
-    if (reporteActivo !== "masvendidos" || productosTop.length > 0) return;
+    const necesitaCatalogo =
+      reporteActivo === "masvendidos" || productoListaAbiertaVP;
+    if (!necesitaCatalogo || productosTop.length > 0) return;
     const cargarProductos = async () => {
       try {
         const response = await getProductosAll();
@@ -512,11 +545,15 @@ const ReportesPage: React.FC = () => {
       }
     };
     cargarProductos();
-  }, [reporteActivo, productosTop.length]);
+  }, [reporteActivo, productoListaAbiertaVP, productosTop.length]);
 
   useEffect(() => {
     productoHighlightTopRef.current?.scrollIntoView({ block: "nearest" });
   }, [productoHighlightTop]);
+
+  useEffect(() => {
+    productoHighlightVPRef.current?.scrollIntoView({ block: "nearest" });
+  }, [productoHighlightVP]);
 
   if (!puedeLeer) return <PermissionDenied resource="los reportes" />;
 
@@ -618,6 +655,33 @@ const ReportesPage: React.FC = () => {
       }
     } else if (e.key === "Escape") {
       setProductoListaAbiertaTop(false);
+    }
+  };
+
+  // Buscador de producto del reporte "Ventas por producto".
+  const seleccionarProductoVP = (p: ProductoOption) => {
+    setProductoSeleccionadoVP(p);
+    setProductoBusquedaVP(etiquetaProducto(p));
+    setProductoListaAbiertaVP(false);
+  };
+
+  const onKeyDownProductoVP = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setProductoListaAbiertaVP(true);
+      setProductoHighlightVP((h) =>
+        Math.min(h + 1, productosFiltradosVP.length - 1),
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setProductoHighlightVP((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      if (productoListaAbiertaVP && productosFiltradosVP[productoHighlightVP]) {
+        e.preventDefault();
+        seleccionarProductoVP(productosFiltradosVP[productoHighlightVP]);
+      }
+    } else if (e.key === "Escape") {
+      setProductoListaAbiertaVP(false);
     }
   };
 
@@ -1876,6 +1940,139 @@ const ReportesPage: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
   };
 
+  // Ventas por producto: en qué ventas y a qué cliente se vendió el producto
+  // seleccionado dentro del período.
+  const generarVentasPorProducto = async () => {
+    if (!productoSeleccionadoVP) {
+      setError("Seleccioná un producto para generar el reporte");
+      return;
+    }
+    if (!fechaDesdeVP || !fechaHastaVP) {
+      setError("Seleccione fecha desde y hasta");
+      return;
+    }
+    if (new Date(fechaDesdeVP) > new Date(fechaHastaVP)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setVentasProducto(null);
+    try {
+      const data = await getVentasPorProducto({
+        productoId: productoSeleccionadoVP.ProductoId,
+        fechaDesde: fechaDesdeVP,
+        fechaHasta: fechaHastaVP,
+      });
+      setVentasProducto(data);
+    } catch (e) {
+      setError(
+        (e as { message?: string })?.message ??
+          "Error al obtener las ventas del producto",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportarVentasPorProductoPDF = async () => {
+    if (
+      !ventasProducto ||
+      ventasProducto.ventas.length === 0 ||
+      !productoSeleccionadoVP
+    )
+      return;
+    const { jsPDF, autoTable } = await loadPdf();
+    const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+    doc.setFontSize(14);
+    doc.text("Ventas por producto", 14, 14);
+    doc.setFontSize(10);
+    doc.text(`Producto: ${etiquetaProducto(productoSeleccionadoVP)}`, 14, 21);
+    doc.text(
+      `Período: ${formatDateDDMMYYYY(fechaDesdeVP)} al ${formatDateDDMMYYYY(fechaHastaVP)}`,
+      14,
+      27,
+    );
+
+    autoTable(doc, {
+      head: [
+        ["Fecha", "N° venta", "Cliente", "Tipo", "Cantidad", "Precio", "Subtotal"],
+      ],
+      body: ventasProducto.ventas.map((v) => [
+        formatFechaHoraLocal(v.VentaFecha),
+        String(v.VentaId),
+        [v.ClienteNombre, v.ClienteApellido].filter(Boolean).join(" ") || "-",
+        `${labelTipoVenta(v.VentaTipo)}${v.EsEnvio === "S" ? " (envío)" : ""}`,
+        `${formatMiles(v.Cantidad)} ${v.Unitario === "U" ? "unid." : "cajas"}`,
+        formatMiles(v.Precio),
+        formatMiles(v.Subtotal),
+      ]),
+      foot: [
+        [
+          "",
+          "",
+          "",
+          "TOTAL",
+          `${formatMiles(ventasProducto.totales.totalCajas)} cajas / ${formatMiles(
+            ventasProducto.totales.totalUnidades,
+          )} unid.`,
+          "",
+          formatMiles(ventasProducto.totales.totalMonto),
+        ],
+      ],
+      startY: 32,
+      theme: "grid",
+      headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+      footStyles: {
+        fillColor: [219, 234, 254],
+        textColor: [30, 64, 175],
+        fontStyle: "bold",
+        halign: "right",
+      },
+      styles: { fontSize: 7 },
+      columnStyles: {
+        4: { halign: "right" as const },
+        5: { halign: "right" as const },
+        6: { halign: "right" as const },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    let y =
+      (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+        .finalY + 10;
+    if (y > doc.internal.pageSize.getHeight() - 24) {
+      doc.addPage();
+      y = 14;
+    }
+    doc.setFontSize(10);
+    doc.text(
+      `Ventas: ${ventasProducto.totales.cantidadVentas} | Cajas: ${formatMiles(
+        ventasProducto.totales.totalCajas,
+      )} | Unidades: ${formatMiles(
+        ventasProducto.totales.totalUnidades,
+      )} | Total vendido: ${formatMiles(ventasProducto.totales.totalMonto)}`,
+      14,
+      y,
+    );
+
+    const pdfBlob = doc.output("blob");
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.download = `ventas_producto_${productoSeleccionadoVP.ProductoId}_${fechaDesdeVP}_${fechaHastaVP}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    const openLink = document.createElement("a");
+    openLink.href = pdfUrl;
+    openLink.target = "_blank";
+    document.body.appendChild(openLink);
+    openLink.click();
+    document.body.removeChild(openLink);
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
+  };
+
   // Reporte de envíos separado por móvil (vehículo de flota). Solo mayorista.
   // Genera un PDF con un bloque por móvil: detalle de sus ventas envío + sus
   // subtotales por método de pago, y al final los totales generales.
@@ -2376,8 +2573,8 @@ const ReportesPage: React.FC = () => {
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Ventas del período agrupadas por tipo: envío, contado,
-                    crédito, POS y transferencia. Cada grupo con su detalle y
-                    total.
+                    crédito, POS y transferencia (separando las transferencias
+                    de envíos). Cada grupo con su detalle y total.
                   </p>
                 </div>
               </div>
@@ -2548,6 +2745,247 @@ const ReportesPage: React.FC = () => {
             </div>
           </section>
         )}
+
+        {/* === Sección Ventas por producto (todas las empresas) === */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Ventas por producto
+            </h2>
+            <span className="text-xs text-slate-400">1 reporte</span>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="text-2xl leading-none">🔎</div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-900 text-sm">
+                  Ventas de un producto
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Elegí un producto y un período: el reporte muestra en qué
+                  ventas salió y a qué cliente se le vendió, con cantidades y
+                  totales.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-3 mb-4">
+              <div className="relative w-full sm:w-80">
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Producto
+                </label>
+                <input
+                  type="text"
+                  value={productoBusquedaVP}
+                  placeholder="Escribí para buscar por nombre o código"
+                  onChange={(e) => {
+                    setProductoBusquedaVP(e.target.value);
+                    setProductoSeleccionadoVP(null);
+                    setProductoListaAbiertaVP(true);
+                    setProductoHighlightVP(0);
+                  }}
+                  onFocus={(e) => {
+                    e.target.select();
+                    setProductoListaAbiertaVP(true);
+                    setProductoHighlightVP(0);
+                  }}
+                  onMouseUp={(e) => e.preventDefault()}
+                  onKeyDown={onKeyDownProductoVP}
+                  onBlur={() =>
+                    setTimeout(() => setProductoListaAbiertaVP(false), 150)
+                  }
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+                {productoListaAbiertaVP && (
+                  <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg text-sm">
+                    {productosFiltradosVP.map((p, idx) => {
+                      const activo = idx === productoHighlightVP;
+                      return (
+                        <li
+                          key={p.ProductoId}
+                          ref={activo ? productoHighlightVPRef : null}
+                          onMouseDown={() => seleccionarProductoVP(p)}
+                          onMouseEnter={() => setProductoHighlightVP(idx)}
+                          className={`px-3 py-2 cursor-pointer ${
+                            activo ? "bg-blue-100" : "hover:bg-slate-100"
+                          }`}
+                        >
+                          {etiquetaProducto(p)}
+                        </li>
+                      );
+                    })}
+                    {productosFiltradosVP.length === 0 && (
+                      <li className="px-3 py-2 text-slate-400">
+                        {productosTop.length === 0
+                          ? "Cargando productos…"
+                          : "Sin resultados"}
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Desde
+                </label>
+                <input
+                  type="date"
+                  value={fechaDesdeVP}
+                  onChange={(e) => setFechaDesdeVP(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Hasta
+                </label>
+                <input
+                  type="date"
+                  value={fechaHastaVP}
+                  onChange={(e) => setFechaHastaVP(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+              </div>
+              <button
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition disabled:opacity-50"
+                onClick={generarVentasPorProducto}
+                disabled={loading}
+              >
+                {loading ? "Cargando…" : "Generar"}
+              </button>
+              {ventasProducto && ventasProducto.ventas.length > 0 && (
+                <button
+                  className="bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition"
+                  onClick={exportarVentasPorProductoPDF}
+                >
+                  Exportar PDF
+                </button>
+              )}
+            </div>
+
+            {ventasProducto && ventasProducto.ventas.length === 0 && (
+              <p className="text-sm text-slate-500">
+                No se vendió ese producto en el período seleccionado.
+              </p>
+            )}
+
+            {ventasProducto && ventasProducto.ventas.length > 0 && (
+              <>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
+                  <table className="w-full border-collapse text-sm min-w-[700px]">
+                    <thead className="sticky top-0 bg-slate-100 z-10">
+                      <tr className="border-b border-slate-300">
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Fecha
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          N° venta
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Cliente
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Tipo
+                        </th>
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Cantidad
+                        </th>
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Precio
+                        </th>
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Subtotal
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ventasProducto.ventas.map((v, idx) => (
+                        <tr
+                          key={`${v.VentaId}-${idx}`}
+                          className="border-b border-slate-200 hover:bg-slate-50"
+                        >
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {formatFechaHoraLocal(v.VentaFecha)}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {v.VentaId}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-700">
+                            {[v.ClienteNombre, v.ClienteApellido]
+                              .filter(Boolean)
+                              .join(" ") || "-"}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {labelTipoVenta(v.VentaTipo)}
+                            {v.EsEnvio === "S" ? " (envío)" : ""}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-slate-700 whitespace-nowrap">
+                            {formatMiles(v.Cantidad)}{" "}
+                            {v.Unitario === "U" ? "unid." : "cajas"}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                            {formatMiles(v.Precio)}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                            {formatMiles(v.Subtotal)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0">
+                      <tr className="bg-slate-100 font-semibold text-slate-900">
+                        <td className="py-2 px-2" colSpan={4}>
+                          Total
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                          {formatMiles(ventasProducto.totales.totalCajas)} cajas
+                          / {formatMiles(ventasProducto.totales.totalUnidades)}{" "}
+                          unid.
+                        </td>
+                        <td className="py-2 px-2" />
+                        <td className="py-2 px-2 text-right font-mono">
+                          {formatMiles(ventasProducto.totales.totalMonto)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <h3 className="font-semibold text-slate-800 mb-3">TOTALES</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <span className="text-slate-500">Ventas:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {ventasProducto.totales.cantidadVentas}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Cajas:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {formatMiles(ventasProducto.totales.totalCajas)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Unidades:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {formatMiles(ventasProducto.totales.totalUnidades)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Total vendido:</span>{" "}
+                      <span className="font-mono font-semibold text-slate-900">
+                        {formatMiles(ventasProducto.totales.totalMonto)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
 
         {/* === Sección Caja === */}
         <section>

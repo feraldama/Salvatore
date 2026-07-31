@@ -523,7 +523,10 @@ export const getVentasPorVendedor = async (params: {
 
 // --- Reporte de ventas por tipo de venta (envío / contado / crédito / etc.) ---
 export interface VentasTipoGrupo {
-  /** "ENVIO" (EsEnvio='S') o el VentaTipo: "CO" | "CR" | "PO" | "TR" */
+  /**
+   * "ENVIO" (EsEnvio='S'), "ENVIO_TR" (envío pagado por transferencia) o el
+   * VentaTipo: "CO" | "CR" | "PO" | "TR"
+   */
   tipo: string;
   cantidad: number;
   totalVendido: number;
@@ -564,6 +567,61 @@ export const getVentasPorTipo = async (params: {
     throw (
       axiosError.response?.data || {
         message: "Error al obtener las ventas por tipo",
+      }
+    );
+  }
+};
+
+// --- Reporte de ventas por producto (en qué ventas y a qué cliente salió) ---
+export interface VentaProductoReporteRow {
+  VentaId: number;
+  VentaFecha: string;
+  VentaTipo: string;
+  EsEnvio?: string;
+  /** Total de la venta completa (no solo de este producto). */
+  VentaTotal: number;
+  Cantidad: number;
+  /** 'C' = cajas, 'U' = unidades sueltas. */
+  Unitario: string;
+  Precio: number;
+  Subtotal: number;
+  ClienteNombre?: string | null;
+  ClienteApellido?: string | null;
+}
+
+export interface VentasPorProducto {
+  ventas: VentaProductoReporteRow[];
+  totales: {
+    cantidadVentas: number;
+    totalCajas: number;
+    totalUnidades: number;
+    totalMonto: number;
+  };
+}
+
+export const getVentasPorProducto = async (params: {
+  productoId: number;
+  fechaDesde?: string;
+  fechaHasta?: string;
+}): Promise<VentasPorProducto> => {
+  try {
+    const response = await api.get("/venta/reporte-por-producto", { params });
+    return (
+      response.data?.data ?? {
+        ventas: [],
+        totales: {
+          cantidadVentas: 0,
+          totalCajas: 0,
+          totalUnidades: 0,
+          totalMonto: 0,
+        },
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener las ventas del producto",
       }
     );
   }

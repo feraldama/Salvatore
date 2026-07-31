@@ -575,6 +575,47 @@ exports.getVentasPorTipo = async (req, res) => {
   }
 };
 
+// GET /venta/reporte-por-producto?productoId=&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+// Ventas de un producto en el período: en qué ventas salió y a qué cliente.
+// Scopeado a la empresa activa (req.empresaId). Las fechas son opcionales.
+exports.getVentasPorProducto = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const productoId = parseInt(req.query.productoId, 10);
+    if (!Number.isInteger(productoId) || productoId <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Se requiere un productoId válido" });
+    }
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getVentasPorProducto({
+      empresaId: req.empresaId,
+      productoId,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener ventas por producto:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // GET /venta/deliveries?estado=&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
 // Lista de ventas marcadas como DELIVERY (minorista) con su chofer y estado de
 // reparto, para la pantalla de gestión. Scopeado a la empresa activa.
