@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { recibirPagoCredito } from "../../services/venta.service";
 import { usePermiso } from "../../hooks/usePermiso";
@@ -15,6 +15,7 @@ interface Cliente {
   ClienteId: number;
   ClienteNombre: string;
   ClienteApellido: string;
+  ClienteRUC?: string;
 }
 
 interface VentaPendiente {
@@ -38,6 +39,12 @@ const CreditoPagosPage = () => {
   const puedeLeerPagos = usePermiso("COBROCREDITO", "leer");
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [selectedCliente, setSelectedCliente] = useState<string>("");
+  // Buscador del selector de cliente (mismo patrón que el reporte de ventas
+  // por cliente): texto escrito + si la lista está abierta + opción resaltada.
+  const [clienteBusqueda, setClienteBusqueda] = useState<string>("");
+  const [clienteListaAbierta, setClienteListaAbierta] = useState(false);
+  const [clienteHighlight, setClienteHighlight] = useState(0);
+  const clienteHighlightRef = useRef<HTMLLIElement | null>(null);
   const [ventasPendientes, setVentasPendientes] = useState<VentaPendiente[]>(
     []
   );
@@ -110,6 +117,64 @@ const CreditoPagosPage = () => {
     cargarClientes();
   }, []);
 
+  // Mantener visible la opción resaltada al navegar con las flechas.
+  useEffect(() => {
+    clienteHighlightRef.current?.scrollIntoView({ block: "nearest" });
+  }, [clienteHighlight]);
+
+  // Clientes que matchean el texto del buscador (por nombre, apellido o RUC).
+  const clientesFiltrados = useMemo(() => {
+    const q = clienteBusqueda.trim().toLowerCase();
+    if (!q) return clientes;
+    return clientes.filter((c) =>
+      `${c.ClienteNombre} ${c.ClienteApellido} ${c.ClienteRUC ?? ""}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [clientes, clienteBusqueda]);
+
+  // Etiqueta visible de un cliente en el buscador (nombre + RUC si tiene).
+  const etiquetaCliente = (c: Cliente): string =>
+    `${c.ClienteNombre} ${c.ClienteApellido}${
+      c.ClienteRUC ? ` - ${c.ClienteRUC}` : ""
+    }`.trim();
+
+  // Opciones del buscador. El índice en este array es el que navegan las
+  // flechas (clienteHighlight).
+  const opcionesCliente: { id: string; label: string }[] = clientesFiltrados.map(
+    (c) => ({
+      id: String(c.ClienteId),
+      label: etiquetaCliente(c),
+    })
+  );
+
+  // Confirma la selección del cliente desde el buscador.
+  const seleccionarCliente = (id: string, label: string) => {
+    setClienteBusqueda(label);
+    setClienteListaAbierta(false);
+    handleClienteChange(id);
+  };
+
+  // Navegación con teclado en el buscador de cliente.
+  const onKeyDownCliente = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setClienteListaAbierta(true);
+      setClienteHighlight((h) => Math.min(h + 1, opcionesCliente.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setClienteHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      if (clienteListaAbierta && opcionesCliente[clienteHighlight]) {
+        e.preventDefault();
+        const op = opcionesCliente[clienteHighlight];
+        seleccionarCliente(op.id, op.label);
+      }
+    } else if (e.key === "Escape") {
+      setClienteListaAbierta(false);
+    }
+  };
+
   const handleClienteChange = async (clienteId: string) => {
     setSelectedCliente(clienteId);
     setVentasPendientes([]);
@@ -120,11 +185,7 @@ const CreditoPagosPage = () => {
     }
 
     try {
-      const localId = user?.LocalId;
-      const response = await getVentasPendientesPorCliente(
-        Number(clienteId),
-        localId
-      );
+      const response = await getVentasPendientesPorCliente(Number(clienteId));
       const ventasPendientes = response.data || [];
 
       // Calcular el total de la deuda asegurando que los valores sean números
@@ -223,22 +284,61 @@ const CreditoPagosPage = () => {
         {/* Formulario de pago */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700">
                 Cliente
               </label>
-              <select
-                value={selectedCliente}
-                onChange={(e) => handleClienteChange(e.target.value)}
-                className="mt-1 block w-full h-10 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-              >
-                <option value="">Seleccione un cliente</option>
-                {clientes.map((cliente) => (
-                  <option key={cliente.ClienteId} value={cliente.ClienteId}>
-                    {`${cliente.ClienteNombre} ${cliente.ClienteApellido}`}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="text"
+                value={clienteBusqueda}
+                placeholder="Escribí para buscar un cliente"
+                onChange={(e) => {
+                  setClienteBusqueda(e.target.value);
+                  setClienteListaAbierta(true);
+                  setClienteHighlight(0);
+                  // Al editar el texto se invalida la selección anterior para
+                  // no cobrarle a un cliente distinto del que muestra el input.
+                  if (selectedCliente) {
+                    setSelectedCliente("");
+                    setVentasPendientes([]);
+                    setTotalDeuda(0);
+                  }
+                }}
+                onFocus={(e) => {
+                  e.target.select();
+                  setClienteListaAbierta(true);
+                  setClienteHighlight(0);
+                }}
+                onMouseUp={(e) => e.preventDefault()}
+                onKeyDown={onKeyDownCliente}
+                onBlur={() =>
+                  setTimeout(() => setClienteListaAbierta(false), 150)
+                }
+                className="mt-1 block w-full h-10 px-3 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+              />
+              {clienteListaAbierta && (
+                <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg text-sm">
+                  {opcionesCliente.map((op, idx) => {
+                    const activo = idx === clienteHighlight;
+                    return (
+                      <li
+                        key={op.id}
+                        ref={activo ? clienteHighlightRef : null}
+                        onMouseDown={() => seleccionarCliente(op.id, op.label)}
+                        onMouseEnter={() => setClienteHighlight(idx)}
+                        className={`px-3 py-2 cursor-pointer ${
+                          activo ? "bg-green-100" : "hover:bg-gray-100"
+                        }`}
+                      >
+                        {op.label}
+                      </li>
+                    );
+                  })}
+                  {opcionesCliente.length === 0 && clienteBusqueda.trim() && (
+                    <li className="px-3 py-2 text-gray-400">Sin resultados</li>
+                  )}
+                </ul>
+              )}
             </div>
 
             <div>

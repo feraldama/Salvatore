@@ -572,15 +572,11 @@ export const getDeudasPendientes = async (): Promise<DeudaCliente[]> => {
   }
 };
 
-export const getVentasPendientesPorCliente = async (
-  clienteId: number,
-  localId?: number
-) => {
+// El scope de sucursal lo resuelve el backend (X-Local-Id para admins,
+// LocalId del JWT para usuarios regulares); no se pasa por parámetro.
+export const getVentasPendientesPorCliente = async (clienteId: number) => {
   try {
-    const params = localId ? { localId } : {};
-    const response = await api.get(`/venta/pendientes/${clienteId}`, {
-      params,
-    });
+    const response = await api.get(`/venta/pendientes/${clienteId}`);
     return response.data;
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;

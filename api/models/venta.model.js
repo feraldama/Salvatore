@@ -657,6 +657,10 @@ const Venta = {
   },
 
   // Obtener deudas pendientes agrupadas por cliente
+  // Solo cuenta las ventas con saldo pendiente (filtro por fila, igual que
+  // getVentasPendientesPorCliente). Los datos migrados del sistema viejo traen
+  // "pagos a cuenta" registrados como ventas CR con Total=0 y VentaEntrega>0;
+  // si se sumara el neto por cliente, esos pagos taparían las deudas reales.
   getDeudasPendientesPorCliente: (empresaId) => {
     return new Promise((resolve, reject) => {
       const query = `
@@ -670,8 +674,8 @@ const Venta = {
         JOIN clientes c ON v.ClienteId = c.ClienteId
         WHERE v.VentaTipo = 'CR'
         AND v.EmpresaId = ?
+        AND (v.Total - COALESCE(v.VentaEntrega, 0)) > 0
         GROUP BY c.ClienteId, c.ClienteNombre, c.ClienteApellido
-        HAVING SUM(v.Total - COALESCE(v.VentaEntrega, 0)) > 0
         ORDER BY CONCAT(TRIM(c.ClienteNombre), ' ', TRIM(c.ClienteApellido))
       `;
       db.query(query, [empresaId], (err, results) => {
@@ -805,9 +809,12 @@ const Venta = {
           }
 
           // Query #2: todos los ventacredito del set en una sola tirada.
+          // El adaptador PG traduce cada ? a $N sin expandir arrays, así que
+          // el IN se arma con un placeholder por id.
+          const ventaIdPlaceholders = creditoVentaIds.map(() => "?").join(", ");
           db.query(
-            `SELECT * FROM ventacredito WHERE VentaId IN (?)`,
-            [creditoVentaIds],
+            `SELECT * FROM ventacredito WHERE VentaId IN (${ventaIdPlaceholders})`,
+            creditoVentaIds,
             (err, creditosResults) => {
               if (err) return reject(err);
 
@@ -821,11 +828,12 @@ const Venta = {
               }
 
               // Query #3: todos los pagos del set, ordenados y agrupados en memoria.
+              const creditoIdPlaceholders = creditoIds.map(() => "?").join(", ");
               db.query(
                 `SELECT * FROM ventacreditopago
-                 WHERE VentaCreditoId IN (?)
+                 WHERE VentaCreditoId IN (${creditoIdPlaceholders})
                  ORDER BY VentaCreditoPagoFecha ASC, VentaCreditoPagoId ASC`,
-                [creditoIds],
+                creditoIds,
                 (err, pagosResults) => {
                   if (err) return reject(err);
 

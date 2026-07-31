@@ -24,6 +24,22 @@ export const getAlmacenes = async (
   }
 };
 
+// Almacén del local (sucursal) indicado, scopeado a la empresa activa por el
+// header X-Empresa-Id. 404 si el local no tiene almacén asignado.
+export const getAlmacenByLocal = async (localId: string | number) => {
+  try {
+    const response = await api.get(`/almacen/by-local/${localId}`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener el almacén del local",
+      }
+    );
+  }
+};
+
 export const getAlmacenById = async (id: string | number) => {
   try {
     const response = await api.get(`/almacen/${id}`);

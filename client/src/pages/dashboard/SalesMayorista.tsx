@@ -26,6 +26,7 @@ import type { Cliente } from "../../components/common/ClienteFormModal";
 import { loadPdf } from "../../utils/lazyPdf";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
+import { getAlmacenByLocal } from "../../services/almacenes.service";
 import { getLocalById } from "../../services/locales.service";
 import { useNavigate } from "react-router-dom";
 import ActionButton from "../../components/common/Button/ActionButton";
@@ -124,6 +125,43 @@ export default function SalesMayorista() {
   useState<Cliente | null>(null);
   const [cajaAperturada, setCajaAperturada] = useState<Caja | null>(null);
   const [localNombre, setLocalNombre] = useState("");
+  // Almacén desde el que opera esta sesión. Para el admin se resuelve por la
+  // sucursal activa del switcher (su almacén del JWT es fijo y puede ser de
+  // OTRA empresa — operar con ese generaba ventas cruzadas de empresa/almacén);
+  // para el usuario regular es su almacén de siempre. null = no hay almacén
+  // válido y la operación se bloquea con un mensaje.
+  const [almacenVentaId, setAlmacenVentaId] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    const resolver = async () => {
+      if (user?.isAdmin === "S") {
+        const localId = localActiva?.LocalId;
+        if (!localId) {
+          if (!cancelado) setAlmacenVentaId(null);
+          return;
+        }
+        try {
+          const alm = await getAlmacenByLocal(localId);
+          if (!cancelado) setAlmacenVentaId(Number(alm?.AlmacenId) || null);
+        } catch {
+          if (!cancelado) setAlmacenVentaId(null);
+        }
+        return;
+      }
+      const propio = Number(user?.AlmacenId ?? user?.LocalId);
+      if (!cancelado) setAlmacenVentaId(propio > 0 ? propio : null);
+    };
+    resolver();
+    return () => {
+      cancelado = true;
+    };
+  }, [
+    user?.isAdmin,
+    user?.AlmacenId,
+    user?.LocalId,
+    localActiva?.LocalId,
+    empresaActiva?.EmpresaId,
+  ]);
   // Tipo de venta mayorista: CONTADO (cobro inmediato) o ENVIO (se entregan los
   // productos y el cliente paga al recibir; se registra como cuenta corriente).
   const [tipoVenta, setTipoVenta] = useState<"CONTADO" | "ENVIO">("CONTADO");
@@ -499,18 +537,20 @@ export default function SalesMayorista() {
   }
 
   const sendRequest = async () => {
-    // Guardrail: el movimiento de stock necesita un almacén real. Los usuarios
-    // en local "TODOS" (LocalId 0) resuelven al almacén 0, que no tiene stock
-    // (el stock vive en los almacenes de cada local). Bloqueamos la operación
-    // con un mensaje claro en vez de mover stock de un almacén vacío.
-    const almacenVenta = Number(user?.AlmacenId ?? user?.LocalId);
-    if (!almacenVenta || Number(user?.LocalId) === 0) {
+    // Guardrail: el movimiento de stock necesita un almacén real DE LA EMPRESA
+    // ACTIVA (almacenVentaId se resuelve por sucursal para admins). Sin almacén
+    // válido bloqueamos la operación con un mensaje claro en vez de mover stock
+    // de un almacén vacío o de otra empresa.
+    const almacenVenta = Number(almacenVentaId);
+    if (!almacenVenta || (user?.isAdmin !== "S" && Number(user?.LocalId) === 0)) {
+      const esAdmin = user?.isAdmin === "S";
       await Swal.fire({
         icon: "warning",
-        title: "Sin local asignado",
-        text:
-          "Tu usuario no tiene un local válido (figura como \"TODOS\"). " +
-          "Pedí al administrador que te asigne un local real (ej. SALON) para poder operar el stock.",
+        title: esAdmin ? "Seleccioná una sucursal" : "Sin local asignado",
+        text: esAdmin
+          ? "Para operar, elegí una sucursal de la empresa activa en el selector (arriba). El stock se mueve en el almacén de esa sucursal."
+          : "Tu usuario no tiene un local válido (figura como \"TODOS\"). " +
+            "Pedí al administrador que te asigne un local real (ej. SALON) para poder operar el stock.",
         confirmButtonColor: "#3085d6",
       });
       return;
@@ -577,7 +617,7 @@ export default function SalesMayorista() {
         // coherente con cómo se vendió. Los métodos de pago del modal no aplican.
         await devolverVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          AlmacenOrigenId: almacenVenta,
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),
           Total2: carrito.reduce((acc, p) => acc + obtenerTotal(p), 0),
@@ -590,7 +630,7 @@ export default function SalesMayorista() {
       } else {
         await confirmarVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          AlmacenOrigenId: almacenVenta,
           ClienteId: Number(clienteSeleccionado?.ClienteId),
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),

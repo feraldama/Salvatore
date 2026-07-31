@@ -44,10 +44,10 @@ exports.getResumenEmpresas = async (req, res) => {
     const conn = db.promise();
 
     // Saldo crédito = Total - VentaEntrega (fórmula establecida del sistema).
-    // "Por cobrar" suma solo el saldo de los clientes que deben (saldo > 0 por
-    // cliente), igual que getDeudasPendientesPorCliente — así el total coincide
-    // con la tarjeta "Cuentas por cobrar" del dashboard y no se compensan
-    // saldos negativos (ventas sobre-entregadas) con deudas reales.
+    // "Por cobrar" suma solo las ventas con saldo pendiente (saldo > 0 por
+    // venta), igual que getDeudasPendientesPorCliente — así el total coincide
+    // con el reporte de deudas pendientes y no se compensan saldos negativos
+    // (pagos a cuenta migrados como ventas con Total=0) con deudas reales.
     const [
       [ventasHoy],
       [ventasMes],
@@ -72,13 +72,11 @@ exports.getResumenEmpresas = async (req, res) => {
         `SELECT EmpresaId, COUNT(*) AS Cantidad FROM producto GROUP BY EmpresaId`
       ),
       conn.query(
-        `SELECT EmpresaId, COALESCE(SUM(saldo), 0) AS Saldo FROM (
-           SELECT v.EmpresaId, v.ClienteId,
-                  SUM(v.Total - COALESCE(v.VentaEntrega, 0)) AS saldo
-             FROM venta v WHERE v.VentaTipo = 'CR'
-            GROUP BY v.EmpresaId, v.ClienteId
-           HAVING SUM(v.Total - COALESCE(v.VentaEntrega, 0)) > 0
-         ) t GROUP BY EmpresaId`
+        `SELECT EmpresaId,
+                COALESCE(SUM(Total - COALESCE(VentaEntrega, 0)), 0) AS Saldo
+           FROM venta WHERE VentaTipo = 'CR'
+            AND (Total - COALESCE(VentaEntrega, 0)) > 0
+          GROUP BY EmpresaId`
       ),
     ]);
 

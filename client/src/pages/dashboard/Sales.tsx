@@ -33,6 +33,7 @@ import { loadPdf } from "../../utils/lazyPdf";
 import { imprimirFactura } from "../../utils/factura";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
+import { getAlmacenByLocal } from "../../services/almacenes.service";
 import { getLocalById } from "../../services/locales.service";
 import { useNavigate } from "react-router-dom";
 import ActionButton from "../../components/common/Button/ActionButton";
@@ -131,6 +132,43 @@ export default function Sales() {
   useState<Cliente | null>(null);
   const [cajaAperturada, setCajaAperturada] = useState<Caja | null>(null);
   const [localNombre, setLocalNombre] = useState("");
+  // Almacén desde el que vende esta sesión. Para el admin se resuelve por la
+  // sucursal activa del switcher (su almacén del JWT es fijo y puede ser de
+  // OTRA empresa — vender con ese generaba ventas cruzadas de empresa/almacén);
+  // para el usuario regular es su almacén de siempre. null = no hay almacén
+  // válido y la venta se bloquea con un mensaje.
+  const [almacenVentaId, setAlmacenVentaId] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    const resolver = async () => {
+      if (user?.isAdmin === "S") {
+        const localId = localActiva?.LocalId;
+        if (!localId) {
+          if (!cancelado) setAlmacenVentaId(null);
+          return;
+        }
+        try {
+          const alm = await getAlmacenByLocal(localId);
+          if (!cancelado) setAlmacenVentaId(Number(alm?.AlmacenId) || null);
+        } catch {
+          if (!cancelado) setAlmacenVentaId(null);
+        }
+        return;
+      }
+      const propio = Number(user?.AlmacenId ?? user?.LocalId);
+      if (!cancelado) setAlmacenVentaId(propio > 0 ? propio : null);
+    };
+    resolver();
+    return () => {
+      cancelado = true;
+    };
+  }, [
+    user?.isAdmin,
+    user?.AlmacenId,
+    user?.LocalId,
+    localActiva?.LocalId,
+    empresaActiva?.EmpresaId,
+  ]);
   const navigate = useNavigate();
   const [showPagoModal, setShowPagoModal] = useState(false);
   const [showCobrarDelivery, setShowCobrarDelivery] = useState(false);
@@ -641,18 +679,20 @@ export default function Sales() {
   };
 
   const sendRequest = async () => {
-    // Guardrail: el descuento de stock necesita un almacén real. Los usuarios
-    // en local "TODOS" (LocalId 0) resuelven al almacén 0, que no tiene stock
-    // (el stock vive en los almacenes de cada local). Bloqueamos la venta con
-    // un mensaje claro en vez de descontar de un almacén vacío.
-    const almacenVenta = Number(user?.AlmacenId ?? user?.LocalId);
-    if (!almacenVenta || Number(user?.LocalId) === 0) {
+    // Guardrail: el descuento de stock necesita un almacén real DE LA EMPRESA
+    // ACTIVA (almacenVentaId se resuelve por sucursal para admins). Sin almacén
+    // válido bloqueamos la venta con un mensaje claro en vez de descontar de un
+    // almacén vacío o de otra empresa.
+    const almacenVenta = Number(almacenVentaId);
+    if (!almacenVenta || (user?.isAdmin !== "S" && Number(user?.LocalId) === 0)) {
+      const esAdmin = user?.isAdmin === "S";
       await Swal.fire({
         icon: "warning",
-        title: "Sin local de venta asignado",
-        text:
-          'Tu usuario no tiene un local de venta válido (figura como "TODOS"). ' +
-          "Pedí al administrador que te asigne un local real (ej. SALON) para poder vender y descontar stock.",
+        title: esAdmin ? "Seleccioná una sucursal" : "Sin local de venta asignado",
+        text: esAdmin
+          ? "Para vender, elegí una sucursal de la empresa activa en el selector (arriba). El stock se descuenta del almacén de esa sucursal."
+          : 'Tu usuario no tiene un local de venta válido (figura como "TODOS"). ' +
+            "Pedí al administrador que te asigne un local real (ej. SALON) para poder vender y descontar stock.",
         confirmButtonColor: "#3085d6",
       });
       return;
@@ -719,7 +759,7 @@ export default function Sales() {
       if (isDevolucionMode) {
         await devolverVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          AlmacenOrigenId: almacenVenta,
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),
           Total2: getSubtotal(cartItems),
@@ -732,7 +772,7 @@ export default function Sales() {
       } else {
         ventaResp = await confirmarVenta({
           VentaFecha: fechaIso,
-          AlmacenOrigenId: Number(user?.AlmacenId ?? user?.LocalId),
+          AlmacenOrigenId: almacenVenta,
           ClienteId: Number(clienteSeleccionado?.ClienteId),
           CajaId: Number(cajaAperturada?.CajaId),
           UsuarioId: String(user?.id ?? ""),

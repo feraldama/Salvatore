@@ -351,10 +351,14 @@ exports.searchVentas = async (req, res) => {
 };
 
 // Obtener ventas pendientes por cliente
+// Scope de sucursal: usa req.localId (resuelto por resolveEmpresa: X-Local-Id
+// para admins — null = todas las sucursales —, LocalId del JWT para usuarios
+// regulares). No se acepta localId por query: el frontend mandaba el local
+// fijo del usuario logueado y a un admin mirando otra sucursal le ocultaba
+// las deudas.
 exports.getVentasPendientesPorCliente = async (req, res) => {
   try {
     const { clienteId } = req.params;
-    const { localId } = req.query;
 
     if (!clienteId) {
       return res.status(400).json({
@@ -365,7 +369,7 @@ exports.getVentasPendientesPorCliente = async (req, res) => {
 
     const ventas = await Venta.getVentasPendientesPorCliente(
       clienteId,
-      localId,
+      req.localId,
       req.empresaId
     );
     res.json({
@@ -769,6 +773,27 @@ exports.confirmar = async (req, res) => {
   }
   if (!ventaFecha) ventaFecha = new Date().toISOString().slice(0, 10);
 
+  // El almacén de origen debe pertenecer a la empresa activa. Sin este check,
+  // un admin con empresa activa B pero almacén personal de la empresa A genera
+  // una venta cruzada (EmpresaId=B, AlmacenId de A): descuenta stock de la otra
+  // empresa y queda invisible en el listado scopeado por sucursal.
+  const [almRows] = await db
+    .promise()
+    .query("SELECT EmpresaId FROM Almacen WHERE AlmacenId = ?", [
+      AlmacenOrigenId,
+    ]);
+  if (!almRows.length) {
+    return res
+      .status(400)
+      .json({ message: `El almacén ${AlmacenOrigenId} no existe` });
+  }
+  if (Number(almRows[0].EmpresaId) !== Number(req.empresaId || 1)) {
+    return res.status(400).json({
+      message:
+        "El almacén de origen no pertenece a la empresa activa. Seleccioná la sucursal correcta antes de vender.",
+    });
+  }
+
   const conn = await db.promise().getConnection();
   try {
     await conn.beginTransaction();
@@ -1092,6 +1117,25 @@ exports.devolucion = async (req, res) => {
     return res.status(400).json({ message: e.message });
   }
   if (!ventaFecha) ventaFecha = new Date().toISOString().slice(0, 10);
+
+  // Mismo check que en confirmar: el almacén que recibe la mercadería devuelta
+  // debe ser de la empresa activa (si no, el stock se repone en la otra empresa).
+  const [almRows] = await db
+    .promise()
+    .query("SELECT EmpresaId FROM Almacen WHERE AlmacenId = ?", [
+      AlmacenOrigenId,
+    ]);
+  if (!almRows.length) {
+    return res
+      .status(400)
+      .json({ message: `El almacén ${AlmacenOrigenId} no existe` });
+  }
+  if (Number(almRows[0].EmpresaId) !== Number(req.empresaId || 1)) {
+    return res.status(400).json({
+      message:
+        "El almacén de la devolución no pertenece a la empresa activa. Seleccioná la sucursal correcta.",
+    });
+  }
 
   const conn = await db.promise().getConnection();
   try {
