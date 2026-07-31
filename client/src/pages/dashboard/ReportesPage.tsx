@@ -1927,6 +1927,17 @@ const ReportesPage: React.FC = () => {
         return `${g.chapa ?? `Móvil ${g.vehiculoId}`}${desc ? ` — ${desc}` : ""}`;
       };
 
+      // Línea de totales por método de cobro. POS y Voucher casi no se usan en
+      // envíos: se muestran solo si tienen monto, para no ensuciar el reporte.
+      const lineaMetodos = (m: EnviosPorVehiculo["totales"]["porMetodo"]) => {
+        const partes = [`Efectivo: ${formatMiles(m.efectivo)}`];
+        if (m.pos > 0) partes.push(`POS: ${formatMiles(m.pos)}`);
+        if (m.voucher > 0) partes.push(`Voucher: ${formatMiles(m.voucher)}`);
+        partes.push(`Transfer: ${formatMiles(m.transferencia)}`);
+        partes.push(`Crédito (pendiente): ${formatMiles(m.credito)}`);
+        return partes.join("  |  ");
+      };
+
       data.vehiculos.forEach((g) => {
         // Salto de página si no entra el encabezado del móvil.
         if (y > doc.internal.pageSize.getHeight() - 40) {
@@ -1980,13 +1991,8 @@ const ReportesPage: React.FC = () => {
         });
         y = getFinalY() + 6;
 
-        const m = g.porMetodo;
         doc.setFontSize(9);
-        doc.text(
-          `Efectivo: ${formatMiles(m.efectivo)}  |  POS: ${formatMiles(m.pos)}  |  Voucher: ${formatMiles(m.voucher)}  |  Transfer: ${formatMiles(m.transferencia)}  |  Crédito (pendiente): ${formatMiles(m.credito)}`,
-          14,
-          y,
-        );
+        doc.text(lineaMetodos(g.porMetodo), 14, y);
         y += 10;
       });
 
@@ -2008,11 +2014,7 @@ const ReportesPage: React.FC = () => {
           y,
         );
         y += 6;
-        doc.text(
-          `Efectivo: ${formatMiles(t.porMetodo.efectivo)}  |  POS: ${formatMiles(t.porMetodo.pos)}  |  Voucher: ${formatMiles(t.porMetodo.voucher)}  |  Transfer: ${formatMiles(t.porMetodo.transferencia)}  |  Crédito (pendiente): ${formatMiles(t.porMetodo.credito)}`,
-          14,
-          y,
-        );
+        doc.text(lineaMetodos(t.porMetodo), 14, y);
       }
 
       doc.save(`reporte_envios_por_movil_${fechaDesdeEnvio}_${fechaHastaEnvio}.pdf`);
