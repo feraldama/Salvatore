@@ -11,6 +11,9 @@ Sistema unificado minorista + distribuidora. Backend Node/Express + PostgreSQL e
 ## Inputs numéricos
 - **Todo input de números (montos, cantidades, km, etc.) debe mostrar separador de miles** (ej. `15.000`). Patrón: input de texto con `value={valor ? formatMiles(valor) : ""}` y `onChange` que parsea con `Number(e.target.value.replace(/\D/g, ""))`. Usar `formatMiles` de `utils.ts`. No usar `<input type="number">` crudo para estos campos (no soporta separador de miles).
 
+## Selects con muchas opciones
+- **Todo select con muchas opciones (clientes, productos, etc.) debe tener sí o sí un buscador**: en lugar de `<select>` nativo, usar el patrón combobox (input de texto que filtra una lista desplegable), con navegación por teclado (flechas, Enter, Escape), opción "TODOS" primero cuando aplique y mensaje "Sin resultados". Referencia: los selectores de cliente y de producto en `client/src/pages/dashboard/ReportesPage.tsx`.
+
 ## Páginas / rutas nuevas
 - **Cada vez que se agrega una ruta/página nueva hay que registrar su título en `client/src/components/common/DocumentTitle/DocumentTitle.tsx`** (mapa `ROUTE_TITLES`). Si no se agrega, la pestaña del navegador muestra "Página no encontrada". Es un olvido recurrente con componentes nuevos.
 - El menú lateral está hardcodeado en `client/src/components/layout/Sidebar.tsx` (no viene de la DB). Para que un ítem sea visible a usuarios no-admin, su `permiso` debe existir en la tabla `menu` (los admin ven todo).

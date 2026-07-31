@@ -8,6 +8,7 @@ import { getAllClientesSinPaginacion } from "../../services/clientes.service";
 import {
   getReporteMovimientosProductos,
   getReporteMasVendidos,
+  getProductosAll,
   type ProductoMovimientoRow,
   type ProductoMasVendidoRow,
 } from "../../services/productos.service";
@@ -20,6 +21,8 @@ import {
   type EnviosPorVehiculo,
   getVentasPorVendedor,
   type VentasPorVendedor,
+  getVentasPorTipo,
+  type VentasPorTipo,
 } from "../../services/venta.service";
 import { useAuth } from "../../contexts/useAuth";
 
@@ -36,6 +39,12 @@ interface Cliente {
   ClienteNombre: string;
   ClienteApellido: string;
   ClienteRUC: string;
+}
+
+interface ProductoOption {
+  ProductoId: number;
+  ProductoCodigo: string | number;
+  ProductoNombre: string;
 }
 
 interface Pago {
@@ -126,6 +135,15 @@ function formatDateDDMMYYYY(fecha: Date | string): string {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
+}
+
+// Fecha+hora local (dd/mm/aaaa HH:mm) para los timestamps UTC de
+// registrodiariocaja (mismo criterio que toLocalDateStr: convertir a hora PY).
+function formatFechaHoraLocal(fechaISO: string): string {
+  const d = new Date(fechaISO);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${formatDateDDMMYYYY(d)} ${hh}:${mm}`;
 }
 
 function getHoyISO(): string {
@@ -259,6 +277,16 @@ function buildResumenesCierre(
   return resumenes;
 }
 
+// Etiquetas de los grupos del reporte "Ventas por tipo de venta".
+const TIPO_VENTA_LABELS: Record<string, string> = {
+  ENVIO: "Envío",
+  CO: "Contado",
+  CR: "Crédito",
+  PO: "POS",
+  TR: "Transferencia",
+};
+const labelTipoVenta = (tipo: string) => TIPO_VENTA_LABELS[tipo] ?? tipo;
+
 const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
@@ -296,6 +324,28 @@ const ReportesPage: React.FC = () => {
   const [fechaDesdeCierre, setFechaDesdeCierre] = useState(() => getHoyISO());
   const [fechaHastaCierre, setFechaHastaCierre] = useState(() => getHoyISO());
 
+  // Estado del reporte "Resumen de ingresos y egresos"
+  const [fechaDesdeIE, setFechaDesdeIE] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaIE, setFechaHastaIE] = useState(() => getHoyISO());
+  const [registrosIE, setRegistrosIE] = useState<RegistroDiarioCajaRow[]>([]);
+  const [resumenIEGenerado, setResumenIEGenerado] = useState(false);
+
+  // Estado del reporte "Ventas por tipo de venta" (solo mayorista).
+  // null = todavía no se generó.
+  const [fechaDesdeTipoV, setFechaDesdeTipoV] = useState(() => {
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    return primerDiaMes.toISOString().split("T")[0];
+  });
+  const [fechaHastaTipoV, setFechaHastaTipoV] = useState(() => getHoyISO());
+  const [ventasPorTipo, setVentasPorTipo] = useState<VentasPorTipo | null>(
+    null,
+  );
+
   // Estado del reporte "Productos vendidos y comprados"
   const [fechaDesdeMov, setFechaDesdeMov] = useState(() => {
     const hoy = new Date();
@@ -311,6 +361,17 @@ const ReportesPage: React.FC = () => {
     return primerDiaMes.toISOString().split("T")[0];
   });
   const [fechaHastaTop, setFechaHastaTop] = useState(() => getHoyISO());
+  // Buscador del selector de producto del reporte "Productos más vendidos"
+  // (mismo patrón que el selector de cliente): lista cargada bajo demanda al
+  // abrir el modal, texto buscado, lista abierta e ítem resaltado.
+  const [productosTop, setProductosTop] = useState<ProductoOption[]>([]);
+  const [productoSeleccionadoTop, setProductoSeleccionadoTop] =
+    useState<string>("TODOS");
+  const [productoBusquedaTop, setProductoBusquedaTop] =
+    useState<string>("TODOS");
+  const [productoListaAbiertaTop, setProductoListaAbiertaTop] = useState(false);
+  const [productoHighlightTop, setProductoHighlightTop] = useState(0);
+  const productoHighlightTopRef = useRef<HTMLLIElement | null>(null);
 
   // Estado del reporte "Envíos por móvil" (solo mayorista)
   const [fechaDesdeEnvio, setFechaDesdeEnvio] = useState(() => {
@@ -348,6 +409,15 @@ const ReportesPage: React.FC = () => {
     );
   }, [clientes, clienteBusqueda]);
 
+  // Productos que matchean el texto del buscador (por nombre o código).
+  const productosFiltradosTop = useMemo(() => {
+    const q = productoBusquedaTop.trim().toLowerCase();
+    if (!q || q === "todos") return productosTop;
+    return productosTop.filter((p) =>
+      `${p.ProductoNombre} ${p.ProductoCodigo ?? ""}`.toLowerCase().includes(q),
+    );
+  }, [productosTop, productoBusquedaTop]);
+
   const totalPaginasCierre = Math.max(
     1,
     Math.ceil(resumenesCierre.length / PAGE_SIZE),
@@ -384,6 +454,25 @@ const ReportesPage: React.FC = () => {
     );
   }, [resumenesCierre]);
 
+  // Resumen de ingresos y egresos: dos grupos (según TipoGastoId) con el
+  // detalle de cada registro y el total de cada grupo.
+  const ingresosIE = useMemo(
+    () => registrosIE.filter((r) => r.TipoGastoId === 2),
+    [registrosIE],
+  );
+  const egresosIE = useMemo(
+    () => registrosIE.filter((r) => r.TipoGastoId === 1),
+    [registrosIE],
+  );
+  const totalIngresosIE = useMemo(
+    () => ingresosIE.reduce((acc, r) => acc + r.RegistroDiarioCajaMonto, 0),
+    [ingresosIE],
+  );
+  const totalEgresosIE = useMemo(
+    () => egresosIE.reduce((acc, r) => acc + r.RegistroDiarioCajaMonto, 0),
+    [egresosIE],
+  );
+
   useEffect(() => {
     const cargarClientes = async () => {
       try {
@@ -405,6 +494,29 @@ const ReportesPage: React.FC = () => {
   useEffect(() => {
     clienteHighlightRef.current?.scrollIntoView({ block: "nearest" });
   }, [clienteHighlight]);
+
+  // Carga los productos recién cuando se abre el modal de "más vendidos"
+  // (una sola vez), para no traer todo el catálogo al entrar a la página.
+  useEffect(() => {
+    if (reporteActivo !== "masvendidos" || productosTop.length > 0) return;
+    const cargarProductos = async () => {
+      try {
+        const response = await getProductosAll();
+        const lista: ProductoOption[] = response?.data ?? [];
+        lista.sort((a, b) =>
+          String(a.ProductoNombre).localeCompare(String(b.ProductoNombre)),
+        );
+        setProductosTop(lista);
+      } catch (error) {
+        console.error("Error al cargar productos:", error);
+      }
+    };
+    cargarProductos();
+  }, [reporteActivo, productosTop.length]);
+
+  useEffect(() => {
+    productoHighlightTopRef.current?.scrollIntoView({ block: "nearest" });
+  }, [productoHighlightTop]);
 
   if (!puedeLeer) return <PermissionDenied resource="los reportes" />;
 
@@ -464,6 +576,48 @@ const ReportesPage: React.FC = () => {
       }
     } else if (e.key === "Escape") {
       setClienteListaAbierta(false);
+    }
+  };
+
+  // Etiqueta visible de un producto en el buscador (código + nombre).
+  const etiquetaProducto = (p: ProductoOption): string =>
+    `${p.ProductoCodigo ? `${p.ProductoCodigo} - ` : ""}${p.ProductoNombre}`.trim();
+
+  // Confirma la selección del producto desde el buscador.
+  const seleccionarProducto = (id: string, label: string) => {
+    setProductoSeleccionadoTop(id);
+    setProductoBusquedaTop(label);
+    setProductoListaAbiertaTop(false);
+  };
+
+  // Opciones del buscador: "TODOS" primero + los productos filtrados.
+  const opcionesProducto: { id: string; label: string }[] = [
+    { id: "TODOS", label: "TODOS" },
+    ...productosFiltradosTop.map((p) => ({
+      id: String(p.ProductoId),
+      label: etiquetaProducto(p),
+    })),
+  ];
+
+  // Navegación con teclado en el buscador de producto.
+  const onKeyDownProducto = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setProductoListaAbiertaTop(true);
+      setProductoHighlightTop((h) =>
+        Math.min(h + 1, opcionesProducto.length - 1),
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setProductoHighlightTop((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      if (productoListaAbiertaTop && opcionesProducto[productoHighlightTop]) {
+        e.preventDefault();
+        const op = opcionesProducto[productoHighlightTop];
+        seleccionarProducto(op.id, op.label);
+      }
+    } else if (e.key === "Escape") {
+      setProductoListaAbiertaTop(false);
     }
   };
 
@@ -1138,7 +1292,12 @@ const ReportesPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getReporteMasVendidos(fechaDesdeTop, fechaHastaTop);
+      const esTodosProductos = productoSeleccionadoTop === "TODOS";
+      const data = await getReporteMasVendidos(
+        fechaDesdeTop,
+        fechaHastaTop,
+        esTodosProductos ? undefined : Number(productoSeleccionadoTop),
+      );
       const productos: ProductoMasVendidoRow[] = data?.productos ?? [];
 
       const { jsPDF, autoTable } = await loadPdf();
@@ -1155,6 +1314,10 @@ const ReportesPage: React.FC = () => {
         y,
       );
       y += 6;
+      if (!esTodosProductos) {
+        doc.text(`Producto: ${productoBusquedaTop}`, 14, y);
+        y += 6;
+      }
 
       if (productos.length === 0) {
         doc.setFontSize(11);
@@ -1265,7 +1428,7 @@ const ReportesPage: React.FC = () => {
         );
       }
 
-      const nombreArchivo = `reporte_mas_vendidos_${fechaDesdeTop}_${fechaHastaTop}.pdf`;
+      const nombreArchivo = `reporte_mas_vendidos_${esTodosProductos ? "todos" : productoSeleccionadoTop}_${fechaDesdeTop}_${fechaHastaTop}.pdf`;
       doc.save(nombreArchivo);
       const blob = doc.output("blob");
       const url = URL.createObjectURL(blob);
@@ -1403,6 +1566,304 @@ const ReportesPage: React.FC = () => {
     const link = document.createElement("a");
     link.href = pdfUrl;
     link.download = `reporte_cierre_caja_${fechaDesdeCierre}_${fechaHastaCierre}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    const openLink = document.createElement("a");
+    openLink.href = pdfUrl;
+    openLink.target = "_blank";
+    document.body.appendChild(openLink);
+    openLink.click();
+    document.body.removeChild(openLink);
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
+  };
+
+  // Resumen de ingresos y egresos: trae los registros de caja del período y
+  // los separa en dos grupos. Excluye aperturas (2/2) y cierres (1/2) de caja,
+  // que son movimientos operativos y no ingresos/egresos reales.
+  const generarResumenIngresosEgresos = async () => {
+    if (!fechaDesdeIE || !fechaHastaIE) {
+      setError("Seleccione fecha desde y hasta");
+      return;
+    }
+    if (new Date(fechaDesdeIE) > new Date(fechaHastaIE)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setRegistrosIE([]);
+    setResumenIEGenerado(false);
+    try {
+      // El endpoint /rango amplía ±1 día por el desfase UTC; acá se vuelve a
+      // filtrar por la fecha local (hora PY) de cada registro.
+      const { data } = await getRegistrosDiariosCajaPorRango(
+        fechaDesdeIE,
+        fechaHastaIE,
+      );
+      const lista = Array.isArray(data) ? data : [];
+      const filtrados = lista.filter((r) => {
+        const fechaLocal = toLocalDateStr(r.RegistroDiarioCajaFecha);
+        if (fechaLocal < fechaDesdeIE || fechaLocal > fechaHastaIE)
+          return false;
+        // Apertura (2/2) y cierre (1/2) de caja no son ingresos/egresos.
+        if (r.TipoGastoGrupoId === 2) return false;
+        return true;
+      });
+      filtrados.sort((a, b) =>
+        a.RegistroDiarioCajaFecha < b.RegistroDiarioCajaFecha
+          ? -1
+          : a.RegistroDiarioCajaFecha > b.RegistroDiarioCajaFecha
+            ? 1
+            : a.RegistroDiarioCajaId - b.RegistroDiarioCajaId,
+      );
+      setRegistrosIE(filtrados);
+      setResumenIEGenerado(true);
+    } catch (e) {
+      setError(
+        (e as { message?: string })?.message ??
+          "Error al cargar registros por rango de fechas",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportarResumenIngresosEgresosPDF = async () => {
+    if (registrosIE.length === 0) return;
+    const { jsPDF, autoTable } = await loadPdf();
+    const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+    doc.setFontSize(14);
+    doc.text(
+      `Resumen de ingresos y egresos - ${formatDateDDMMYYYY(fechaDesdeIE)} a ${formatDateDDMMYYYY(fechaHastaIE)}`,
+      14,
+      14,
+    );
+
+    const filaIE = (r: RegistroDiarioCajaRow) => [
+      formatFechaHoraLocal(r.RegistroDiarioCajaFecha),
+      r.TipoGastoGrupoDescripcion ?? `Grupo ${r.TipoGastoGrupoId}`,
+      r.RegistroDiarioCajaDetalle ?? "",
+      r.CajaDescripcion ?? String(r.CajaId),
+      r.UsuarioId ?? "",
+      formatMiles(r.RegistroDiarioCajaMonto),
+    ];
+    const head = [["Fecha", "Concepto", "Detalle", "Caja", "Usuario", "Monto"]];
+    const columnStyles = {
+      5: { halign: "right" as const },
+    };
+
+    let y = 24;
+    doc.setFontSize(12);
+    doc.text(`INGRESOS (${ingresosIE.length})`, 14, y);
+    autoTable(doc, {
+      head,
+      body: ingresosIE.map(filaIE),
+      foot: [["", "", "", "", "Total ingresos", formatMiles(totalIngresosIE)]],
+      startY: y + 3,
+      theme: "grid",
+      headStyles: { fillColor: [22, 163, 74], fontSize: 8 },
+      footStyles: {
+        fillColor: [220, 252, 231],
+        textColor: [22, 101, 52],
+        fontStyle: "bold",
+        halign: "right",
+      },
+      styles: { fontSize: 7 },
+      columnStyles,
+      margin: { left: 14, right: 14 },
+    });
+
+    y =
+      (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+        .finalY + 10;
+    if (y > doc.internal.pageSize.getHeight() - 30) {
+      doc.addPage();
+      y = 14;
+    }
+    doc.setFontSize(12);
+    doc.text(`EGRESOS (${egresosIE.length})`, 14, y);
+    autoTable(doc, {
+      head,
+      body: egresosIE.map(filaIE),
+      foot: [["", "", "", "", "Total egresos", formatMiles(totalEgresosIE)]],
+      startY: y + 3,
+      theme: "grid",
+      headStyles: { fillColor: [220, 38, 38], fontSize: 8 },
+      footStyles: {
+        fillColor: [254, 226, 226],
+        textColor: [153, 27, 27],
+        fontStyle: "bold",
+        halign: "right",
+      },
+      styles: { fontSize: 7 },
+      columnStyles,
+      margin: { left: 14, right: 14 },
+    });
+
+    y =
+      (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+        .finalY + 10;
+    if (y > doc.internal.pageSize.getHeight() - 24) {
+      doc.addPage();
+      y = 14;
+    }
+    doc.setFontSize(11);
+    doc.text(
+      `Total ingresos: ${formatMiles(totalIngresosIE)} | Total egresos: ${formatMiles(
+        totalEgresosIE,
+      )} | Diferencia: ${formatMiles(totalIngresosIE - totalEgresosIE)}`,
+      14,
+      y,
+    );
+
+    const pdfBlob = doc.output("blob");
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.download = `resumen_ingresos_egresos_${fechaDesdeIE}_${fechaHastaIE}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    const openLink = document.createElement("a");
+    openLink.href = pdfUrl;
+    openLink.target = "_blank";
+    document.body.appendChild(openLink);
+    openLink.click();
+    document.body.removeChild(openLink);
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
+  };
+
+  // Ventas por tipo de venta (solo mayorista): envío como grupo propio y el
+  // resto por forma de venta (contado/crédito/POS/transferencia), cada grupo
+  // con el detalle de sus ventas y su total.
+  const generarVentasPorTipo = async () => {
+    if (!fechaDesdeTipoV || !fechaHastaTipoV) {
+      setError("Seleccione fecha desde y hasta");
+      return;
+    }
+    if (new Date(fechaDesdeTipoV) > new Date(fechaHastaTipoV)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setVentasPorTipo(null);
+    try {
+      const data = await getVentasPorTipo({
+        fechaDesde: fechaDesdeTipoV,
+        fechaHasta: fechaHastaTipoV,
+      });
+      setVentasPorTipo(data);
+    } catch (e) {
+      setError(
+        (e as { message?: string })?.message ??
+          "Error al obtener las ventas por tipo",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportarVentasPorTipoPDF = async () => {
+    if (!ventasPorTipo || ventasPorTipo.grupos.length === 0) return;
+    const { jsPDF, autoTable } = await loadPdf();
+    const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+    doc.setFontSize(14);
+    doc.text(
+      `Ventas por tipo de venta - ${formatDateDDMMYYYY(fechaDesdeTipoV)} a ${formatDateDDMMYYYY(fechaHastaTipoV)}`,
+      14,
+      14,
+    );
+
+    const head = [["Fecha", "N° venta", "Cliente", "Forma pago", "Total", "Pendiente"]];
+    const columnStyles = {
+      4: { halign: "right" as const },
+      5: { halign: "right" as const },
+    };
+
+    let y = 24;
+    for (const grupo of ventasPorTipo.grupos) {
+      if (y > doc.internal.pageSize.getHeight() - 30) {
+        doc.addPage();
+        y = 14;
+      }
+      doc.setFontSize(12);
+      doc.text(
+        `${labelTipoVenta(grupo.tipo).toUpperCase()} (${grupo.cantidad})`,
+        14,
+        y,
+      );
+      autoTable(doc, {
+        head,
+        body: grupo.ventas.map((v) => [
+          formatFechaHoraLocal(v.VentaFecha),
+          String(v.VentaId),
+          [v.ClienteNombre, v.ClienteApellido].filter(Boolean).join(" ") ||
+            "-",
+          labelTipoVenta(v.VentaTipo),
+          formatMiles(v.Total),
+          v.Pendiente > 0 ? formatMiles(v.Pendiente) : "-",
+        ]),
+        foot: [
+          [
+            "",
+            "",
+            "",
+            `Total ${labelTipoVenta(grupo.tipo)}`,
+            formatMiles(grupo.totalVendido),
+            grupo.totalPendiente > 0 ? formatMiles(grupo.totalPendiente) : "-",
+          ],
+        ],
+        startY: y + 3,
+        theme: "grid",
+        headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+        footStyles: {
+          fillColor: [219, 234, 254],
+          textColor: [30, 64, 175],
+          fontStyle: "bold",
+          halign: "right",
+        },
+        styles: { fontSize: 7 },
+        columnStyles,
+        margin: { left: 14, right: 14 },
+      });
+      y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+    }
+
+    if (y > doc.internal.pageSize.getHeight() - 30) {
+      doc.addPage();
+      y = 14;
+    }
+    doc.setFontSize(11);
+    doc.text("TOTALES", 14, y);
+    y += 6;
+    doc.setFontSize(9);
+    for (const grupo of ventasPorTipo.grupos) {
+      doc.text(
+        `${labelTipoVenta(grupo.tipo)}: ${formatMiles(grupo.totalVendido)} (${grupo.cantidad} venta(s))`,
+        14,
+        y,
+      );
+      y += 5;
+    }
+    y += 1;
+    doc.setFontSize(10);
+    doc.text(
+      `Total general: ${formatMiles(ventasPorTipo.totales.totalVendido)} | ${ventasPorTipo.totales.cantidad} venta(s) | Pendiente: ${formatMiles(
+        ventasPorTipo.totales.totalPendiente,
+      )}`,
+      14,
+      y,
+    );
+
+    const pdfBlob = doc.output("blob");
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.download = `ventas_por_tipo_${fechaDesdeTipoV}_${fechaHastaTipoV}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1895,13 +2356,204 @@ const ReportesPage: React.FC = () => {
           </section>
         )}
 
+        {/* === Sección Ventas por tipo (solo mayorista) === */}
+        {esMayorista && (
+          <section>
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Ventas por tipo
+              </h2>
+              <span className="text-xs text-slate-400">1 reporte</span>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="text-2xl leading-none">🗂️</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-slate-900 text-sm">
+                    Ventas por tipo de venta
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Ventas del período agrupadas por tipo: envío, contado,
+                    crédito, POS y transferencia. Cada grupo con su detalle y
+                    total.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-3 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Desde
+                  </label>
+                  <input
+                    type="date"
+                    value={fechaDesdeTipoV}
+                    onChange={(e) => setFechaDesdeTipoV(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Hasta
+                  </label>
+                  <input
+                    type="date"
+                    value={fechaHastaTipoV}
+                    onChange={(e) => setFechaHastaTipoV(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={loading}
+                  />
+                </div>
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition disabled:opacity-50"
+                  onClick={generarVentasPorTipo}
+                  disabled={loading}
+                >
+                  {loading ? "Cargando…" : "Generar"}
+                </button>
+                {ventasPorTipo && ventasPorTipo.grupos.length > 0 && (
+                  <button
+                    className="bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition"
+                    onClick={exportarVentasPorTipoPDF}
+                  >
+                    Exportar PDF
+                  </button>
+                )}
+              </div>
+
+              {ventasPorTipo && ventasPorTipo.grupos.length === 0 && (
+                <p className="text-sm text-slate-500">
+                  No hay ventas en el período seleccionado.
+                </p>
+              )}
+
+              {ventasPorTipo &&
+                ventasPorTipo.grupos.map((grupo) => (
+                  <React.Fragment key={grupo.tipo}>
+                    <h4 className="font-semibold text-blue-700 text-sm mb-2">
+                      {labelTipoVenta(grupo.tipo)} ({grupo.cantidad})
+                    </h4>
+                    <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
+                      <table className="w-full border-collapse text-sm min-w-[700px]">
+                        <thead className="sticky top-0 bg-blue-50 z-10">
+                          <tr className="border-b border-slate-300">
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Fecha
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              N° venta
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Cliente
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Forma pago
+                            </th>
+                            <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Total
+                            </th>
+                            <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Pendiente
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {grupo.ventas.map((v) => (
+                            <tr
+                              key={v.VentaId}
+                              className="border-b border-slate-200 hover:bg-slate-50"
+                            >
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {formatFechaHoraLocal(v.VentaFecha)}
+                              </td>
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {v.VentaId}
+                              </td>
+                              <td className="py-1.5 px-2 text-slate-700">
+                                {[v.ClienteNombre, v.ClienteApellido]
+                                  .filter(Boolean)
+                                  .join(" ") || "-"}
+                              </td>
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {labelTipoVenta(v.VentaTipo)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {formatMiles(v.Total)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {v.Pendiente > 0
+                                  ? formatMiles(v.Pendiente)
+                                  : "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="sticky bottom-0">
+                          <tr className="bg-blue-100 font-semibold text-blue-900">
+                            <td className="py-2 px-2" colSpan={4}>
+                              Total {labelTipoVenta(grupo.tipo)}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {formatMiles(grupo.totalVendido)}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {grupo.totalPendiente > 0
+                                ? formatMiles(grupo.totalPendiente)
+                                : "-"}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </React.Fragment>
+                ))}
+
+              {ventasPorTipo && ventasPorTipo.grupos.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <h3 className="font-semibold text-slate-800 mb-3">TOTALES</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
+                    {ventasPorTipo.grupos.map((grupo) => (
+                      <div key={grupo.tipo}>
+                        <span className="text-slate-500">
+                          {labelTipoVenta(grupo.tipo)}:
+                        </span>{" "}
+                        <span className="font-mono font-medium">
+                          {formatMiles(grupo.totalVendido)}
+                        </span>
+                      </div>
+                    ))}
+                    <div>
+                      <span className="text-slate-500">Total general:</span>{" "}
+                      <span className="font-mono font-semibold text-slate-900">
+                        {formatMiles(ventasPorTipo.totales.totalVendido)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Ventas:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {ventasPorTipo.totales.cantidad}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Pendiente:</span>{" "}
+                      <span className="font-mono font-medium">
+                        {formatMiles(ventasPorTipo.totales.totalPendiente)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* === Sección Caja === */}
         <section>
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               Caja
             </h2>
-            <span className="text-xs text-slate-400">1 reporte</span>
+            <span className="text-xs text-slate-400">2 reportes</span>
           </div>
           <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
             <div className="flex items-start gap-3 mb-4">
@@ -2140,6 +2792,242 @@ const ReportesPage: React.FC = () => {
             </>
           )}
           </div>
+
+          {/* --- Resumen de ingresos y egresos --- */}
+          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 mt-4">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="text-2xl leading-none">📊</div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-slate-900 text-sm">
+                  Resumen de ingresos y egresos
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Detalle de cada ingreso y cada egreso del período, agrupados y
+                  con su total. Excluye aperturas y cierres de caja.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Desde
+                </label>
+                <input
+                  type="date"
+                  value={fechaDesdeIE}
+                  onChange={(e) => setFechaDesdeIE(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Hasta
+                </label>
+                <input
+                  type="date"
+                  value={fechaHastaIE}
+                  onChange={(e) => setFechaHastaIE(e.target.value)}
+                  className="px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={loading}
+                />
+              </div>
+              <button
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition disabled:opacity-50"
+                onClick={generarResumenIngresosEgresos}
+                disabled={loading}
+              >
+                {loading ? "Cargando…" : "Generar"}
+              </button>
+              {registrosIE.length > 0 && (
+                <button
+                  className="bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition"
+                  onClick={exportarResumenIngresosEgresosPDF}
+                >
+                  Exportar PDF
+                </button>
+              )}
+            </div>
+
+            {resumenIEGenerado && registrosIE.length === 0 && (
+              <p className="text-sm text-slate-500">
+                No hay ingresos ni egresos en el período seleccionado.
+              </p>
+            )}
+
+            {registrosIE.length > 0 && (
+              <>
+                {/* Grupo INGRESOS */}
+                <h4 className="font-semibold text-green-700 text-sm mb-2">
+                  Ingresos ({ingresosIE.length})
+                </h4>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
+                  <table className="w-full border-collapse text-sm min-w-[700px]">
+                    <thead className="sticky top-0 bg-green-50 z-10">
+                      <tr className="border-b border-slate-300">
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Fecha
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Concepto
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Detalle
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Caja
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Usuario
+                        </th>
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Monto
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingresosIE.map((r) => (
+                        <tr
+                          key={r.RegistroDiarioCajaId}
+                          className="border-b border-slate-200 hover:bg-slate-50"
+                        >
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {formatFechaHoraLocal(r.RegistroDiarioCajaFecha)}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.TipoGastoGrupoDescripcion ??
+                              `Grupo ${r.TipoGastoGrupoId}`}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-700">
+                            {r.RegistroDiarioCajaDetalle ?? ""}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.CajaDescripcion ?? r.CajaId}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.UsuarioId}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                            {formatMiles(r.RegistroDiarioCajaMonto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0">
+                      <tr className="bg-green-100 font-semibold text-green-900">
+                        <td className="py-2 px-2" colSpan={5}>
+                          Total ingresos
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono">
+                          {formatMiles(totalIngresosIE)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Grupo EGRESOS */}
+                <h4 className="font-semibold text-red-700 text-sm mb-2">
+                  Egresos ({egresosIE.length})
+                </h4>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
+                  <table className="w-full border-collapse text-sm min-w-[700px]">
+                    <thead className="sticky top-0 bg-red-50 z-10">
+                      <tr className="border-b border-slate-300">
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Fecha
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Concepto
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Detalle
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Caja
+                        </th>
+                        <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Usuario
+                        </th>
+                        <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                          Monto
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {egresosIE.map((r) => (
+                        <tr
+                          key={r.RegistroDiarioCajaId}
+                          className="border-b border-slate-200 hover:bg-slate-50"
+                        >
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {formatFechaHoraLocal(r.RegistroDiarioCajaFecha)}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.TipoGastoGrupoDescripcion ??
+                              `Grupo ${r.TipoGastoGrupoId}`}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-700">
+                            {r.RegistroDiarioCajaDetalle ?? ""}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.CajaDescripcion ?? r.CajaId}
+                          </td>
+                          <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                            {r.UsuarioId}
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                            {formatMiles(r.RegistroDiarioCajaMonto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0">
+                      <tr className="bg-red-100 font-semibold text-red-900">
+                        <td className="py-2 px-2" colSpan={5}>
+                          Total egresos
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono">
+                          {formatMiles(totalEgresosIE)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Totales generales */}
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <h3 className="font-semibold text-slate-800 mb-3">TOTALES</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <span className="text-slate-500">Total ingresos:</span>{" "}
+                      <span className="font-mono font-medium text-green-700">
+                        {formatMiles(totalIngresosIE)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Total egresos:</span>{" "}
+                      <span className="font-mono font-medium text-red-700">
+                        {formatMiles(totalEgresosIE)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Diferencia:</span>{" "}
+                      <span
+                        className={`font-mono font-medium ${
+                          totalIngresosIE - totalEgresosIE < 0
+                            ? "text-red-700"
+                            : "text-slate-800"
+                        }`}
+                      >
+                        {formatMiles(totalIngresosIE - totalEgresosIE)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </section>
       </div>
 
@@ -2328,6 +3216,63 @@ const ReportesPage: React.FC = () => {
 
             {reporteActivo === "masvendidos" && (
               <div className="space-y-4">
+                <div className="relative">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Producto
+                  </label>
+                  <input
+                    type="text"
+                    value={productoBusquedaTop}
+                    placeholder="Escribí para buscar, o TODOS"
+                    onChange={(e) => {
+                      setProductoBusquedaTop(e.target.value);
+                      setProductoListaAbiertaTop(true);
+                      setProductoHighlightTop(0);
+                    }}
+                    onFocus={(e) => {
+                      e.target.select();
+                      setProductoListaAbiertaTop(true);
+                      setProductoHighlightTop(0);
+                    }}
+                    onMouseUp={(e) => e.preventDefault()}
+                    onKeyDown={onKeyDownProducto}
+                    onBlur={() =>
+                      setTimeout(() => setProductoListaAbiertaTop(false), 150)
+                    }
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                    disabled={loading}
+                  />
+                  {productoListaAbiertaTop && (
+                    <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg text-sm">
+                      {opcionesProducto.map((op, idx) => {
+                        const activo = idx === productoHighlightTop;
+                        return (
+                          <li
+                            key={op.id}
+                            ref={activo ? productoHighlightTopRef : null}
+                            onMouseDown={() =>
+                              seleccionarProducto(op.id, op.label)
+                            }
+                            onMouseEnter={() => setProductoHighlightTop(idx)}
+                            className={`px-3 py-2 cursor-pointer ${
+                              op.id === "TODOS" ? "font-medium" : ""
+                            } ${activo ? "bg-blue-100" : "hover:bg-slate-100"}`}
+                          >
+                            {op.label}
+                          </li>
+                        );
+                      })}
+                      {opcionesProducto.length === 1 &&
+                        productoBusquedaTop.trim() &&
+                        productoBusquedaTop.trim().toLowerCase() !==
+                          "todos" && (
+                          <li className="px-3 py-2 text-slate-400">
+                            Sin resultados
+                          </li>
+                        )}
+                    </ul>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">

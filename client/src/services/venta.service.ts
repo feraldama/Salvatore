@@ -521,6 +521,54 @@ export const getVentasPorVendedor = async (params: {
   }
 };
 
+// --- Reporte de ventas por tipo de venta (envío / contado / crédito / etc.) ---
+export interface VentasTipoGrupo {
+  /** "ENVIO" (EsEnvio='S') o el VentaTipo: "CO" | "CR" | "PO" | "TR" */
+  tipo: string;
+  cantidad: number;
+  totalVendido: number;
+  totalEntregado: number;
+  totalPendiente: number;
+  ventas: EnvioVenta[];
+}
+
+export interface VentasPorTipo {
+  grupos: VentasTipoGrupo[];
+  totales: {
+    cantidad: number;
+    totalVendido: number;
+    totalEntregado: number;
+    totalPendiente: number;
+  };
+}
+
+export const getVentasPorTipo = async (params: {
+  fechaDesde?: string;
+  fechaHasta?: string;
+}): Promise<VentasPorTipo> => {
+  try {
+    const response = await api.get("/venta/reporte-por-tipo", { params });
+    return (
+      response.data?.data ?? {
+        grupos: [],
+        totales: {
+          cantidad: 0,
+          totalVendido: 0,
+          totalEntregado: 0,
+          totalPendiente: 0,
+        },
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener las ventas por tipo",
+      }
+    );
+  }
+};
+
 export interface VentaPorDia {
   fecha: string; // YYYY-MM-DD
   total: number;

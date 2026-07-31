@@ -112,7 +112,10 @@ export interface RegistroDiarioCajaRow {
   RegistroDiarioCajaMonto: number;
   TipoGastoId: number;
   TipoGastoGrupoId: number;
+  RegistroDiarioCajaDetalle?: string;
   CajaDescripcion?: string;
+  TipoGastoDescripcion?: string;
+  TipoGastoGrupoDescripcion?: string;
 }
 
 export const getRegistroDiarioCajaById = async (id: string | number) => {

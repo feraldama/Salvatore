@@ -717,8 +717,10 @@ const Producto = {
    *   - Calcular ganancia = MontoVendido - CostoVendido.
    *
    * Ordena DESC por total de unidades vendidas.
+   *
+   * `productoId` (opcional): si viene, limita el reporte a ese producto.
    */
-  getReporteMasVendidos: (fechaDesde, fechaHasta, empresaId) => {
+  getReporteMasVendidos: (fechaDesde, fechaHasta, empresaId, productoId) => {
     return new Promise((resolve, reject) => {
       // La agregación va en subquery por ProductoId y recién después se
       // cruza con producto. Si se hacía GROUP BY sobre producto directo,
@@ -730,6 +732,7 @@ const Producto = {
       // lo que rompía `v.CantidadVendidaCajas`. Con alias minúscula en el subquery
       // las referencias coinciden, y recién en el SELECT externo re-aliaseamos a
       // PascalCase para que el mapper devuelva las claves que espera el JS.
+      const filtroProducto = productoId ? "AND vp.ProductoId = ?" : "";
       const query = `
         SELECT
           p.ProductoId,
@@ -761,13 +764,17 @@ const Producto = {
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
             AND vv.EmpresaId = ?
+            ${filtroProducto}
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId
         WHERE p.EmpresaId = ?
           AND (v.vendida_cajas <> 0 OR v.vendida_unidades <> 0)
       `;
-      db.query(query, [fechaDesde, fechaHasta, empresaId, empresaId], (err, rows) => {
+      const params = [fechaDesde, fechaHasta, empresaId];
+      if (productoId) params.push(productoId);
+      params.push(empresaId);
+      db.query(query, params, (err, rows) => {
         if (err) return reject(err);
         const productos = rows
           .map((r) => {

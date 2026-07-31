@@ -540,6 +540,41 @@ exports.getVentasPorVendedor = async (req, res) => {
   }
 };
 
+// GET /venta/reporte-por-tipo?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
+// Ventas agrupadas por tipo de venta: envío (EsEnvio='S') como grupo propio y
+// el resto por VentaTipo (CO/CR/PO/TR). Scopeado a la empresa activa
+// (req.empresaId). Las fechas son opcionales.
+exports.getVentasPorTipo = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (fechaDesde && !isoRegex.test(fechaDesde)) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaHasta && !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "fechaHasta debe tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getVentasPorTipo({
+      empresaId: req.empresaId,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener ventas por tipo:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // GET /venta/deliveries?estado=&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
 // Lista de ventas marcadas como DELIVERY (minorista) con su chofer y estado de
 // reparto, para la pantalla de gestión. Scopeado a la empresa activa.

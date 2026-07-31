@@ -256,7 +256,7 @@ exports.getReporteMovimientos = async (req, res) => {
 // Reporte de productos más vendidos en un rango de fechas
 exports.getReporteMasVendidos = async (req, res) => {
   try {
-    const { fechaDesde, fechaHasta } = req.query;
+    const { fechaDesde, fechaHasta, productoId } = req.query;
     if (!fechaDesde || !fechaHasta) {
       return res.status(400).json({
         message: "Debe enviar fechaDesde y fechaHasta en el query string",
@@ -273,10 +273,19 @@ exports.getReporteMasVendidos = async (req, res) => {
         message: "fechaDesde no puede ser mayor que fechaHasta",
       });
     }
+    // productoId opcional: limita el reporte a un solo producto.
+    let productoIdNum = null;
+    if (productoId != null && productoId !== "" && String(productoId).toUpperCase() !== "TODOS") {
+      productoIdNum = Number(productoId);
+      if (!Number.isInteger(productoIdNum) || productoIdNum <= 0) {
+        return res.status(400).json({ message: "productoId inválido" });
+      }
+    }
     const { productos } = await Producto.getReporteMasVendidos(
       fechaDesde,
       fechaHasta,
-      req.empresaId
+      req.empresaId,
+      productoIdNum
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {

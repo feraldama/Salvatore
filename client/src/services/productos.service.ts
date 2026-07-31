@@ -282,14 +282,16 @@ export interface ReporteMasVendidosResponse {
  * a menor cantidad total vendida (en unidades). La cantidad ya viene
  * normalizada a unidades (cajas convertidas con ProductoCantidadCaja); el
  * frontend divide nuevamente para mostrar "cajas + unidades".
+ * `productoId` (opcional): limita el reporte a un solo producto.
  */
 export const getReporteMasVendidos = async (
   fechaDesde: string,
-  fechaHasta: string
+  fechaHasta: string,
+  productoId?: number
 ): Promise<ReporteMasVendidosResponse> => {
   try {
     const response = await api.get("/productos/reporte-mas-vendidos", {
-      params: { fechaDesde, fechaHasta },
+      params: { fechaDesde, fechaHasta, productoId: productoId || undefined },
     });
     return response.data?.data as ReporteMasVendidosResponse;
   } catch (error) {

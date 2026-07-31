@@ -1421,6 +1421,84 @@ const Venta = {
   // vía cliente. Las ventas sin vendedor caen en un grupo aparte (id null). El
   // porcentaje de comisión NO se calcula acá: el reporte lo aplica con un % que
   // ingresa el usuario sobre el total vendido. Scope por empresa; fechas opc.
+  // Ventas del período agrupadas por tipo de venta. Los envíos (EsEnvio='S')
+  // forman su propio grupo; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
+  // El agrupado se arma en JS para devolver también el detalle de cada venta.
+  getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
+    const pe = db.promise();
+    const cond = ["v.EmpresaId = ?"];
+    const params = [Number(empresaId)];
+    if (fechaDesde) {
+      cond.push("DATE(v.VentaFecha) >= ?");
+      params.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      cond.push("DATE(v.VentaFecha) <= ?");
+      params.push(fechaHasta);
+    }
+    const where = cond.join(" AND ");
+
+    const [rows] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.EsEnvio, v.Total,
+              v.VentaEntrega, (v.Total - v.VentaEntrega) AS Pendiente,
+              c.ClienteNombre, c.ClienteApellido
+         FROM venta v
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE ${where}
+        ORDER BY v.VentaFecha ASC, v.VentaId ASC`,
+      params
+    );
+
+    const grupos = new Map();
+    for (const r of rows) {
+      const tipo = r.EsEnvio === "S" ? "ENVIO" : r.VentaTipo;
+      if (!grupos.has(tipo)) {
+        grupos.set(tipo, {
+          tipo,
+          cantidad: 0,
+          totalVendido: 0,
+          totalEntregado: 0,
+          totalPendiente: 0,
+          ventas: [],
+        });
+      }
+      const g = grupos.get(tipo);
+      g.ventas.push({
+        VentaId: r.VentaId,
+        VentaFecha: r.VentaFecha,
+        VentaTipo: r.VentaTipo,
+        Total: Number(r.Total) || 0,
+        VentaEntrega: Number(r.VentaEntrega) || 0,
+        Pendiente: Number(r.Pendiente) || 0,
+        ClienteNombre: r.ClienteNombre ?? null,
+        ClienteApellido: r.ClienteApellido ?? null,
+      });
+      g.cantidad += 1;
+      g.totalVendido += Number(r.Total) || 0;
+      g.totalEntregado += Number(r.VentaEntrega) || 0;
+      g.totalPendiente += Number(r.Pendiente) || 0;
+    }
+
+    const ORDEN_TIPOS = ["ENVIO", "CO", "CR", "PO", "TR"];
+    const lista = [...grupos.values()].sort((a, b) => {
+      const ia = ORDEN_TIPOS.indexOf(a.tipo);
+      const ib = ORDEN_TIPOS.indexOf(b.tipo);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    const totales = lista.reduce(
+      (acc, g) => ({
+        cantidad: acc.cantidad + g.cantidad,
+        totalVendido: acc.totalVendido + g.totalVendido,
+        totalEntregado: acc.totalEntregado + g.totalEntregado,
+        totalPendiente: acc.totalPendiente + g.totalPendiente,
+      }),
+      { cantidad: 0, totalVendido: 0, totalEntregado: 0, totalPendiente: 0 }
+    );
+
+    return { grupos: lista, totales };
+  },
+
   getVentasPorVendedor: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
     const cond = ["v.EmpresaId = ?"];
