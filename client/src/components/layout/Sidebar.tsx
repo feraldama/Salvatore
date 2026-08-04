@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   Disclosure,
   DisclosureButton,
@@ -217,6 +217,20 @@ function NavGroup({ item, onNavigate }: NavGroupProps) {
   );
   const isOpen = childActive;
 
+  // Al abrir el grupo, hace scroll para que las opciones del submenú queden
+  // visibles. Se omite la apertura inicial (defaultOpen por ruta activa) para
+  // no mover el scroll al cargar la página. El panel se monta al abrirse, así
+  // que el ref callback actúa como señal de "se abrió".
+  const skipInitialScroll = useRef(isOpen);
+  const scrollPanelIntoView = useCallback((el: HTMLElement | null) => {
+    if (!el) return;
+    if (skipInitialScroll.current) {
+      skipInitialScroll.current = false;
+      return;
+    }
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
+
   return (
     <Disclosure as="div" defaultOpen={isOpen}>
       {({ open }) => (
@@ -244,7 +258,7 @@ function NavGroup({ item, onNavigate }: NavGroupProps) {
               } text-sidebar-text/70`}
             />
           </DisclosureButton>
-          <DisclosurePanel as="ul" className="mt-1 space-y-0.5">
+          <DisclosurePanel ref={scrollPanelIntoView} as="ul" className="mt-1 space-y-0.5">
             {item.children?.map((child) => {
               const isActive = location.pathname === child.href;
               return (
