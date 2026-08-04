@@ -60,6 +60,7 @@ interface Venta {
   VentaFecha: string;
   VentaTipo: string;
   Total: number;
+  MontoCompra: number;
   VentaEntrega: number;
   SaldoPendiente: number;
   Pagos: Pago[];
@@ -798,6 +799,7 @@ const ReportesPage: React.FC = () => {
 
       // Totales por tipo de venta
       let totalVentas = 0;
+      let totalCompra = 0;
       let totalSaldoPendiente = 0;
       let totalEfectivo = 0;
       let totalPOS = 0;
@@ -824,8 +826,11 @@ const ReportesPage: React.FC = () => {
           .join(" ")
           .trim() || "-";
         const usuarioId = String(venta.UsuarioId ?? venta.VentaUsuario ?? "").trim() || "-";
+        const montoCompra = Number(venta.MontoCompra) || 0;
+        const ganancia = Number(venta.Total) - montoCompra;
 
         totalVentas += Number(venta.Total);
+        totalCompra += montoCompra;
         if (venta.VentaTipo === "CO") totalEfectivo += Number(venta.Total);
         else if (venta.VentaTipo === "PO") totalPOS += Number(venta.Total);
         else if (venta.VentaTipo === "TR") totalTransfer += Number(venta.Total);
@@ -841,6 +846,8 @@ const ReportesPage: React.FC = () => {
             fechaVenta,
             tipoVenta,
             formatMiles(venta.Total),
+            formatMiles(montoCompra),
+            formatMiles(ganancia),
             venta.VentaTipo === "CR" ? formatMiles(venta.SaldoPendiente) : "-",
             usuarioId,
           ]);
@@ -850,6 +857,8 @@ const ReportesPage: React.FC = () => {
             fechaVenta,
             tipoVenta,
             formatMiles(venta.Total),
+            formatMiles(montoCompra),
+            formatMiles(ganancia),
             venta.VentaTipo === "CR" ? formatMiles(venta.SaldoPendiente) : "-",
             usuarioId,
           ]);
@@ -860,35 +869,39 @@ const ReportesPage: React.FC = () => {
           venta.Pagos.forEach((pago) => {
             const fechaPago = formatearFechaHora(pago.VentaCreditoPagoFecha);
             if (esTodos) {
-              ventasRows.push(["", "", fechaPago, `  Pago ${pago.VentaCreditoPagoId}`, formatMiles(pago.VentaCreditoPagoMonto), "", ""]);
+              ventasRows.push(["", "", fechaPago, `  Pago ${pago.VentaCreditoPagoId}`, formatMiles(pago.VentaCreditoPagoMonto), "", "", "", ""]);
             } else {
-              ventasRows.push(["", fechaPago, `  Pago ${pago.VentaCreditoPagoId}`, formatMiles(pago.VentaCreditoPagoMonto), "", ""]);
+              ventasRows.push(["", fechaPago, `  Pago ${pago.VentaCreditoPagoId}`, formatMiles(pago.VentaCreditoPagoMonto), "", "", "", ""]);
             }
           });
         }
       });
 
       const tableHead = esTodos
-        ? [["ID", "CLIENTE", "FECHA", "TIPO", "TOTAL", "SALDO PEND.", "USUARIO"]]
-        : [["ID", "FECHA", "TIPO", "TOTAL", "SALDO PEND.", "USUARIO"]];
+        ? [["ID", "CLIENTE", "FECHA", "TIPO", "TOTAL", "COMPRA", "GANANCIA", "SALDO PEND.", "USUARIO"]]
+        : [["ID", "FECHA", "TIPO", "TOTAL", "COMPRA", "GANANCIA", "SALDO PEND.", "USUARIO"]];
 
       const columnStyles: Record<number, { cellWidth: number }> = esTodos
         ? {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 45 },
-            2: { cellWidth: 28 },
-            3: { cellWidth: 28 },
-            4: { cellWidth: 32 },
-            5: { cellWidth: 35 },
-            6: { cellWidth: 25 },
+            0: { cellWidth: 15 },
+            1: { cellWidth: 42 },
+            2: { cellWidth: 26 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 28 },
+            5: { cellWidth: 28 },
+            6: { cellWidth: 28 },
+            7: { cellWidth: 28 },
+            8: { cellWidth: 20 },
           }
         : {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 28 },
-            2: { cellWidth: 28 },
-            3: { cellWidth: 32 },
-            4: { cellWidth: 35 },
-            5: { cellWidth: 25 },
+            0: { cellWidth: 13 },
+            1: { cellWidth: 26 },
+            2: { cellWidth: 18 },
+            3: { cellWidth: 26 },
+            4: { cellWidth: 26 },
+            5: { cellWidth: 26 },
+            6: { cellWidth: 26 },
+            7: { cellWidth: 18 },
           };
 
       autoTable(doc, {
@@ -897,7 +910,7 @@ const ReportesPage: React.FC = () => {
         startY: y,
         theme: "grid",
         headStyles: { fillColor: [22, 163, 74] },
-        styles: { fontSize: esTodos ? 9 : 10 },
+        styles: { fontSize: esTodos ? 8 : 9 },
         margin: { left: 14, right: 14 },
         columnStyles,
       });
@@ -912,6 +925,14 @@ const ReportesPage: React.FC = () => {
       y += 6;
       doc.setFontSize(10);
       doc.text(`Total Ventas: Gs. ${formatMiles(totalVentas)}`, 14, y);
+      y += 6;
+      doc.text(`Total Compra: Gs. ${formatMiles(totalCompra)}`, 14, y);
+      y += 6;
+      doc.text(
+        `Ganancia (Ventas - Compra): Gs. ${formatMiles(totalVentas - totalCompra)}`,
+        14,
+        y,
+      );
       y += 6;
       doc.text(
         `Efectivo: ${formatMiles(totalEfectivo)} | POS: ${formatMiles(totalPOS)} | Transfer: ${formatMiles(totalTransfer)} | Crédito: ${formatMiles(totalCredito)}`,

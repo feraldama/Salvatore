@@ -730,7 +730,12 @@ const Venta = {
             c.ClienteRUC,
             a.AlmacenNombre,
             u.UsuarioNombre,
-            v.VentaUsuario AS UsuarioId
+            v.VentaUsuario AS UsuarioId,
+            COALESCE((
+              SELECT SUM(vp.VentaProductoPrecioPromedio * vp.VentaProductoCantidad)
+              FROM ventaproducto vp
+              WHERE vp.VentaId = v.VentaId
+            ), 0) AS MontoCompra
           FROM venta v
           LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
           LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
