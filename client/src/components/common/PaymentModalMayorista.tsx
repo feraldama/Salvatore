@@ -30,6 +30,9 @@ interface PaymentModalMayoristaProps {
   setVoucher: (v: number) => void;
   ventaNroPOS: string;
   setVentaNroPOS: (v: string) => void;
+  // Un monto a crédito queda en la cuenta corriente del cliente, así que
+  // exige tener seleccionado un cliente real (no el genérico "SIN NOMBRE").
+  clienteValidoParaCredito: boolean;
 }
 
 const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
@@ -56,6 +59,7 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
   setVoucher,
   ventaNroPOS,
   setVentaNroPOS,
+  clienteValidoParaCredito,
 }) => {
   const esEnvio = tipoVenta === "ENVIO";
   // En CONTADO el pad escribe sobre el método enfocado; en ENVIO siempre la seña.
@@ -198,11 +202,21 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
     }
   };
 
+  // Si parte de la venta queda a crédito (cuenta corriente), no se puede
+  // facturar con el cliente genérico: hay que elegir a quién se le fía.
+  const faltaClienteParaCredito =
+    !clienteValidoParaCredito &&
+    (esEnvio ? permitirCC && pendienteCC > 0 : cuentaCliente > 0);
+
   const puedeConfirmar = esEnvio
     ? !isSubmitting &&
       ventaNroPOSValido &&
-      (permitirCC || pendienteCC === 0)
-    : !isSubmitting && totalRest <= 0 && ventaNroPOSValido;
+      (permitirCC || pendienteCC === 0) &&
+      !faltaClienteParaCredito
+    : !isSubmitting &&
+      totalRest <= 0 &&
+      ventaNroPOSValido &&
+      !faltaClienteParaCredito;
 
   const handleSendRequest = async () => {
     if (!puedeConfirmar) return;
@@ -359,9 +373,19 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
                       setCuentaCliente(v);
                       recomputeContado({ cuentaCliente: v });
                     }}
-                    className={moneyInputCls(pagoTipo === "C")}
+                    className={moneyInputCls(
+                      pagoTipo === "C",
+                      faltaClienteParaCredito,
+                    )}
                   />
                 </div>
+              )}
+
+              {!esEnvio && faltaClienteParaCredito && (
+                <p className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">
+                  Para dejar un monto a crédito tenés que seleccionar un
+                  cliente (no se puede fiar a «SIN NOMBRE MINORISTA»).
+                </p>
               )}
 
           {/* ENVÍO: hay que cobrar el total. El saldo solo queda en cuenta
@@ -380,12 +404,20 @@ const PaymentModalMayorista: React.FC<PaymentModalMayoristaProps> = ({
 
               {pendienteCC > 0 &&
                 (permitirCC ? (
-                  <div className={`${rowCls} mt-2`}>
-                    <span className={labelCls}>Crédito:</span>
-                    <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
-                      {formatMiles(pendienteCC)}
+                  <>
+                    <div className={`${rowCls} mt-2`}>
+                      <span className={labelCls}>Crédito:</span>
+                      <div className="w-32 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-base text-right font-num font-semibold text-amber-700">
+                        {formatMiles(pendienteCC)}
+                      </div>
                     </div>
-                  </div>
+                    {faltaClienteParaCredito && (
+                      <p className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">
+                        Para dejar un monto a crédito tenés que seleccionar un
+                        cliente (no se puede fiar a «SIN NOMBRE MINORISTA»).
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <p className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-sm text-danger-700">
                     Falta cobrar Gs. {formatMiles(pendienteCC)}. Completá el

@@ -28,11 +28,14 @@ interface VentaPendiente {
 
 import type { Caja } from "../../types";
 
+// Medios de cobro por empresa (pedido del cliente): en la Distribuidora
+// (mayorista, tipo 'D') no se usa POS — solo contado o transferencia; en la
+// Bodega (minorista, tipo 'M') no se usa transferencia — solo contado o POS.
+// "Crédito" no aplica acá: esta pantalla cobra créditos, no los genera.
 const TIPOS_PAGO = [
-  { value: "CO", label: "Contado" },
-  { value: "CR", label: "Crédito" },
-  { value: "PO", label: "POS" },
-  { value: "TR", label: "Transfer" },
+  { value: "CO", label: "Contado", empresas: ["D", "M"] },
+  { value: "PO", label: "POS", empresas: ["M"] },
+  { value: "TR", label: "Transfer", empresas: ["D"] },
 ];
 
 const CreditoPagosPage = () => {
@@ -54,9 +57,28 @@ const CreditoPagosPage = () => {
     new Date().toISOString().split("T")[0]
   );
   const [totalDeuda, setTotalDeuda] = useState<number>(0);
-  const { user } = useAuth();
+  const { user, empresaActiva } = useAuth();
   const navigate = useNavigate();
   const [cajaAperturada, setCajaAperturada] = useState<Caja | null>(null);
+
+  // Tipo de la empresa con la que se opera: la activa del switcher (admins) o
+  // la del usuario (regulares). Determina qué medios de cobro se ofrecen.
+  const empresaTipo = empresaActiva?.EmpresaTipo ?? user?.EmpresaTipo ?? "";
+  const tiposPagoDisponibles = useMemo(
+    () =>
+      empresaTipo
+        ? TIPOS_PAGO.filter((t) => t.empresas.includes(empresaTipo))
+        : TIPOS_PAGO,
+    [empresaTipo]
+  );
+
+  // Si al cambiar de empresa el medio elegido deja de estar disponible
+  // (ej. POS en la Distribuidora), volver a Contado.
+  useEffect(() => {
+    if (!tiposPagoDisponibles.some((t) => t.value === tipoPago)) {
+      setTipoPago("CO");
+    }
+  }, [tiposPagoDisponibles, tipoPago]);
 
   useEffect(() => {
     const fetchCaja = async () => {
@@ -362,7 +384,7 @@ const CreditoPagosPage = () => {
                 onChange={(e) => setTipoPago(e.target.value)}
                 className="mt-1 block w-full h-10 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
               >
-                {TIPOS_PAGO.map((tipo) => (
+                {tiposPagoDisponibles.map((tipo) => (
                   <option key={tipo.value} value={tipo.value}>
                     {tipo.label}
                   </option>

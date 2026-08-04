@@ -233,8 +233,11 @@ export default function Inventario() {
   const fetchProductos = useCallback(async () => {
     setLoading(true);
     try {
-      const localUsuario = Number(user?.LocalId);
-      const filters = localUsuario ? { localIdOrZero: localUsuario } : undefined;
+      // Catálogo por empresa activa (header X-Empresa-Id del interceptor). No
+      // se filtra por el LocalId del JWT: para un admin ese local es fijo y
+      // puede ser de OTRA empresa — cruzado con el scope de empresa dejaba el
+      // inventario vacío (0 productos) al mirar la empresa que no coincidía.
+      const filters = undefined;
       const data = busquedaDebounced.trim()
         ? await searchProductos(
             busquedaDebounced.trim(),
@@ -267,7 +270,7 @@ export default function Inventario() {
     }
     // refreshKey se incluye a propósito para forzar el re-fetch desde sendRequest
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busquedaDebounced, currentPage, itemsPerPage, user?.LocalId, refreshKey]);
+  }, [busquedaDebounced, currentPage, itemsPerPage, refreshKey]);
 
   useEffect(() => {
     fetchProductos();

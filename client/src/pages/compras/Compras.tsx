@@ -24,6 +24,7 @@ import { formatMiles } from "../../utils/utils";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
 import { getLocalById } from "../../services/locales.service";
+import { getAlmacenByLocal } from "../../services/almacenes.service";
 
 import type { Proveedor } from "../../types";
 
@@ -78,7 +79,44 @@ export default function Compras() {
     }[]
   >([]);
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+  const { user, empresaActiva, localActiva } = useAuth();
+  // Almacén destino del stock de la compra. Para el admin se resuelve por la
+  // sucursal activa del switcher (su almacén del JWT es fijo y puede ser de
+  // OTRA empresa — comprar con ese cargaba stock en el almacén equivocado);
+  // para el usuario regular es su almacén de siempre. null = no hay almacén
+  // válido y la operación se bloquea con un mensaje.
+  const [almacenCompraId, setAlmacenCompraId] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    const resolver = async () => {
+      if (user?.isAdmin === "S") {
+        const localId = localActiva?.LocalId;
+        if (!localId) {
+          if (!cancelado) setAlmacenCompraId(null);
+          return;
+        }
+        try {
+          const alm = await getAlmacenByLocal(localId);
+          if (!cancelado) setAlmacenCompraId(Number(alm?.AlmacenId) || null);
+        } catch {
+          if (!cancelado) setAlmacenCompraId(null);
+        }
+        return;
+      }
+      const propio = Number(user?.AlmacenId ?? user?.LocalId);
+      if (!cancelado) setAlmacenCompraId(propio > 0 ? propio : null);
+    };
+    resolver();
+    return () => {
+      cancelado = true;
+    };
+  }, [
+    user?.isAdmin,
+    user?.AlmacenId,
+    user?.LocalId,
+    localActiva?.LocalId,
+    empresaActiva?.EmpresaId,
+  ]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [showProveedorModal, setShowProveedorModal] = useState(false);
   const [proveedorSeleccionado, setProveedorSeleccionado] =
@@ -200,11 +238,11 @@ export default function Compras() {
   const fetchProductos = useCallback(async () => {
     setLoading(true);
     try {
-      // El backend filtra por el local del usuario incluyendo los productos
-      // "universales" (LocalId=0). Así la paginación ya devuelve exactamente
-      // los ítems visibles y no quedan páginas incompletas.
-      const localUsuario = Number(user?.LocalId);
-      const filters = localUsuario ? { localIdOrZero: localUsuario } : undefined;
+      // Catálogo por empresa activa (header X-Empresa-Id del interceptor). No
+      // se filtra por el LocalId del JWT: para un admin ese local es fijo y
+      // puede ser de OTRA empresa — cruzado con el scope de empresa dejaba la
+      // lista vacía al mirar la empresa que no coincidía.
+      const filters = undefined;
       const data = busquedaDebounced.trim()
         ? await searchProductos(
             busquedaDebounced.trim(),
@@ -235,7 +273,7 @@ export default function Compras() {
     } finally {
       setLoading(false);
     }
-  }, [busquedaDebounced, currentPage, itemsPerPage, user?.LocalId]);
+  }, [busquedaDebounced, currentPage, itemsPerPage]);
 
   useEffect(() => {
     fetchProductos();
@@ -375,6 +413,28 @@ export default function Compras() {
       return;
     }
 
+    // Guardrail: el ingreso de stock necesita un almacén real DE LA EMPRESA
+    // ACTIVA (almacenCompraId se resuelve por sucursal para admins). Sin
+    // almacén válido se bloquea la compra en vez de cargar stock en un
+    // almacén de otra empresa.
+    const almacenCompra = Number(almacenCompraId);
+    if (
+      !almacenCompra ||
+      (user?.isAdmin !== "S" && Number(user?.LocalId) === 0)
+    ) {
+      const esAdmin = user?.isAdmin === "S";
+      await Swal.fire({
+        icon: "warning",
+        title: esAdmin ? "Seleccioná una sucursal" : "Sin local asignado",
+        text: esAdmin
+          ? "Para comprar, elegí una sucursal de la empresa activa en el selector (arriba). El stock ingresa al almacén de esa sucursal."
+          : "Tu usuario no tiene un local válido (figura como \"TODOS\"). " +
+            "Pedí al administrador que te asigne un local real (ej. SALON) para poder operar el stock.",
+        confirmButtonColor: "#3085d6",
+      });
+      return;
+    }
+
     // Bloqueo de doble envío: si ya hay una compra en curso, ignoro el clic.
     if (enviandoCompraRef.current) return;
     enviandoCompraRef.current = true;
@@ -394,7 +454,7 @@ export default function Compras() {
           ProductoId: Number(p.id),
           CompraProductoCantidad: Number(p.cantidad),
           CompraProductoPrecio: Number(p.precioUnitario),
-          AlmacenId: Number(user.AlmacenId ?? user.LocalId ?? 1),
+          AlmacenId: almacenCompra,
           Bonificacion: 0,
           CompraProductoCantidadUnidad: p.caja ? "C" : "U",
         })),

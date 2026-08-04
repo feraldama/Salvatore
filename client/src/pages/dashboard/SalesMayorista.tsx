@@ -1668,6 +1668,10 @@ export default function SalesMayorista() {
         setVoucher={setVoucher}
         ventaNroPOS={ventaNroPOS}
         setVentaNroPOS={setVentaNroPOS}
+        clienteValidoParaCredito={
+          clienteSeleccionado != null &&
+          Number(clienteSeleccionado.ClienteId) !== 1
+        }
       />
     </div>
   );

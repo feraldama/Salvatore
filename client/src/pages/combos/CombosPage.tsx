@@ -11,7 +11,6 @@ import Pagination from "../../components/common/Pagination";
 import Swal from "sweetalert2";
 import { getProductosAll } from "../../services/productos.service";
 import { usePermiso } from "../../hooks/usePermiso";
-import { useAuth } from "../../contexts/useAuth";
 import {
   LoadingState,
   ErrorState,
@@ -54,8 +53,6 @@ export default function CombosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
 
-  const { user } = useAuth();
-
   const puedeCrear = usePermiso("COMBOS", "crear");
   const puedeEditar = usePermiso("COMBOS", "editar");
   const puedeEliminar = usePermiso("COMBOS", "eliminar");
@@ -83,10 +80,11 @@ export default function CombosPage() {
 
   useEffect(() => {
     fetchCombos();
-    const localUsuario = Number(user?.LocalId);
-    const filters = localUsuario ? { localIdOrZero: localUsuario } : undefined;
-    getProductosAll(filters).then((res) => setProductos(res.data));
-  }, [fetchCombos, user?.LocalId]);
+    // Catálogo por empresa activa (header X-Empresa-Id del interceptor). No se
+    // filtra por el LocalId del JWT: para un admin ese local puede ser de otra
+    // empresa y la lista quedaba vacía al mirar la empresa que no coincidía.
+    getProductosAll().then((res) => setProductos(res.data));
+  }, [fetchCombos]);
 
   const handleDelete = async (id: string) => {
     Swal.fire({
