@@ -572,6 +572,103 @@ export const getVentasPorTipo = async (params: {
   }
 };
 
+// --- Reporte de cobros y ganancia por día (criterio percibido / base caja) ---
+// La ganancia de cada venta se atribuye proporcionalmente al dinero recibido,
+// en la fecha en que se recibió (venta contado completa el día de la venta;
+// crédito: la seña ese día y cada cobro posterior el día del cobro).
+export interface CobrosGananciaVentaRow {
+  VentaId: number;
+  VentaFecha: string;
+  VentaTipo: string;
+  EsEnvio?: string;
+  EsDelivery?: string;
+  ClienteNombre: string | null;
+  ClienteApellido: string | null;
+  Total: number;
+  /** Dinero recibido el día de la venta (contado/POS/TR + seña del crédito). */
+  Recibido: number;
+  /** Ganancia total de la venta (líneas − costo), se cobre cuando se cobre. */
+  GananciaVenta: number;
+  /** Ganancia realizada ese día (proporcional a lo recibido). */
+  GananciaDia: number;
+  /** Lo que quedó a crédito ese día. */
+  ACredito: number;
+  /** Ganancia que se realizará cuando se cobre el crédito. */
+  GananciaDiferida: number;
+}
+
+export interface CobrosGananciaCobroRow {
+  VentaId: number;
+  VentaFecha: string;
+  ClienteNombre: string | null;
+  ClienteApellido: string | null;
+  Monto: number;
+  /** Ganancia realizada con este cobro (proporcional al monto). */
+  GananciaDia: number;
+}
+
+export interface CobrosGananciaTotales {
+  totalVendido: number;
+  recibidoVentas: number;
+  gananciaVentas: number;
+  aCredito: number;
+  gananciaDiferida: number;
+  cobrado: number;
+  gananciaCobros: number;
+  recibido: number;
+  ganancia: number;
+}
+
+export interface CobrosGananciaDia {
+  fecha: string; // YYYY-MM-DD
+  ventas: CobrosGananciaVentaRow[];
+  cobros: CobrosGananciaCobroRow[];
+  totales: CobrosGananciaTotales;
+}
+
+export interface CobrosGanancia {
+  fechaDesde: string;
+  fechaHasta: string;
+  dias: CobrosGananciaDia[];
+  totales: CobrosGananciaTotales;
+}
+
+export const getReporteCobrosGanancia = async (params: {
+  fechaDesde: string;
+  fechaHasta: string;
+}): Promise<CobrosGanancia> => {
+  try {
+    const response = await api.get("/venta/reporte-cobros-ganancia", {
+      params,
+    });
+    return (
+      response.data?.data ?? {
+        fechaDesde: params.fechaDesde,
+        fechaHasta: params.fechaHasta,
+        dias: [],
+        totales: {
+          totalVendido: 0,
+          recibidoVentas: 0,
+          gananciaVentas: 0,
+          aCredito: 0,
+          gananciaDiferida: 0,
+          cobrado: 0,
+          gananciaCobros: 0,
+          recibido: 0,
+          ganancia: 0,
+        },
+      }
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener el reporte de cobros y ganancia",
+      }
+    );
+  }
+};
+
 // --- Reporte de ventas por producto (en qué ventas y a qué cliente salió) ---
 export interface VentaProductoReporteRow {
   VentaId: number;

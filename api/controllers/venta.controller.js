@@ -575,6 +575,38 @@ exports.getVentasPorTipo = async (req, res) => {
   }
 };
 
+// Reporte "Cobros y ganancia por día" (criterio percibido, ver venta.model).
+exports.getReporteCobrosGanancia = async (req, res) => {
+  try {
+    const { fechaDesde, fechaHasta } = req.query;
+    const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fechaDesde || !fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "Se requieren fechaDesde y fechaHasta (YYYY-MM-DD)" });
+    }
+    if (!isoRegex.test(fechaDesde) || !isoRegex.test(fechaHasta)) {
+      return res
+        .status(400)
+        .json({ message: "Las fechas deben tener formato YYYY-MM-DD" });
+    }
+    if (fechaDesde > fechaHasta) {
+      return res
+        .status(400)
+        .json({ message: "fechaDesde no puede ser mayor que fechaHasta" });
+    }
+    const data = await Venta.getReporteCobrosGanancia({
+      empresaId: req.empresaId,
+      fechaDesde,
+      fechaHasta,
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error("Error al obtener cobros y ganancia:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // GET /venta/reporte-por-producto?productoId=&fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
 // Ventas de un producto en el período: en qué ventas salió y a qué cliente.
 // Scopeado a la empresa activa (req.empresaId). Las fechas son opcionales.

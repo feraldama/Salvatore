@@ -25,6 +25,7 @@ import {
   type VentasPorTipo,
   getVentasPorProducto,
   type VentasPorProducto,
+  getReporteCobrosGanancia,
 } from "../../services/venta.service";
 import { useAuth } from "../../contexts/useAuth";
 
@@ -413,6 +414,11 @@ const ReportesPage: React.FC = () => {
   // Porcentaje de comisión que se aplica al total vendido (texto: admite coma o
   // punto como separador decimal). Se parsea al generar. Default 0,2% editable.
   const [comisionPorcentaje, setComisionPorcentaje] = useState("0,2");
+
+  // Estado del reporte "Cobros y ganancia por día". Default hoy/hoy: el uso
+  // típico es el arqueo del día (qué se cobró hoy y cuánta ganancia dejó).
+  const [fechaDesdeCobros, setFechaDesdeCobros] = useState(() => getHoyISO());
+  const [fechaHastaCobros, setFechaHastaCobros] = useState(() => getHoyISO());
 
   // Cuál tarjeta de reporte está abierta en modal (slug del reporte) o null
   const [reporteActivo, setReporteActivo] = useState<string | null>(null);
@@ -2423,6 +2429,226 @@ const ReportesPage: React.FC = () => {
     }
   };
 
+  // Reporte "Cobros y ganancia por día" (criterio de lo percibido): por cada
+  // día del rango muestra el dinero recibido —ventas del día y cobros de
+  // créditos anteriores— con la ganancia realizada en la fecha de cobro. La
+  // ganancia de una venta a crédito se difiere: se realiza proporcionalmente
+  // con la seña y con cada cobro posterior (el cálculo vive en venta.model).
+  const handleGenerarReporteCobrosGanancia = async () => {
+    if (!fechaDesdeCobros || !fechaHastaCobros) {
+      setError("Debes seleccionar ambas fechas");
+      return;
+    }
+    if (new Date(fechaDesdeCobros) > new Date(fechaHastaCobros)) {
+      setError("La fecha desde no puede ser mayor que la fecha hasta");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getReporteCobrosGanancia({
+        fechaDesde: fechaDesdeCobros,
+        fechaHasta: fechaHastaCobros,
+      });
+
+      const { jsPDF, autoTable } = await loadPdf();
+      const doc = new jsPDF();
+      let y = 18;
+      doc.setFontSize(18);
+      doc.text("Cobros y ganancia por día", 14, y);
+      y += 8;
+      doc.setFontSize(11);
+      doc.text(
+        `Período: ${formatearFecha(fechaDesdeCobros)} al ${formatearFecha(fechaHastaCobros)}`,
+        14,
+        y,
+      );
+      y += 6;
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(
+        "La ganancia se atribuye al día en que se recibe el dinero: las ventas a crédito la",
+        14,
+        y,
+      );
+      y += 4;
+      doc.text(
+        "realizan proporcionalmente con la seña y con cada cobro posterior.",
+        14,
+        y,
+      );
+      doc.setTextColor(0);
+      y += 8;
+
+      const getFinalY = () =>
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY;
+      const nombreCliente = (n?: string | null, a?: string | null) =>
+        [n, a].filter(Boolean).join(" ").trim() || "-";
+
+      if (!data.dias.length) {
+        doc.setFontSize(12);
+        doc.text("No hubo ventas ni cobros en el período seleccionado.", 14, y + 4);
+      }
+
+      for (const dia of data.dias) {
+        if (y > doc.internal.pageSize.getHeight() - 60) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setFontSize(13);
+        doc.text(`Día ${formatearFecha(dia.fecha)}`, 14, y);
+        y += 5;
+
+        if (dia.ventas.length) {
+          autoTable(doc, {
+            head: [["N°", "CLIENTE", "TIPO", "TOTAL", "COBRADO", "GANANCIA"]],
+            body: dia.ventas.map((v) => [
+              v.VentaId.toString(),
+              nombreCliente(v.ClienteNombre, v.ClienteApellido),
+              `${formaPagoVentaTipo(v.VentaTipo)}${
+                v.EsEnvio === "S"
+                  ? " (envío)"
+                  : v.EsDelivery === "S"
+                    ? " (delivery)"
+                    : ""
+              }`,
+              formatMiles(v.Total),
+              formatMiles(v.Recibido),
+              formatMiles(v.GananciaDia),
+            ]),
+            startY: y,
+            theme: "grid",
+            headStyles: { fillColor: [37, 99, 235] },
+            styles: { fontSize: 8 },
+            margin: { left: 14, right: 14 },
+            columnStyles: {
+              0: { cellWidth: 14 },
+              3: { cellWidth: 26, halign: "right" },
+              4: { cellWidth: 26, halign: "right" },
+              5: { cellWidth: 26, halign: "right" },
+            },
+          });
+          y = getFinalY() + 4;
+        } else {
+          doc.setFontSize(9);
+          doc.text("Sin ventas este día.", 14, y + 2);
+          y += 8;
+        }
+
+        if (dia.cobros.length) {
+          if (y > doc.internal.pageSize.getHeight() - 50) {
+            doc.addPage();
+            y = 18;
+          }
+          doc.setFontSize(10);
+          doc.text("Créditos anteriores cobrados:", 14, y + 1);
+          autoTable(doc, {
+            head: [["VENTA N°", "F. VENTA", "CLIENTE", "COBRADO", "GANANCIA"]],
+            body: dia.cobros.map((cRow) => [
+              cRow.VentaId.toString(),
+              formatearFecha(String(cRow.VentaFecha).slice(0, 10)),
+              nombreCliente(cRow.ClienteNombre, cRow.ClienteApellido),
+              formatMiles(cRow.Monto),
+              formatMiles(cRow.GananciaDia),
+            ]),
+            startY: y + 3,
+            theme: "grid",
+            headStyles: { fillColor: [22, 163, 74] },
+            styles: { fontSize: 8 },
+            margin: { left: 14, right: 14 },
+            columnStyles: {
+              0: { cellWidth: 20 },
+              1: { cellWidth: 24 },
+              3: { cellWidth: 26, halign: "right" },
+              4: { cellWidth: 26, halign: "right" },
+            },
+          });
+          y = getFinalY() + 4;
+        }
+
+        doc.setFontSize(10);
+        doc.text(
+          `Recibido del día: Gs. ${formatMiles(dia.totales.recibido)}   |   Ganancia del día: Gs. ${formatMiles(dia.totales.ganancia)}`,
+          14,
+          y + 2,
+        );
+        y += 7;
+        if (dia.totales.aCredito > 0) {
+          doc.setFontSize(9);
+          doc.setTextColor(100);
+          doc.text(
+            `Quedó a crédito: Gs. ${formatMiles(dia.totales.aCredito)} (ganancia a realizar al cobrar: Gs. ${formatMiles(dia.totales.gananciaDiferida)})`,
+            14,
+            y + 1,
+          );
+          doc.setTextColor(0);
+          y += 7;
+        }
+        y += 4;
+      }
+
+      if (data.dias.length) {
+        if (y > doc.internal.pageSize.getHeight() - 45) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setDrawColor(200);
+        doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y);
+        y += 7;
+        doc.setFontSize(12);
+        doc.text("TOTALES GENERALES", 14, y);
+        y += 7;
+        doc.setFontSize(10);
+        doc.text(
+          `Recibido por ventas del día: Gs. ${formatMiles(data.totales.recibidoVentas)}  (ganancia: Gs. ${formatMiles(data.totales.gananciaVentas)})`,
+          14,
+          y,
+        );
+        y += 6;
+        doc.text(
+          `Cobros de créditos anteriores: Gs. ${formatMiles(data.totales.cobrado)}  (ganancia: Gs. ${formatMiles(data.totales.gananciaCobros)})`,
+          14,
+          y,
+        );
+        y += 7;
+        doc.setFontSize(11);
+        doc.text(
+          `TOTAL recibido: Gs. ${formatMiles(data.totales.recibido)}   |   GANANCIA total: Gs. ${formatMiles(data.totales.ganancia)}`,
+          14,
+          y,
+        );
+        y += 7;
+        if (data.totales.aCredito > 0) {
+          doc.setFontSize(9);
+          doc.setTextColor(100);
+          doc.text(
+            `Vendido a crédito sin cobrar en el período: Gs. ${formatMiles(data.totales.aCredito)} (ganancia a realizar: Gs. ${formatMiles(data.totales.gananciaDiferida)})`,
+            14,
+            y,
+          );
+          doc.setTextColor(0);
+        }
+      }
+
+      doc.save(
+        `reporte_cobros_ganancia_${fechaDesdeCobros}_${fechaHastaCobros}.pdf`,
+      );
+      const blob = doc.output("blob");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setReporteActivo(null);
+    } catch (err) {
+      const error = err as { message?: string };
+      setError(
+        error.message || "Error al generar el reporte de cobros y ganancia",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Metadata de las tarjetas (para grid + abrir modal)
   const renderCard = (
     titulo: string,
@@ -2523,6 +2749,28 @@ const ReportesPage: React.FC = () => {
               () => {
                 setError(null);
                 setReporteActivo("masvendidos");
+              },
+            )}
+          </div>
+        </section>
+
+        {/* === Sección Caja y cobranzas === */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Caja y cobranzas
+            </h2>
+            <span className="text-xs text-slate-400">1 reporte</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {renderCard(
+              "Cobros y ganancia por día",
+              "Dinero recibido cada día (ventas + cobros de créditos anteriores) con la ganancia realizada en la fecha de cobro.",
+              "💰",
+              "border-emerald-300",
+              () => {
+                setError(null);
+                setReporteActivo("cobrosganancia");
               },
             )}
           </div>
@@ -3516,6 +3764,7 @@ const ReportesPage: React.FC = () => {
                 {reporteActivo === "masvendidos" && "Productos más vendidos"}
                 {reporteActivo === "enviosvehiculo" && "Ventas por envío (por móvil)"}
                 {reporteActivo === "ventasvendedor" && "Ventas por vendedor (comisiones)"}
+                {reporteActivo === "cobrosganancia" && "Cobros y ganancia por día"}
               </h3>
               <button
                 onClick={() => setReporteActivo(null)}
@@ -3669,6 +3918,50 @@ const ReportesPage: React.FC = () => {
                   onClick={handleGenerarReporteMovimientos}
                   disabled={loading}
                   className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
+                >
+                  {loading ? "Generando…" : "Generar PDF"}
+                </button>
+              </div>
+            )}
+
+            {reporteActivo === "cobrosganancia" && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-500">
+                  Muestra por día lo recibido por ventas y por cobros de
+                  créditos anteriores, con la ganancia realizada en la fecha de
+                  cobro (las ventas a crédito realizan su ganancia a medida que
+                  se cobran).
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaDesdeCobros}
+                      onChange={(e) => setFechaDesdeCobros(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={fechaHastaCobros}
+                      onChange={(e) => setFechaHastaCobros(e.target.value)}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerarReporteCobrosGanancia}
+                  disabled={loading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-md shadow-sm transition disabled:opacity-50"
                 >
                   {loading ? "Generando…" : "Generar PDF"}
                 </button>

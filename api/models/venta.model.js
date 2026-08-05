@@ -1511,6 +1511,187 @@ const Venta = {
     return { grupos: lista, totales };
   },
 
+  // Reporte "Cobros y ganancia por día" — criterio de lo PERCIBIDO (base caja):
+  // la ganancia de cada venta se atribuye proporcionalmente al dinero que
+  // efectivamente se recibió, en la fecha en que se recibió:
+  //   - Venta contado/POS/transfer: todo (recibido y ganancia) el día de la venta.
+  //   - Venta a crédito: la seña el día de la venta; cada cobro posterior el día
+  //     en que se cobró, con ganancia = monto cobrado × margen de esa venta.
+  // Así el acumulado de cualquier rango cierra con la ganancia real sin contar
+  // dos veces las ventas a crédito (ni el día de la venta ni el del cobro).
+  //
+  // Fuentes: ganancia de la venta = Σ VentaProductoPrecioTotal − Σ (cantidad ×
+  // VentaProductoPrecioPromedio) — el costo ya viene en la unidad del renglón,
+  // ver producto.model. Señas y cobros salen de ventacreditopago (la seña se
+  // inserta con fecha = día de la venta, ver registrarPagosEnCaja). El dinero
+  // que NO pasa por ventacreditopago (contado/POS/TR y el cobro de delivery)
+  // se deriva como VentaEntrega − Σ pagos de crédito y se atribuye al día de
+  // la venta. El margen se calcula sobre venta.Total, así los recargos de
+  // tarjeta o el costo de delivery incluidos en el total no inflan la ganancia.
+  getReporteCobrosGanancia: async ({ empresaId, fechaDesde, fechaHasta }) => {
+    const pe = db.promise();
+
+    // El driver puede devolver DATE/TIMESTAMP como Date u string según la
+    // columna: normalizar a 'YYYY-MM-DD' para agrupar por día.
+    const toDia = (v) => {
+      if (v instanceof Date) {
+        return (
+          v.getFullYear() +
+          "-" +
+          String(v.getMonth() + 1).padStart(2, "0") +
+          "-" +
+          String(v.getDate()).padStart(2, "0")
+        );
+      }
+      return String(v).slice(0, 10);
+    };
+
+    const costoSubqueries = `
+          COALESCE((SELECT SUM(vp.VentaProductoPrecioTotal)
+                      FROM ventaproducto vp WHERE vp.VentaId = v.VentaId), 0) AS MontoVendido,
+          COALESCE((SELECT SUM(vp.VentaProductoPrecioPromedio * vp.VentaProductoCantidad)
+                      FROM ventaproducto vp WHERE vp.VentaId = v.VentaId), 0) AS CostoVendido`;
+
+    const [ventasRows] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.EsEnvio, v.EsDelivery,
+              v.Total, v.VentaEntrega,
+              c.ClienteNombre, c.ClienteApellido,
+              COALESCE((SELECT SUM(vcp.VentaCreditoPagoMonto)
+                          FROM ventacredito vc
+                          JOIN ventacreditopago vcp ON vcp.VentaCreditoId = vc.VentaCreditoId
+                         WHERE vc.VentaId = v.VentaId), 0) AS PagosCredito,
+              ${costoSubqueries}
+         FROM venta v
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE v.EmpresaId = ? AND DATE(v.VentaFecha) BETWEEN ? AND ?
+        ORDER BY v.VentaFecha ASC, v.VentaId ASC`,
+      [Number(empresaId), fechaDesde, fechaHasta]
+    );
+
+    // Cobros (y señas) registrados en el rango, con los datos de SU venta —
+    // que puede ser de cualquier fecha anterior.
+    const [cobrosRows] = await pe.query(
+      `SELECT vcp.VentaCreditoPagoFecha AS FechaCobro,
+              vcp.VentaCreditoPagoMonto AS Monto,
+              v.VentaId, v.VentaFecha, v.Total,
+              c.ClienteNombre, c.ClienteApellido,
+              ${costoSubqueries}
+         FROM ventacreditopago vcp
+         JOIN ventacredito vc ON vc.VentaCreditoId = vcp.VentaCreditoId
+         JOIN venta v ON v.VentaId = vc.VentaId
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE v.EmpresaId = ? AND vcp.VentaCreditoPagoFecha BETWEEN ? AND ?
+        ORDER BY vcp.VentaCreditoPagoFecha ASC, vc.VentaId ASC, vcp.VentaCreditoPagoId ASC`,
+      [Number(empresaId), fechaDesde, fechaHasta]
+    );
+
+    const margenDe = (r) => {
+      const total = Number(r.Total) || 0;
+      const ganancia =
+        (Number(r.MontoVendido) || 0) - (Number(r.CostoVendido) || 0);
+      return { total, ganancia, margen: total > 0 ? ganancia / total : 0 };
+    };
+
+    // Un pago con fecha = día de la venta es la seña (o un cobro del mismo
+    // día): se suma al "Recibido" de la fila de la venta. Los demás son
+    // cobros de créditos anteriores y forman su propio bloque.
+    const senasPorVenta = new Map();
+    const cobrosAnteriores = [];
+    for (const r of cobrosRows) {
+      if (toDia(r.FechaCobro) === toDia(r.VentaFecha)) {
+        senasPorVenta.set(
+          r.VentaId,
+          (senasPorVenta.get(r.VentaId) || 0) + (Number(r.Monto) || 0)
+        );
+      } else {
+        cobrosAnteriores.push(r);
+      }
+    }
+
+    const dias = new Map();
+    const diaDe = (fecha) => {
+      if (!dias.has(fecha)) dias.set(fecha, { fecha, ventas: [], cobros: [] });
+      return dias.get(fecha);
+    };
+
+    for (const r of ventasRows) {
+      const { total, ganancia, margen } = margenDe(r);
+      const pagosCredito = Number(r.PagosCredito) || 0;
+      // Dinero que entró por fuera de ventacreditopago (contado/POS/TR y el
+      // cobro del delivery): se atribuye al día de la venta.
+      const directo = Math.max(0, (Number(r.VentaEntrega) || 0) - pagosCredito);
+      const recibido = directo + (senasPorVenta.get(r.VentaId) || 0);
+      // min(recibido, total): un recargo de tarjeta puede dejar la entrega por
+      // encima del total y no corresponde atribuirle ganancia extra.
+      const gananciaDia = Math.round(Math.min(recibido, total) * margen);
+      const aCredito = Math.max(0, total - recibido);
+      diaDe(toDia(r.VentaFecha)).ventas.push({
+        VentaId: r.VentaId,
+        VentaFecha: r.VentaFecha,
+        VentaTipo: r.VentaTipo,
+        EsEnvio: r.EsEnvio,
+        EsDelivery: r.EsDelivery,
+        ClienteNombre: r.ClienteNombre ?? null,
+        ClienteApellido: r.ClienteApellido ?? null,
+        Total: total,
+        Recibido: recibido,
+        GananciaVenta: ganancia,
+        GananciaDia: gananciaDia,
+        ACredito: aCredito,
+        GananciaDiferida: Math.round(aCredito * margen),
+      });
+    }
+
+    for (const r of cobrosAnteriores) {
+      const { margen } = margenDe(r);
+      const monto = Number(r.Monto) || 0;
+      diaDe(toDia(r.FechaCobro)).cobros.push({
+        VentaId: r.VentaId,
+        VentaFecha: r.VentaFecha,
+        ClienteNombre: r.ClienteNombre ?? null,
+        ClienteApellido: r.ClienteApellido ?? null,
+        Monto: monto,
+        GananciaDia: Math.round(monto * margen),
+      });
+    }
+
+    const listaDias = [...dias.values()].sort((a, b) =>
+      a.fecha.localeCompare(b.fecha)
+    );
+    const totalesVacios = () => ({
+      totalVendido: 0,
+      recibidoVentas: 0,
+      gananciaVentas: 0,
+      aCredito: 0,
+      gananciaDiferida: 0,
+      cobrado: 0,
+      gananciaCobros: 0,
+      recibido: 0,
+      ganancia: 0,
+    });
+    const totales = totalesVacios();
+    for (const d of listaDias) {
+      const t = totalesVacios();
+      for (const vRow of d.ventas) {
+        t.totalVendido += vRow.Total;
+        t.recibidoVentas += vRow.Recibido;
+        t.gananciaVentas += vRow.GananciaDia;
+        t.aCredito += vRow.ACredito;
+        t.gananciaDiferida += vRow.GananciaDiferida;
+      }
+      for (const cRow of d.cobros) {
+        t.cobrado += cRow.Monto;
+        t.gananciaCobros += cRow.GananciaDia;
+      }
+      t.recibido = t.recibidoVentas + t.cobrado;
+      t.ganancia = t.gananciaVentas + t.gananciaCobros;
+      d.totales = t;
+      for (const k of Object.keys(totales)) totales[k] += t[k];
+    }
+
+    return { fechaDesde, fechaHasta, dias: listaDias, totales };
+  },
+
   // Ventas de un producto en el período: en qué ventas salió y a qué cliente,
   // con cantidad (cajas o unidades), precio y subtotal por renglón de venta.
   getVentasPorProducto: async ({
