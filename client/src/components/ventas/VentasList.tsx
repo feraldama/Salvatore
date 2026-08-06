@@ -8,13 +8,19 @@ import type {
 import { formatCurrency, formatMiles, formatFechaHora } from "../../utils/utils";
 import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
-import { Button } from "../common/ui";
+import { Button, Modal } from "../common/ui";
 import { PlusIcon, FunnelIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import Swal from "sweetalert2";
 import {
   getVentaCreditoByVentaId,
   getPagosByVentaCreditoId,
+  updateEnvioVehiculo,
 } from "../../services/venta.service";
+import {
+  getVehiculosActivos,
+  type VehiculoFlota,
+} from "../../services/flota.service";
+import { usePermiso } from "../../hooks/usePermiso";
 
 interface VentasListProps {
   ventas: Venta[];
@@ -65,6 +71,60 @@ const VentasList = ({
   onToggleFilters,
 }: VentasListProps) => {
   const [ventasWithAlmacen, setVentasWithAlmacen] = useState<VentaWithId[]>([]);
+
+  // Cambio de vehículo de un envío (ej. se rompió el camión): se reasigna el
+  // móvil en venta_envio sin tocar la venta ni el ticket.
+  const puedeEditarEnvio = usePermiso("VENTAS", "editar");
+  const [envioEdit, setEnvioEdit] = useState<VentaWithId | null>(null);
+  const [vehiculos, setVehiculos] = useState<VehiculoFlota[]>([]);
+  const [vehiculoSel, setVehiculoSel] = useState<number | "">("");
+  const [guardandoVehiculo, setGuardandoVehiculo] = useState(false);
+
+  const abrirCambioVehiculo = async (venta: VentaWithId) => {
+    setVehiculoSel(venta.envio_vehiculo_id || "");
+    setEnvioEdit(venta);
+    if (vehiculos.length === 0) {
+      try {
+        setVehiculos(await getVehiculosActivos());
+      } catch (error) {
+        console.error("Error al cargar vehículos de flota:", error);
+      }
+    }
+  };
+
+  const guardarVehiculoEnvio = async () => {
+    if (!envioEdit || vehiculoSel === "") return;
+    setGuardandoVehiculo(true);
+    try {
+      const res = await updateEnvioVehiculo(envioEdit.VentaId, vehiculoSel);
+      // Reflejar el cambio en la tabla sin recargar todo el listado.
+      setVentasWithAlmacen((prev) =>
+        prev.map((v) =>
+          v.VentaId === envioEdit.VentaId
+            ? { ...v, envio_vehiculo_id: vehiculoSel, envio_chapa: res.chapa }
+            : v
+        )
+      );
+      setEnvioEdit(null);
+      Swal.fire({
+        title: "Vehículo actualizado",
+        text: `La venta #${envioEdit.VentaId} ahora sale con ${res.chapa}`,
+        icon: "success",
+        timer: 2500,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      Swal.fire({
+        title: "Error",
+        text:
+          (error as { message?: string }).message ||
+          "No se pudo cambiar el vehículo del envío",
+        icon: "error",
+      });
+    } finally {
+      setGuardandoVehiculo(false);
+    }
+  };
 
   const activeFilters = filters || {};
 
@@ -283,14 +343,36 @@ const VentasList = ({
     {
       key: "EsEnvio",
       label: "Envío",
-      render: (venta: VentaWithId) =>
-        venta.EsEnvio === "S" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
-            🚚 Envío
-          </span>
-        ) : (
-          <span className="text-text-subtle">—</span>
-        ),
+      render: (venta: VentaWithId) => {
+        if (venta.EsEnvio !== "S")
+          return <span className="text-text-subtle">—</span>;
+        const chip = (
+          <>🚚 {venta.envio_chapa || "Envío"}</>
+        );
+        // ENTREGADO/CANCELADO ya rindió con su móvil: no se cambia.
+        const editable =
+          puedeEditarEnvio &&
+          venta.envio_estado !== "ENTREGADO" &&
+          venta.envio_estado !== "CANCELADO";
+        if (!editable) {
+          return (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+              {chip}
+            </span>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={() => abrirCambioVehiculo(venta)}
+            title="Cambiar vehículo del envío"
+            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 cursor-pointer hover:bg-amber-100 hover:border-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+          >
+            {chip}
+            <span aria-hidden="true">✎</span>
+          </button>
+        );
+      },
     },
     {
       key: "VentaNroPOS",
@@ -561,6 +643,70 @@ const VentasList = ({
         sortOrder={sortOrder}
         onSort={onSort}
       />
+
+      <Modal
+        open={envioEdit !== null}
+        onClose={() => !guardandoVehiculo && setEnvioEdit(null)}
+        title="Cambiar vehículo del envío"
+        description={
+          envioEdit
+            ? `Venta #${envioEdit.VentaId} — ${
+                envioEdit.ClienteNombre
+                  ? `${envioEdit.ClienteNombre} ${envioEdit.ClienteApellido}`
+                  : `Cliente #${envioEdit.ClienteId}`
+              }`
+            : undefined
+        }
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setEnvioEdit(null)}
+              disabled={guardandoVehiculo}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={guardarVehiculoEnvio}
+              disabled={
+                vehiculoSel === "" ||
+                vehiculoSel === (envioEdit?.envio_vehiculo_id || "")
+              }
+              loading={guardandoVehiculo}
+            >
+              Guardar
+            </Button>
+          </>
+        }
+      >
+        <label className="block mb-1 text-xs font-medium text-text-muted">
+          Vehículo
+        </label>
+        <select
+          value={vehiculoSel}
+          onChange={(e) =>
+            setVehiculoSel(e.target.value === "" ? "" : Number(e.target.value))
+          }
+          className="w-full bg-surface border border-border text-text text-sm rounded-md focus:ring-brand-500 focus:border-brand-600 p-2"
+        >
+          <option value="">— Seleccionar vehículo —</option>
+          {vehiculos.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.chapa}
+              {v.marca || v.modelo
+                ? ` · ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
+                : ""}
+              {v.choferes_nombres ? ` — ${v.choferes_nombres}` : ""}
+            </option>
+          ))}
+        </select>
+        {envioEdit?.envio_chapa && (
+          <p className="mt-2 text-xs text-text-muted">
+            Vehículo actual: {envioEdit.envio_chapa}
+          </p>
+        )}
+      </Modal>
     </>
   );
 };

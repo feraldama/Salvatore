@@ -22,6 +22,13 @@ export interface Venta {
   VentaProductoPrecio: number;
   VentaProductoPrecioTotal: number;
   VentaProductoUnitario: number;
+  // 'S' si la venta salió como ENVÍO (mayorista).
+  EsEnvio?: string;
+  // Vehículo asignado al envío en venta_envio (null/undefined si no es envío).
+  // Aliases snake_case: la tabla está fuera de columnMap a propósito.
+  envio_vehiculo_id?: number | null;
+  envio_chapa?: string | null;
+  envio_estado?: string | null;
 }
 
 export interface VentaCredito {
@@ -361,6 +368,9 @@ export interface EnvioVenta {
   VendedorNombre?: string;
   VendedorApellido?: string;
   formaPago?: string; // etiqueta de método(s) de cobro de la venta
+  // Ganancia devengada de la venta (precio de venta − costo promedio). Sólo la
+  // devuelve el reporte de envíos por móvil.
+  Ganancia?: number;
 }
 
 export interface EnviosResumen {
@@ -414,6 +424,8 @@ export interface EnviosVehiculo {
   marca: string | null;
   modelo: string | null;
   totalEnviado: number;
+  // Ganancia devengada del móvil: Σ (venta − costo) de lo que lleva.
+  ganancia: number;
   cantidad: number;
   porMetodo: {
     efectivo: number;
@@ -429,6 +441,7 @@ export interface EnviosPorVehiculo {
   vehiculos: EnviosVehiculo[];
   totales: {
     totalEnviado: number;
+    ganancia: number;
     cantidad: number;
     porMetodo: {
       efectivo: number;
@@ -451,6 +464,7 @@ export const getEnviosPorVehiculo = async (params: {
         vehiculos: [],
         totales: {
           totalEnviado: 0,
+          ganancia: 0,
           cantidad: 0,
           porMetodo: {
             efectivo: 0,
@@ -467,6 +481,28 @@ export const getEnviosPorVehiculo = async (params: {
     throw (
       axiosError.response?.data || {
         message: "Error al obtener los envíos por móvil",
+      }
+    );
+  }
+};
+
+// Reasigna el vehículo de un envío ya confirmado (venta_envio). Lo usa el
+// historial de ventas cuando un camión se rompe y el reparto sale con otro
+// móvil. El backend lo rechaza si el envío ya está ENTREGADO/CANCELADO.
+export const updateEnvioVehiculo = async (
+  ventaId: number,
+  vehiculoId: number
+): Promise<{ message: string; chapa: string }> => {
+  try {
+    const response = await api.patch(`/venta/envios/${ventaId}/vehiculo`, {
+      VehiculoId: vehiculoId,
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al cambiar el vehículo del envío",
       }
     );
   }

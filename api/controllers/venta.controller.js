@@ -740,6 +740,50 @@ exports.updateDeliveryEstado = async (req, res) => {
   }
 };
 
+// PATCH /venta/envios/:ventaId/vehiculo — body: { VehiculoId }
+// Reasigna el móvil de un envío ya confirmado (ej. el camión se rompió) sin
+// tocar la venta ni reimprimir el ticket. Scope empresa. Sólo mientras el
+// envío no esté ENTREGADO/CANCELADO.
+exports.updateEnvioVehiculo = async (req, res) => {
+  try {
+    const ventaId = Number(req.params.ventaId);
+    const vehiculoId = Math.round(Number(req.body?.VehiculoId) || 0);
+    if (!ventaId) {
+      return res.status(400).json({ message: "ventaId inválido" });
+    }
+    if (!vehiculoId) {
+      return res.status(400).json({ message: "Seleccione el vehículo" });
+    }
+
+    const result = await Venta.updateEnvioVehiculo({
+      ventaId,
+      vehiculoId,
+      empresaId: req.empresaId,
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ message: "Envío no encontrado" });
+    }
+    if (result.bloqueado) {
+      return res.status(400).json({
+        message: `El envío ya está ${result.estado} y no se puede cambiar el vehículo`,
+      });
+    }
+    if (result.invalidVehiculo) {
+      return res.status(400).json({ message: "Vehículo inexistente o inactivo" });
+    }
+
+    // Rastro en el log del servidor por si hay discusiones en la rendición.
+    console.log(
+      `venta_envio: venta #${ventaId} reasignada al vehículo #${vehiculoId} (${result.chapa}) por usuario ${req.user?.id ?? "?"}`
+    );
+    res.json({ message: "Vehículo actualizado", ventaId, vehiculoId, chapa: result.chapa });
+  } catch (error) {
+    console.error("Error al cambiar vehículo del envío:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // POST /venta/deliveries/:ventaId/cobrar
 // body: { Pagos: { Efectivo, Banco, CuentaCliente, Voucher, Transferencia,
 //         VentaNroPOS }, CajaId, UsuarioId, Fecha }

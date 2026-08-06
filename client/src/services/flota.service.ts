@@ -15,6 +15,9 @@ export interface VehiculoFlota {
   chapa: string;
   marca: string | null;
   modelo: string | null;
+  // Choferes asignados (ej. "Juan Pérez, Luis Gómez"). Sólo lo devuelve la
+  // versión liviana (selector de envío del POS); null si no tiene asignados.
+  choferes_nombres?: string | null;
 }
 
 // Versión completa para el ABM (incluye km, estado y cantidad de choferes).

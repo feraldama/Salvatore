@@ -35,6 +35,11 @@ router.get(
   authMiddleware,
   ventaController.getEnviosPorVehiculo
 );
+router.patch(
+  "/envios/:ventaId/vehiculo",
+  authMiddleware,
+  ventaController.updateEnvioVehiculo
+);
 router.get(
   "/reporte-por-vendedor",
   authMiddleware,

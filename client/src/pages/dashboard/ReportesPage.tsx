@@ -2173,7 +2173,7 @@ const ReportesPage: React.FC = () => {
         y += 6;
         doc.setFontSize(10);
         doc.text(
-          `Envíos: ${g.cantidad}  |  Total enviado: Gs. ${formatMiles(g.totalEnviado)}`,
+          `Envíos: ${g.cantidad}  |  Total enviado: Gs. ${formatMiles(g.totalEnviado)}  |  Ganancia: Gs. ${formatMiles(g.ganancia)}`,
           14,
           y,
         );
@@ -2188,6 +2188,7 @@ const ReportesPage: React.FC = () => {
             formatearFechaHora(v.VentaFecha),
             cliente,
             formatMiles(v.Total),
+            formatMiles(v.Ganancia ?? 0),
             v.formaPago || "-",
             formatMiles(v.VentaEntrega),
             formatMiles(v.Pendiente),
@@ -2196,7 +2197,16 @@ const ReportesPage: React.FC = () => {
 
         autoTable(doc, {
           head: [
-            ["ID", "FECHA", "CLIENTE", "TOTAL", "FORMA PAGO", "COBRADO", "PENDIENTE"],
+            [
+              "ID",
+              "FECHA",
+              "CLIENTE",
+              "TOTAL",
+              "GANANCIA",
+              "FORMA PAGO",
+              "COBRADO",
+              "PENDIENTE",
+            ],
           ],
           body: rows,
           startY: y,
@@ -2207,10 +2217,11 @@ const ReportesPage: React.FC = () => {
           columnStyles: {
             0: { cellWidth: 16 },
             1: { cellWidth: 34 },
-            3: { cellWidth: 32, halign: "right" },
-            4: { cellWidth: 40 },
-            5: { cellWidth: 32, halign: "right" },
-            6: { cellWidth: 32, halign: "right" },
+            3: { cellWidth: 28, halign: "right" },
+            4: { cellWidth: 28, halign: "right" },
+            5: { cellWidth: 38 },
+            6: { cellWidth: 28, halign: "right" },
+            7: { cellWidth: 28, halign: "right" },
           },
         });
         y = getFinalY() + 6;
@@ -2233,7 +2244,7 @@ const ReportesPage: React.FC = () => {
         y += 8;
         doc.setFontSize(10);
         doc.text(
-          `Envíos: ${t.cantidad}  |  Total enviado: Gs. ${formatMiles(t.totalEnviado)}`,
+          `Envíos: ${t.cantidad}  |  Total enviado: Gs. ${formatMiles(t.totalEnviado)}  |  Ganancia: Gs. ${formatMiles(t.ganancia)}`,
           14,
           y,
         );

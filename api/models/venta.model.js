@@ -391,15 +391,22 @@ const Venta = {
 
       const { whereSql, params: filterParams } = buildVentaFiltersWhere(filters);
 
+      // envio_* (snake_case, fuera de columnMap a propósito): vehículo asignado
+      // al ENVÍO en venta_envio, para mostrarlo/cambiarlo desde el historial.
       const query = `
         SELECT v.*,
           c.ClienteNombre, c.ClienteApellido,
           a.AlmacenNombre,
-          u.UsuarioNombre
+          u.UsuarioNombre,
+          env.vehiculo_id AS envio_vehiculo_id,
+          env.estado AS envio_estado,
+          fv.chapa AS envio_chapa
         FROM venta v
         LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
         LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
+        LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
+        LEFT JOIN flota_vehiculo fv ON fv.id = env.vehiculo_id
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
           SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
@@ -498,11 +505,16 @@ const Venta = {
         SELECT v.*,
           c.ClienteNombre, c.ClienteApellido,
           a.AlmacenNombre,
-          u.UsuarioNombre
+          u.UsuarioNombre,
+          env.vehiculo_id AS envio_vehiculo_id,
+          env.estado AS envio_estado,
+          fv.chapa AS envio_chapa
         FROM venta v
         LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
         LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
         LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
+        LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
+        LEFT JOIN flota_vehiculo fv ON fv.id = env.vehiculo_id
         LEFT JOIN ventacredito vc ON vc.VentaId = v.VentaId
         LEFT JOIN (
           SELECT VentaCreditoId, SUM(VentaCreditoPagoMonto) AS totalpagos
@@ -979,12 +991,19 @@ const Venta = {
 
     // Detalle de ventas envío con el móvil asignado. Los alias de flota van en
     // snake_case (chapa/marca/modelo) tal como vienen de flota_vehiculo.
+    // MontoVendido/CostoVendido: mismo criterio de ganancia devengada que
+    // getReporteCobrosGanancia (Σ precio de venta − Σ costo promedio × cantidad),
+    // para saber qué ganancia deja cada móvil por lo que lleva.
     const [ventas] = await pe.query(
       `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total, v.VentaEntrega,
               (v.Total - v.VentaEntrega) AS Pendiente,
               c.ClienteNombre, c.ClienteApellido,
               env.vehiculo_id AS vehiculo_id,
-              fv.chapa AS chapa, fv.marca AS marca, fv.modelo AS modelo
+              fv.chapa AS chapa, fv.marca AS marca, fv.modelo AS modelo,
+              COALESCE((SELECT SUM(vp.VentaProductoPrecioTotal)
+                          FROM ventaproducto vp WHERE vp.VentaId = v.VentaId), 0) AS MontoVendido,
+              COALESCE((SELECT SUM(vp.VentaProductoPrecioPromedio * vp.VentaProductoCantidad)
+                          FROM ventaproducto vp WHERE vp.VentaId = v.VentaId), 0) AS CostoVendido
          FROM venta v
          LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
          LEFT JOIN flota_vehiculo fv ON fv.id = env.vehiculo_id
@@ -1075,6 +1094,7 @@ const Venta = {
           marca: row.marca ?? null,
           modelo: row.modelo ?? null,
           totalEnviado: 0,
+          ganancia: 0,
           cantidad: 0,
           porMetodo: nuevoMetodo(),
           ventas: [],
@@ -1085,9 +1105,14 @@ const Venta = {
 
     for (const v of ventas) {
       const g = obtenerGrupo(v);
-      g.ventas.push({ ...v, formaPago: formaPagoDe(v) });
+      // Ganancia devengada de la venta (compra vs venta de lo que lleva el móvil).
+      const ganancia = Math.round(
+        (Number(v.MontoVendido) || 0) - (Number(v.CostoVendido) || 0)
+      );
+      g.ventas.push({ ...v, formaPago: formaPagoDe(v), Ganancia: ganancia });
       g.cantidad += 1;
       g.totalEnviado += Number(v.Total || 0);
+      g.ganancia += ganancia;
       g.porMetodo.credito += Number(v.Pendiente || 0);
     }
 
@@ -1101,6 +1126,7 @@ const Venta = {
           marca: null,
           modelo: null,
           totalEnviado: 0,
+          ganancia: 0,
           cantidad: 0,
           porMetodo: nuevoMetodo(),
           ventas: [],
@@ -1124,6 +1150,7 @@ const Venta = {
     // Totales generales.
     const totales = {
       totalEnviado: vehiculos.reduce((a, g) => a + g.totalEnviado, 0),
+      ganancia: vehiculos.reduce((a, g) => a + g.ganancia, 0),
       cantidad: vehiculos.reduce((a, g) => a + g.cantidad, 0),
       porMetodo: nuevoMetodo(),
     };
@@ -1282,6 +1309,51 @@ const Venta = {
     } finally {
       conn.release();
     }
+  },
+
+  // Reasigna el vehículo de un ENVÍO ya confirmado (venta_envio.vehiculo_id).
+  // Caso de uso: el camión asignado se rompe y el reparto sale con otro móvil,
+  // sin tocar la venta ni el ticket. Se permite en PENDIENTE y EN_RUTA; un
+  // envío ENTREGADO o CANCELADO ya rindió con su móvil y no se cambia.
+  // Devuelve:
+  //   { ok: false, notFound: true }              -> la venta no es envío de esa empresa
+  //   { ok: false, bloqueado: true, estado }     -> envío ENTREGADO/CANCELADO
+  //   { ok: false, invalidVehiculo: true }       -> vehículo inexistente o inactivo
+  //   { ok: true, chapa }                        -> actualizado (chapa del nuevo móvil)
+  updateEnvioVehiculo: async ({ ventaId, vehiculoId, empresaId }) => {
+    const pe = db.promise();
+
+    // LEFT JOIN: una venta envío anterior a la migración 012 puede no tener
+    // fila en venta_envio; en ese caso se le asigna móvil por primera vez.
+    const [rows] = await pe.query(
+      `SELECT v.EsEnvio AS es_envio, env.estado AS estado
+         FROM venta v
+         LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
+        WHERE v.VentaId = ? AND v.EmpresaId = ?`,
+      [Number(ventaId), Number(empresaId)]
+    );
+    if (!rows.length || rows[0].es_envio !== "S") {
+      return { ok: false, notFound: true };
+    }
+
+    const estado = rows[0].estado;
+    if (estado === "ENTREGADO" || estado === "CANCELADO") {
+      return { ok: false, bloqueado: true, estado };
+    }
+
+    const [vehRows] = await pe.query(
+      `SELECT chapa FROM flota_vehiculo WHERE id = ? AND activo`,
+      [Number(vehiculoId)]
+    );
+    if (!vehRows.length) return { ok: false, invalidVehiculo: true };
+
+    await pe.query(
+      `INSERT INTO venta_envio (venta_id, vehiculo_id)
+       VALUES (?, ?)
+       ON CONFLICT (venta_id) DO UPDATE SET vehiculo_id = EXCLUDED.vehiculo_id`,
+      [Number(ventaId), Number(vehiculoId)]
+    );
+    return { ok: true, chapa: vehRows[0].chapa };
   },
 
   // Cobra un delivery contra entrega: registra el desglose de pago (que el

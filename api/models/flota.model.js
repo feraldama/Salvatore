@@ -28,13 +28,20 @@ const Flota = {
 
   // Todos los vehículos activos de la flota. Lo usa el POS mayorista para
   // elegir con qué vehículo sale una venta ENVÍO (no se filtra por chofer:
-  // el operador asigna cualquier vehículo disponible).
+  // el operador asigna cualquier vehículo disponible). choferes_nombres trae
+  // los choferes asignados para que el cajero identifique el vehículo.
   getVehiculosActivos: () =>
     q(
-      `SELECT id, chapa, marca, modelo
-         FROM flota_vehiculo
-        WHERE activo
-        ORDER BY chapa`
+      `SELECT v.id, v.chapa, v.marca, v.modelo,
+              (SELECT string_agg(
+                        TRIM(COALESCE(u.usuarionombre,'') || ' ' || COALESCE(u.usuarioapellido,'')),
+                        ', ' ORDER BY u.usuarionombre)
+                 FROM flota_asignacion a
+                 JOIN usuario u ON TRIM(u.usuarioid) = TRIM(a.usuario_id)
+                WHERE a.vehiculo_id = v.id AND a.activo) AS choferes_nombres
+         FROM flota_vehiculo v
+        WHERE v.activo
+        ORDER BY v.chapa`
     ),
 
   getMisVehiculos: (usuarioId) =>

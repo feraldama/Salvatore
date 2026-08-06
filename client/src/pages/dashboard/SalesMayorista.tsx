@@ -1493,6 +1493,7 @@ export default function SalesMayorista() {
                     {v.marca || v.modelo
                       ? ` · ${[v.marca, v.modelo].filter(Boolean).join(" ")}`
                       : ""}
+                    {v.choferes_nombres ? ` — ${v.choferes_nombres}` : ""}
                   </option>
                 ))}
               </select>
