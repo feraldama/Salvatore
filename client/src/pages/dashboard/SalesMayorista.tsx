@@ -609,6 +609,7 @@ export default function SalesMayorista() {
       `${pad(fechaAjustada.getDate())}T${pad(fechaAjustada.getHours())}:` +
       `${pad(fechaAjustada.getMinutes())}:${pad(fechaAjustada.getSeconds())}`;
 
+    let ventaResp: { data?: { VentaId?: number } } | null = null;
     try {
       if (isDevolucion) {
         // Devolución: repone stock al almacén y descuenta el total de la caja.
@@ -628,7 +629,7 @@ export default function SalesMayorista() {
           })),
         });
       } else {
-        await confirmarVenta({
+        ventaResp = await confirmarVenta({
           VentaFecha: fechaIso,
           AlmacenOrigenId: almacenVenta,
           ClienteId: Number(clienteSeleccionado?.ClienteId),
@@ -666,7 +667,9 @@ export default function SalesMayorista() {
         });
       }
       if (!isDevolucion && printTicket) {
-        await generateTicketPDF();
+        await generateTicketPDF(
+          ventaResp?.data?.VentaId ? Number(ventaResp.data.VentaId) : undefined,
+        );
       }
 
       Swal.fire({
@@ -724,7 +727,7 @@ export default function SalesMayorista() {
     setIsDevolucion(false); // Resetear el modo devolución
   };
 
-  const generateTicketPDF = async () => {
+  const generateTicketPDF = async (ventaId?: number) => {
     const { jsPDF, autoTable } = await loadPdf();
     // Crear una instancia de jsPDF con un tamaño personalizado (80mm de ancho)
     const doc = new jsPDF({
@@ -748,11 +751,20 @@ export default function SalesMayorista() {
     doc.setFontSize(8); // Tamaño de fuente más pequeño
     doc.setFont("helvetica", "normal");
 
+    // Nro. de venta arriba de todo (si la venta ya fue confirmada)
+    if (ventaId) {
+      doc.setFontSize(10);
+      doc.text(`VENTA NRO.: ${ventaId}`, 0, 8);
+      doc.setLineWidth(0.2);
+      doc.line(0, 10, 75, 10);
+      doc.setFontSize(8);
+    }
+
     // Encabezado del ticket
-    doc.text("Auto Shop Alonso", 0, 15);
-    doc.text("BODEGA", 0, 20);
-    doc.text("Bernardino Caballero c/ Antequera, Ypacaraí", 0, 25);
-    doc.text("Teléfono: +595 892 784989", 0, 30);
+    doc.text("Distribuidora Salvatore", 0, 15);
+    doc.text("COMERCIAL & BODEGA", 0, 20);
+    doc.text("Martin Ledezma e/ Niños Martires, Capiatá", 0, 25);
+    doc.text("Teléfono: +595 985 374240", 0, 30);
     doc.text(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, 0, 35);
     doc.text(
       clienteSeleccionado?.ClienteRUC
@@ -770,12 +782,20 @@ export default function SalesMayorista() {
       45,
     );
 
+    // Dirección del cliente (sólo si tiene una guardada). Corre la línea
+    // separadora y el inicio de la tabla hacia abajo.
+    let separadorY = 48;
+    if (clienteSeleccionado?.ClienteDireccion) {
+      doc.text("Direccion: " + clienteSeleccionado.ClienteDireccion, 0, 50);
+      separadorY = 53;
+    }
+
     // Línea separadora
     doc.setLineWidth(0.2); // Línea más delgada
-    doc.line(0, 48, 75, 48); // Ajustar el ancho de la línea
+    doc.line(0, separadorY, 75, separadorY); // Ajustar el ancho de la línea
 
     // Encabezados de la tabla
-    const headers = [["Desc.", "Cant", "Precio", "Total"]];
+    const headers = [["Cant", "Desc.", "Precio", "Total"]];
 
     // Datos de la tabla
     const tableData = carrito.map((p) => {
@@ -807,10 +827,10 @@ export default function SalesMayorista() {
         }
       }
       return [
-        p.nombre,
         p.cantidad,
-        `Gs. ${precioUnitario.toLocaleString("es-ES")}\n${precioLabel}`,
-        `Gs. ${totalLinea.toLocaleString("es-ES")}`,
+        p.nombre,
+        `${precioUnitario.toLocaleString("es-ES")}\n${precioLabel}`,
+        `${totalLinea.toLocaleString("es-ES")}`,
       ];
     });
 
@@ -818,7 +838,7 @@ export default function SalesMayorista() {
     autoTable(doc, {
       head: headers,
       body: tableData,
-      startY: 50,
+      startY: separadorY + 2,
       theme: "plain",
       styles: {
         fontSize: 7,
@@ -827,8 +847,8 @@ export default function SalesMayorista() {
       },
       // headStyles: { fillColor: [200, 200, 200] },
       columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 9 },
+        0: { cellWidth: 9 },
+        1: { cellWidth: 30 },
         2: { cellWidth: 14 },
         3: { cellWidth: 20 },
       },
