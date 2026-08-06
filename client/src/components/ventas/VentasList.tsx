@@ -48,7 +48,8 @@ interface VentaWithId extends Venta {
   id: number;
   AlmacenNombre?: string;
   Saldo?: number;
-  [key: string]: string | number | undefined;
+  // null: los campos envio_* del listado vienen en null cuando no aplican.
+  [key: string]: string | number | null | undefined;
 }
 
 const VentasList = ({
