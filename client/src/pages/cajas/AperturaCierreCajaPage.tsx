@@ -216,7 +216,8 @@ export default function AperturaCierreCajaPage() {
     // Calcular totales
     const apertura = aperturaReg.RegistroDiarioCajaMonto;
     const cierre = cierreReg.RegistroDiarioCajaMonto;
-    // Mismos buckets que el ticket del sistema anterior (apcierrecajaticket):
+    // Buckets del ticket (mismo criterio que el sistema anterior y que el
+    // reporte de envíos por móvil):
     //   Ingresos       = efectivo que entró a la caja física (grupos 1 y 3)
     //   Ingresos POS   = TODO lo no-efectivo: POS/voucher/transferencia, de
     //                    mostrador (grupos 4-6) y de envíos (grupos 8-10)
