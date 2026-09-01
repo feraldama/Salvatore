@@ -1501,7 +1501,8 @@ const Venta = {
   // Ventas del período agrupadas por tipo de venta. Los envíos (EsEnvio='S')
   // forman su propio grupo, salvo los pagados por transferencia que van a un
   // grupo aparte (ENVIO_TR) para no mezclarse con las transferencias de
-  // mostrador; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
+  // mostrador, y los envíos a crédito que suman al grupo CR como cualquier
+  // crédito; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
   // El agrupado se arma en JS para devolver también el detalle de cada venta.
   getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
@@ -1534,7 +1535,9 @@ const Venta = {
         r.EsEnvio === "S"
           ? r.VentaTipo === "TR"
             ? "ENVIO_TR"
-            : "ENVIO"
+            : r.VentaTipo === "CR"
+              ? "CR"
+              : "ENVIO"
           : r.VentaTipo;
       if (!grupos.has(tipo)) {
         grupos.set(tipo, {

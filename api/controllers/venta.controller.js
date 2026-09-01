@@ -541,8 +541,9 @@ exports.getVentasPorVendedor = async (req, res) => {
 };
 
 // GET /venta/reporte-por-tipo?fechaDesde=YYYY-MM-DD&fechaHasta=YYYY-MM-DD
-// Ventas agrupadas por tipo de venta: envío (EsEnvio='S') como grupo propio y
-// el resto por VentaTipo (CO/CR/PO/TR). Scopeado a la empresa activa
+// Ventas agrupadas por tipo de venta: envío (EsEnvio='S') como grupo propio
+// (salvo transferencia → ENVIO_TR y crédito → CR) y el resto por VentaTipo
+// (CO/CR/PO/TR). Scopeado a la empresa activa
 // (req.empresaId). Las fechas son opcionales.
 exports.getVentasPorTipo = async (req, res) => {
   try {

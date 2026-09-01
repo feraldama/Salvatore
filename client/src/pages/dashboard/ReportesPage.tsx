@@ -1825,9 +1825,11 @@ const ReportesPage: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(pdfUrl), 2000);
   };
 
-  // Ventas por tipo de venta (solo mayorista): envío como grupo propio y el
-  // resto por forma de venta (contado/crédito/POS/transferencia), cada grupo
-  // con el detalle de sus ventas y su total.
+  // Ventas por tipo de venta (solo mayorista): envío como grupo propio (salvo
+  // los envíos a crédito, que suman a Crédito, y los por transferencia, que
+  // van a Transferencia envío) y el resto por forma de venta
+  // (contado/crédito/POS/transferencia), cada grupo con el detalle de sus
+  // ventas y su total.
   const generarVentasPorTipo = async () => {
     if (!fechaDesdeTipoV || !fechaHastaTipoV) {
       setError("Seleccione fecha desde y hasta");

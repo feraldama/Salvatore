@@ -226,6 +226,12 @@ export default function AperturaCierreCajaPage() {
     // incluido en los ingresos de arriba, solo se desglosa cuánto fue envío.
     let costoDeliveryTotal = 0;
     let costoDeliveryCant = 0;
+    // Cobros de ventas ENVÍO (grupos 7-10): los cobra el móvil contra entrega,
+    // NO entran a la caja física; se muestran aparte como informativo.
+    let enviosEfectivo = 0;
+    let enviosPOS = 0;
+    let enviosVoucher = 0;
+    let enviosTransfer = 0;
     for (const reg of registrosFiltrados) {
       // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
       // de venta a crédito (3). POS(4)/voucher(5)/transferencia(6) no son efectivo,
@@ -258,7 +264,21 @@ export default function AperturaCierreCajaPage() {
         costoDeliveryTotal += reg.RegistroDiarioCajaMonto;
         costoDeliveryCant += 1;
       }
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 7) {
+        enviosEfectivo += reg.RegistroDiarioCajaMonto;
+      }
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 8) {
+        enviosPOS += reg.RegistroDiarioCajaMonto;
+      }
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 9) {
+        enviosVoucher += reg.RegistroDiarioCajaMonto;
+      }
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 10) {
+        enviosTransfer += reg.RegistroDiarioCajaMonto;
+      }
     }
+    const totalEnvios =
+      enviosEfectivo + enviosPOS + enviosVoucher + enviosTransfer;
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
     let txtSobranteFaltante = "";
     if (sobranteFaltante > 0) {
@@ -280,11 +300,19 @@ export default function AperturaCierreCajaPage() {
       tipoEmpresa === "D" ? "Cuenta Corriente" : "Cuenta de Cliente";
 
     // --- Generar PDF ---
+    // Alto extra si hay bloque de envíos (línea + título + métodos + total + línea).
+    const lineasEnvios =
+      totalEnvios > 0
+        ? 4 +
+          [enviosEfectivo, enviosPOS, enviosVoucher, enviosTransfer].filter(
+            (m) => m > 0
+          ).length
+        : 0;
     const { jsPDF } = await loadPdf();
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 200], // 80mm de ancho, 200mm de alto
+      format: [80, 200 + lineasEnvios * 8], // 80mm de ancho
     });
     doc.setFontSize(16);
     doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
@@ -338,6 +366,34 @@ export default function AperturaCierreCajaPage() {
         10,
         y
       );
+      y += 8;
+    }
+    // Cobros de ventas ENVÍO (informativo): los cobra el móvil contra entrega,
+    // no entran al efectivo de la caja ni al total de ingresos.
+    if (totalEnvios > 0) {
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text("Envíos (cobra el móvil):", 10, y);
+      y += 8;
+      if (enviosEfectivo > 0) {
+        doc.text(`Envíos Efectivo: ${formatMiles(enviosEfectivo)}`, 10, y);
+        y += 8;
+      }
+      if (enviosPOS > 0) {
+        doc.text(`Envíos POS: ${formatMiles(enviosPOS)}`, 10, y);
+        y += 8;
+      }
+      if (enviosVoucher > 0) {
+        doc.text(`Envíos Voucher: ${formatMiles(enviosVoucher)}`, 10, y);
+        y += 8;
+      }
+      if (enviosTransfer > 0) {
+        doc.text(`Envíos Transfer: ${formatMiles(enviosTransfer)}`, 10, y);
+        y += 8;
+      }
+      doc.text(`Total Envíos: ${formatMiles(totalEnvios)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
       y += 8;
     }
     // Línea nueva para Total Egresos

@@ -24,6 +24,11 @@ interface PagoModalProps {
   handleClose: () => void;
   cajaAperturada: { CajaId: number | string } | null;
   usuario: { id: number | string } | null;
+  // Preselección opcional (se busca por descripción, sin depender de IDs)
+  title?: string;
+  presetTipoGasto?: string;
+  presetGrupoGasto?: string;
+  presetDetalle?: string;
 }
 
 const selectClasses =
@@ -35,6 +40,10 @@ const PagoModal: React.FC<PagoModalProps> = ({
   handleClose,
   cajaAperturada,
   usuario,
+  title,
+  presetTipoGasto,
+  presetGrupoGasto,
+  presetDetalle,
 }) => {
   const [fecha, setFecha] = useState("");
   const [tipoGastoId, setTipoGastoId] = useState<number | "">("");
@@ -52,10 +61,39 @@ const PagoModal: React.FC<PagoModalProps> = ({
       const mm = String(hoy.getMonth() + 1).padStart(2, "0");
       const dd = String(hoy.getDate()).padStart(2, "0");
       setFecha(`${yyyy}-${mm}-${dd}`);
-      getTiposGasto().then(setTiposGasto);
-      getTiposGastoGrupo().then(setTiposGastoGrupo);
+      // Arranca limpio en cada apertura para que un preset previo no quede pegado
+      setTipoGastoId("");
+      setTipoGastoGrupoId("");
+      setDetalle(presetDetalle ?? "");
+      setMonto("");
+      Promise.all([getTiposGasto(), getTiposGastoGrupo()]).then(
+        ([tipos, grupos]) => {
+          setTiposGasto(tipos);
+          setTiposGastoGrupo(grupos);
+          if (presetTipoGasto) {
+            const tipo = tipos.find((t: TipoGasto) =>
+              t.TipoGastoDescripcion.toUpperCase().includes(
+                presetTipoGasto.toUpperCase()
+              )
+            );
+            if (tipo) {
+              setTipoGastoId(tipo.TipoGastoId);
+              if (presetGrupoGasto) {
+                const grupo = grupos.find(
+                  (g: TipoGastoGrupo) =>
+                    g.TipoGastoId === tipo.TipoGastoId &&
+                    g.TipoGastoGrupoDescripcion.toUpperCase().includes(
+                      presetGrupoGasto.toUpperCase()
+                    )
+                );
+                if (grupo) setTipoGastoGrupoId(grupo.TipoGastoGrupoId);
+              }
+            }
+          }
+        }
+      );
     }
-  }, [show]);
+  }, [show, presetTipoGasto, presetGrupoGasto, presetDetalle]);
 
   const gruposFiltrados = tiposGastoGrupo.filter(
     (g) => g.TipoGastoId === tipoGastoId
@@ -115,7 +153,7 @@ const PagoModal: React.FC<PagoModalProps> = ({
       open={show}
       onClose={handleClose}
       size="md"
-      title="Nuevo pago"
+      title={title ?? "Nuevo pago"}
       footer={
         <>
           <Button

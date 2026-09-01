@@ -178,6 +178,8 @@ export default function SalesMayorista() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const navigate = useNavigate();
   const [showPagoModal, setShowPagoModal] = useState(false);
+  // true = el modal de pagos abre preconfigurado como recorte de caja (egreso)
+  const [pagoEsRecorte, setPagoEsRecorte] = useState(false);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null,
@@ -1324,8 +1326,19 @@ export default function SalesMayorista() {
               />
               <ActionButton
                 label="Pagos"
-                onClick={() => setShowPagoModal(true)}
+                onClick={() => {
+                  setPagoEsRecorte(false);
+                  setShowPagoModal(true);
+                }}
                 className="bg-green-500 hover:bg-green-700 text-white"
+              />
+              <ActionButton
+                label="Recorte caja"
+                onClick={() => {
+                  setPagoEsRecorte(true);
+                  setShowPagoModal(true);
+                }}
+                className="bg-red-500 hover:bg-red-700 text-white"
               />
             </div>
           )}
@@ -1688,6 +1701,10 @@ export default function SalesMayorista() {
           handleClose={() => setShowPagoModal(false)}
           cajaAperturada={cajaAperturada}
           usuario={user}
+          title={pagoEsRecorte ? "Recorte de caja" : undefined}
+          presetTipoGasto={pagoEsRecorte ? "EGRESO" : undefined}
+          presetGrupoGasto={pagoEsRecorte ? "RECORTE" : undefined}
+          presetDetalle={pagoEsRecorte ? "RECORTE DE CAJA" : undefined}
         />
 
         <InvoicePrintModal
