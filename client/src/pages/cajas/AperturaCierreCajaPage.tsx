@@ -216,26 +216,25 @@ export default function AperturaCierreCajaPage() {
     // Calcular totales
     const apertura = aperturaReg.RegistroDiarioCajaMonto;
     const cierre = cierreReg.RegistroDiarioCajaMonto;
+    // Mismos buckets que el ticket del sistema anterior (apcierrecajaticket):
+    //   Ingresos       = efectivo que entró a la caja física (grupos 1 y 3)
+    //   Ingresos POS   = TODO lo no-efectivo: POS/voucher/transferencia, de
+    //                    mostrador (grupos 4-6) y de envíos (grupos 8-10)
+    //   Ingresos ENVIOS= efectivo cobrado por el móvil en envíos (grupo 7),
+    //                    NO entra a la caja física
     let egresos = 0;
     let ingresos = 0;
     let ingresosPOS = 0;
-    let ingresosVoucher = 0;
-    let ingresosTransfer = 0;
+    let ingresosEnvios = 0;
+    // Saldo vendido a crédito (grupo 11): informativo, no es dinero recibido.
     let ingresosCuentaCorriente = 0;
     // Costo de delivery cobrado en la sesión (grupo 12, informativo): ya está
     // incluido en los ingresos de arriba, solo se desglosa cuánto fue envío.
     let costoDeliveryTotal = 0;
     let costoDeliveryCant = 0;
-    // Cobros de ventas ENVÍO (grupos 7-10): los cobra el móvil contra entrega,
-    // NO entran a la caja física; se muestran aparte como informativo.
-    let enviosEfectivo = 0;
-    let enviosPOS = 0;
-    let enviosVoucher = 0;
-    let enviosTransfer = 0;
     for (const reg of registrosFiltrados) {
       // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
-      // de venta a crédito (3). POS(4)/voucher(5)/transferencia(6) no son efectivo,
-      // y los grupos de envío (7-10) los cobra el móvil → NO entran a la caja.
+      // de venta a crédito (3).
       if (
         reg.TipoGastoId === 2 &&
         (reg.TipoGastoGrupoId === 1 || reg.TipoGastoGrupoId === 3)
@@ -245,17 +244,15 @@ export default function AperturaCierreCajaPage() {
       if (reg.TipoGastoId === 1 && reg.TipoGastoGrupoId !== 2) {
         egresos += reg.RegistroDiarioCajaMonto;
       }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 4) {
+      if (
+        reg.TipoGastoId === 2 &&
+        [4, 5, 6, 8, 9, 10].includes(reg.TipoGastoGrupoId)
+      ) {
         ingresosPOS += reg.RegistroDiarioCajaMonto;
       }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 5) {
-        ingresosVoucher += reg.RegistroDiarioCajaMonto;
+      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 7) {
+        ingresosEnvios += reg.RegistroDiarioCajaMonto;
       }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 6) {
-        ingresosTransfer += reg.RegistroDiarioCajaMonto;
-      }
-      // Saldo vendido a crédito (cuenta corriente / cuenta de cliente). No es
-      // dinero recibido: se muestra aparte y NO entra al efectivo de la caja.
       if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 11) {
         ingresosCuentaCorriente += reg.RegistroDiarioCajaMonto;
       }
@@ -264,21 +261,7 @@ export default function AperturaCierreCajaPage() {
         costoDeliveryTotal += reg.RegistroDiarioCajaMonto;
         costoDeliveryCant += 1;
       }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 7) {
-        enviosEfectivo += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 8) {
-        enviosPOS += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 9) {
-        enviosVoucher += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 10) {
-        enviosTransfer += reg.RegistroDiarioCajaMonto;
-      }
     }
-    const totalEnvios =
-      enviosEfectivo + enviosPOS + enviosVoucher + enviosTransfer;
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
     let txtSobranteFaltante = "";
     if (sobranteFaltante > 0) {
@@ -299,20 +282,12 @@ export default function AperturaCierreCajaPage() {
     const etiquetaCredito =
       tipoEmpresa === "D" ? "Cuenta Corriente" : "Cuenta de Cliente";
 
-    // --- Generar PDF ---
-    // Alto extra si hay bloque de envíos (línea + título + métodos + total + línea).
-    const lineasEnvios =
-      totalEnvios > 0
-        ? 4 +
-          [enviosEfectivo, enviosPOS, enviosVoucher, enviosTransfer].filter(
-            (m) => m > 0
-          ).length
-        : 0;
+    // --- Generar PDF --- (mismo layout que el ticket del sistema anterior)
     const { jsPDF } = await loadPdf();
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 200 + lineasEnvios * 8], // 80mm de ancho
+      format: [80, 200], // 80mm de ancho, 200mm de alto
     });
     doc.setFontSize(16);
     doc.text("RESUMEN CIERRE CAJA", 40, 15, { align: "center" });
@@ -330,37 +305,41 @@ export default function AperturaCierreCajaPage() {
     y += 8;
     doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
     y += 8;
-    doc.line(10, y, 200, y);
+    // "Ingresos" del ticket viejo: efectivo de la caja física CON la apertura
+    // incluida. "Diferencia" = Ingresos - Egresos = efectivo que debería haber
+    // en la caja al momento del cierre.
+    doc.text(`Ingresos: ${formatMiles(apertura + ingresos)}`, 10, y);
     y += 8;
-    doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos Voucher: ${formatMiles(ingresosVoucher)}`, 10, y);
-    y += 8;
-    doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
-    y += 8;
-    // Ventas a crédito (cuenta corriente / cuenta de cliente).
     doc.text(
-      `Ingresos ${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
+      `Diferencia: ${formatMiles(apertura + ingresos - egresos)}`,
       10,
       y
     );
     y += 8;
     doc.line(10, y, 200, y);
     y += 8;
-    const totalIngresos =
-      ingresos +
-      ingresosPOS +
-      ingresosVoucher +
-      ingresosTransfer +
-      ingresosCuentaCorriente;
-    doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
+    doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
     y += 8;
-    // Costo de delivery cobrado (informativo: ya incluido en los ingresos).
+    doc.line(10, y, 200, y);
+    y += 8;
+    doc.text(`Ingresos ENVIOS: ${formatMiles(ingresosEnvios)}`, 10, y);
+    y += 8;
+    doc.line(10, y, 200, y);
+    y += 8;
+    doc.text(txtSobranteFaltante, 10, y);
+    y += 8;
+    // Informativos (no entran al arqueo de efectivo): crédito y costo delivery.
+    if (ingresosCuentaCorriente > 0) {
+      doc.text(
+        `${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
+        10,
+        y
+      );
+      y += 8;
+    }
     if (costoDeliveryTotal > 0) {
       doc.text(
-        `(incl.) Costo delivery (${costoDeliveryCant}): ${formatMiles(
+        `Costo delivery (${costoDeliveryCant}): ${formatMiles(
           costoDeliveryTotal
         )}`,
         10,
@@ -368,45 +347,7 @@ export default function AperturaCierreCajaPage() {
       );
       y += 8;
     }
-    // Cobros de ventas ENVÍO (informativo): los cobra el móvil contra entrega,
-    // no entran al efectivo de la caja ni al total de ingresos.
-    if (totalEnvios > 0) {
-      doc.line(10, y, 200, y);
-      y += 8;
-      doc.text("Envíos (cobra el móvil):", 10, y);
-      y += 8;
-      if (enviosEfectivo > 0) {
-        doc.text(`Envíos Efectivo: ${formatMiles(enviosEfectivo)}`, 10, y);
-        y += 8;
-      }
-      if (enviosPOS > 0) {
-        doc.text(`Envíos POS: ${formatMiles(enviosPOS)}`, 10, y);
-        y += 8;
-      }
-      if (enviosVoucher > 0) {
-        doc.text(`Envíos Voucher: ${formatMiles(enviosVoucher)}`, 10, y);
-        y += 8;
-      }
-      if (enviosTransfer > 0) {
-        doc.text(`Envíos Transfer: ${formatMiles(enviosTransfer)}`, 10, y);
-        y += 8;
-      }
-      doc.text(`Total Envíos: ${formatMiles(totalEnvios)}`, 10, y);
-      y += 8;
-      doc.line(10, y, 200, y);
-      y += 8;
-    }
-    // Línea nueva para Total Egresos
-    doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
-    y += 8;
-    // Línea nueva para Diferencia
-    const diferencia = totalIngresos - egresos;
-    doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(txtSobranteFaltante, 10, y);
-    y += 12;
+    y += 4;
     doc.text("--GRACIAS POR SU PREFERENCIA--", 10, y);
 
     // Generar el PDF y abrirlo automáticamente

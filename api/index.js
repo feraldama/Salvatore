@@ -9,7 +9,7 @@ const { loginLimiter, apiLimiter } = require("./middlewares/rateLimit");
 // (jwt firmaría/verificaría con `undefined`). Mejor no arrancar.
 if (!process.env.JWT_SECRET) {
   console.error(
-    "FATAL: falta la variable de entorno JWT_SECRET. Defínala en api/.env antes de iniciar."
+    "FATAL: falta la variable de entorno JWT_SECRET. Defínala en api/.env antes de iniciar.",
   );
   process.exit(1);
 }
@@ -45,10 +45,16 @@ const deliveryTarifaRoutes = require("./routes/deliveryTarifa.routes");
 
 const app = express();
 
+// En el servidor la API corre detrás de un proxy inverso (nginx) que agrega
+// X-Forwarded-For. Confiar en 1 salto para que express-rate-limit identifique
+// la IP real del cliente (sin esto lanza ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
+// TRUST_PROXY permite ajustar los saltos por entorno (0 = sin proxy).
+app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
+
 const defaultOrigins = [
   "http://localhost:3024",
   "http://127.0.0.1:3024",
-  "http://192.168.0.17:3024",
+  "http://172.16.10.21:3024",
 ];
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
@@ -65,7 +71,12 @@ const corsOptions = {
     return cb(new Error(`Origin ${origin} no permitido por CORS`));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Empresa-Id", "X-Local-Id"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Empresa-Id",
+    "X-Local-Id",
+  ],
   credentials: true,
   maxAge: 86400,
 };
@@ -75,7 +86,7 @@ const corsOptions = {
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
+  }),
 );
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
@@ -130,15 +141,21 @@ app.use((err, req, res, next) => {
 
   // Origen rechazado por CORS.
   if (err && /no permitido por CORS/.test(err.message || "")) {
-    return res.status(403).json({ success: false, message: "Origen no permitido" });
+    return res
+      .status(403)
+      .json({ success: false, message: "Origen no permitido" });
   }
   // JSON malformado en el body.
   if (err && err.type === "entity.parse.failed") {
-    return res.status(400).json({ success: false, message: "JSON inválido en la solicitud" });
+    return res
+      .status(400)
+      .json({ success: false, message: "JSON inválido en la solicitud" });
   }
 
   console.error(`[${req.method} ${req.originalUrl}]`, err.stack || err);
-  res.status(500).json({ success: false, message: "Error interno del servidor" });
+  res
+    .status(500)
+    .json({ success: false, message: "Error interno del servidor" });
 });
 
 const PORT = process.env.PORT || 3001;
