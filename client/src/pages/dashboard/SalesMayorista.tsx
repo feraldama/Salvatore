@@ -229,6 +229,23 @@ export default function SalesMayorista() {
       .catch((e) => console.error("Error al cargar vehículos de flota:", e));
   }, [tipoVenta, vehiculos.length]);
 
+  // Precio por caja según el tipo del cliente seleccionado: los clientes
+  // marcados como minoristas usan el precio de venta minorista; el resto (y el
+  // placeholder "SIN NOMBRE MINORISTA" de las ventas rápidas, ClienteId 1) usa
+  // el precio mayorista, como siempre funcionó esta pantalla. Si el producto
+  // no tiene precio minorista cargado se cae al mayorista (evita vender a 0).
+  const aplicaPrecioMinorista =
+    clienteSeleccionado != null &&
+    Number(clienteSeleccionado.ClienteId) !== 1 &&
+    clienteSeleccionado.ClienteTipo !== "MA";
+  const precioCajaSegunCliente = (
+    precioMinorista: number | undefined,
+    precioMayorista: number,
+  ) =>
+    aplicaPrecioMinorista && precioMinorista && precioMinorista > 0
+      ? precioMinorista
+      : precioMayorista;
+
   const agregarProducto = (producto: {
     id: number;
     nombre: string;
@@ -238,12 +255,10 @@ export default function SalesMayorista() {
     stock: number;
     precioUnitario?: number;
   }) => {
-    // Pantalla mayorista: siempre se usa el precio mayorista (cae al minorista
-    // solo si el producto no tuviera precio mayorista cargado).
-    const precioFinal =
-      producto.precioMayorista !== undefined
-        ? producto.precioMayorista
-        : producto.precio;
+    const precioFinal = precioCajaSegunCliente(
+      producto.precio,
+      producto.precioMayorista ?? producto.precio,
+    );
 
     const precioSeguro = precioFinal ?? 0;
 
@@ -284,8 +299,8 @@ export default function SalesMayorista() {
   const obtenerPrecio = (p: (typeof carrito)[0]) => {
     // Usar los precios guardados en el carrito en lugar de buscar en productos
     if (p.caja) {
-      // Mayorista: el precio por caja es siempre el mayorista.
-      return p.precioVentaMayorista;
+      // Precio por caja según el tipo del cliente seleccionado.
+      return precioCajaSegunCliente(p.precioVenta, p.precioVentaMayorista);
     } else {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
       if (combo) {
@@ -303,8 +318,8 @@ export default function SalesMayorista() {
   const obtenerTotal = (p: (typeof carrito)[0]) => {
     // Usar los precios guardados en el carrito en lugar de buscar en productos
     if (p.caja) {
-      // Mayorista: el precio por caja es siempre el mayorista.
-      return p.precioVentaMayorista * p.cantidad;
+      // Precio por caja según el tipo del cliente seleccionado.
+      return precioCajaSegunCliente(p.precioVenta, p.precioVentaMayorista) * p.cantidad;
     } else {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
       if (combo) {
@@ -511,8 +526,16 @@ export default function SalesMayorista() {
     if (!clienteSeleccionado) return;
     setCarrito((carritoActual) =>
       carritoActual.map((item) => {
-        // Mayorista: el precio de referencia del item es siempre el mayorista.
-        return { ...item, precio: item.precioVentaMayorista ?? 0 };
+        // Recalcular el precio de referencia del item según el tipo del
+        // cliente recién seleccionado (mayorista o minorista).
+        return {
+          ...item,
+          precio:
+            precioCajaSegunCliente(
+              item.precioVenta,
+              item.precioVentaMayorista,
+            ) ?? 0,
+        };
       }),
     );
   }, [clienteSeleccionado]);
@@ -804,11 +827,12 @@ export default function SalesMayorista() {
       let precioLabel = "";
       let totalLinea = 0;
       if (p.caja) {
-        // Caja: precio minorista o mayorista
-        precioUnitario =
-          clienteSeleccionado?.ClienteTipo === "MA"
-            ? p.precioVentaMayorista
-            : p.precioVenta;
+        // Caja: precio minorista o mayorista según el cliente (misma regla
+        // que el carrito, con caída al mayorista si no hay precio minorista).
+        precioUnitario = precioCajaSegunCliente(
+          p.precioVenta,
+          p.precioVentaMayorista,
+        );
         precioLabel = `Caja`;
         totalLinea = precioUnitario * p.cantidad;
       } else {
@@ -1391,7 +1415,13 @@ export default function SalesMayorista() {
                           Gs. {formatMiles(p.ProductoPrecioUnitario)}
                         </td>
                         <td className="py-2.5 pr-4 align-middle text-right font-num text-[15px] font-semibold text-text">
-                          Gs. {formatMiles(p.ProductoPrecioVentaMayorista)}
+                          Gs.{" "}
+                          {formatMiles(
+                            precioCajaSegunCliente(
+                              p.ProductoPrecioVenta,
+                              p.ProductoPrecioVentaMayorista,
+                            ),
+                          )}
                         </td>
                         <td
                           className={`py-2.5 pr-4 align-middle text-right font-num text-[14px] ${
