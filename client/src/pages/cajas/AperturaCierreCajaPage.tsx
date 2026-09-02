@@ -216,17 +216,23 @@ export default function AperturaCierreCajaPage() {
     // Calcular totales
     const apertura = aperturaReg.RegistroDiarioCajaMonto;
     const cierre = cierreReg.RegistroDiarioCajaMonto;
-    // Buckets del ticket (mismo criterio que el sistema anterior y que el
-    // reporte de envíos por móvil):
-    //   Ingresos       = efectivo que entró a la caja física (grupos 1 y 3)
-    //   Ingresos POS   = TODO lo no-efectivo: POS/voucher/transferencia, de
-    //                    mostrador (grupos 4-6) y de envíos (grupos 8-10)
-    //   Ingresos ENVIOS= efectivo cobrado por el móvil en envíos (grupo 7),
-    //                    NO entra a la caja física
+    // Acumuladores por grupo de ingreso. Cada empresa arma su ticket con ellos:
+    //   - Mayorista (EmpresaTipo 'D'): layout del sistema anterior — Ingresos
+    //     (efectivo con apertura), Ingresos POS (todo lo no-efectivo, mostrador
+    //     y envíos) e Ingresos ENVIOS (efectivo del móvil, grupo 7).
+    //   - Minorista: desglose por método (Efectivo/POS/Voucher/Transfer/crédito)
+    //     con Total Ingresos/Egresos y Diferencia.
     let egresos = 0;
+    // Efectivo que entra a la caja física: venta contado (1) y la seña/cobro
+    // de venta a crédito (3).
     let ingresos = 0;
-    let ingresosPOS = 0;
+    let ingresosPOS = 0; // grupo 4
+    let ingresosVoucher = 0; // grupo 5
+    let ingresosTransfer = 0; // grupo 6
+    // Efectivo cobrado por el móvil en envíos (grupo 7): NO entra a la caja.
     let ingresosEnvios = 0;
+    // POS/voucher/transferencia de envíos (grupos 8-10).
+    let ingresosEnviosNoEfectivo = 0;
     // Saldo vendido a crédito (grupo 11): informativo, no es dinero recibido.
     let ingresosCuentaCorriente = 0;
     // Costo de delivery cobrado en la sesión (grupo 12, informativo): ya está
@@ -234,33 +240,40 @@ export default function AperturaCierreCajaPage() {
     let costoDeliveryTotal = 0;
     let costoDeliveryCant = 0;
     for (const reg of registrosFiltrados) {
-      // Efectivo que entra a la caja física: venta contado (1) y la seña/efectivo
-      // de venta a crédito (3).
-      if (
-        reg.TipoGastoId === 2 &&
-        (reg.TipoGastoGrupoId === 1 || reg.TipoGastoGrupoId === 3)
-      ) {
-        ingresos += reg.RegistroDiarioCajaMonto;
+      if (reg.TipoGastoId !== 2 && reg.TipoGastoId !== 1) continue;
+      if (reg.TipoGastoId === 1) {
+        if (reg.TipoGastoGrupoId !== 2) egresos += reg.RegistroDiarioCajaMonto;
+        continue;
       }
-      if (reg.TipoGastoId === 1 && reg.TipoGastoGrupoId !== 2) {
-        egresos += reg.RegistroDiarioCajaMonto;
-      }
-      if (
-        reg.TipoGastoId === 2 &&
-        [4, 5, 6, 8, 9, 10].includes(reg.TipoGastoGrupoId)
-      ) {
-        ingresosPOS += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 7) {
-        ingresosEnvios += reg.RegistroDiarioCajaMonto;
-      }
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 11) {
-        ingresosCuentaCorriente += reg.RegistroDiarioCajaMonto;
-      }
-      // Costo de delivery (grupo 12): informativo, NO se suma a ingresos.
-      if (reg.TipoGastoId === 2 && reg.TipoGastoGrupoId === 12) {
-        costoDeliveryTotal += reg.RegistroDiarioCajaMonto;
-        costoDeliveryCant += 1;
+      switch (reg.TipoGastoGrupoId) {
+        case 1:
+        case 3:
+          ingresos += reg.RegistroDiarioCajaMonto;
+          break;
+        case 4:
+          ingresosPOS += reg.RegistroDiarioCajaMonto;
+          break;
+        case 5:
+          ingresosVoucher += reg.RegistroDiarioCajaMonto;
+          break;
+        case 6:
+          ingresosTransfer += reg.RegistroDiarioCajaMonto;
+          break;
+        case 7:
+          ingresosEnvios += reg.RegistroDiarioCajaMonto;
+          break;
+        case 8:
+        case 9:
+        case 10:
+          ingresosEnviosNoEfectivo += reg.RegistroDiarioCajaMonto;
+          break;
+        case 11:
+          ingresosCuentaCorriente += reg.RegistroDiarioCajaMonto;
+          break;
+        case 12:
+          costoDeliveryTotal += reg.RegistroDiarioCajaMonto;
+          costoDeliveryCant += 1;
+          break;
       }
     }
     const sobranteFaltante = ingresos + apertura - (cierre + egresos);
@@ -283,7 +296,10 @@ export default function AperturaCierreCajaPage() {
     const etiquetaCredito =
       tipoEmpresa === "D" ? "Cuenta Corriente" : "Cuenta de Cliente";
 
-    // --- Generar PDF --- (mismo layout que el ticket del sistema anterior)
+    // --- Generar PDF ---
+    // Mayorista (distribuidora): layout del ticket del sistema anterior.
+    // Minorista: layout desglosado por método de pago (formato previo).
+    const esMayorista = tipoEmpresa === "D";
     const { jsPDF } = await loadPdf();
     const doc = new jsPDF({
       orientation: "portrait",
@@ -304,51 +320,100 @@ export default function AperturaCierreCajaPage() {
     y += 8;
     doc.line(10, y, 200, y);
     y += 8;
-    doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
-    y += 8;
-    // "Ingresos" del ticket viejo: efectivo de la caja física CON la apertura
-    // incluida. "Diferencia" = Ingresos - Egresos = efectivo que debería haber
-    // en la caja al momento del cierre.
-    doc.text(`Ingresos: ${formatMiles(apertura + ingresos)}`, 10, y);
-    y += 8;
-    doc.text(
-      `Diferencia: ${formatMiles(apertura + ingresos - egresos)}`,
-      10,
-      y
-    );
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(`Ingresos ENVIOS: ${formatMiles(ingresosEnvios)}`, 10, y);
-    y += 8;
-    doc.line(10, y, 200, y);
-    y += 8;
-    doc.text(txtSobranteFaltante, 10, y);
-    y += 8;
-    // Informativos (no entran al arqueo de efectivo): crédito y costo delivery.
-    if (ingresosCuentaCorriente > 0) {
+    if (esMayorista) {
+      doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
+      y += 8;
+      // "Ingresos" del ticket viejo: efectivo de la caja física CON la apertura
+      // incluida. "Diferencia" = Ingresos - Egresos = efectivo que debería
+      // haber en la caja al momento del cierre.
+      doc.text(`Ingresos: ${formatMiles(apertura + ingresos)}`, 10, y);
+      y += 8;
       doc.text(
-        `${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
+        `Diferencia: ${formatMiles(apertura + ingresos - egresos)}`,
         10,
         y
       );
       y += 8;
-    }
-    if (costoDeliveryTotal > 0) {
+      doc.line(10, y, 200, y);
+      y += 8;
+      // Todo lo no-efectivo junto (mostrador y envíos), como el sistema viejo.
+      const posTotal =
+        ingresosPOS +
+        ingresosVoucher +
+        ingresosTransfer +
+        ingresosEnviosNoEfectivo;
+      doc.text(`Ingresos POS: ${formatMiles(posTotal)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(`Ingresos ENVIOS: ${formatMiles(ingresosEnvios)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(txtSobranteFaltante, 10, y);
+      y += 8;
+      // Informativo (no entra al arqueo de efectivo): saldo fiado.
+      if (ingresosCuentaCorriente > 0) {
+        doc.text(
+          `${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
+          10,
+          y
+        );
+        y += 8;
+      }
+      y += 4;
+    } else {
+      // Layout minorista: desglose por método de pago.
+      doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(`Ingresos Efectivo: ${formatMiles(ingresos)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos POS: ${formatMiles(ingresosPOS)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos Voucher: ${formatMiles(ingresosVoucher)}`, 10, y);
+      y += 8;
+      doc.text(`Ingresos Transfer: ${formatMiles(ingresosTransfer)}`, 10, y);
+      y += 8;
+      // Ventas a crédito (cuenta corriente / cuenta de cliente).
       doc.text(
-        `Costo delivery (${costoDeliveryCant}): ${formatMiles(
-          costoDeliveryTotal
-        )}`,
+        `Ingresos ${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
         10,
         y
       );
       y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      const totalIngresos =
+        ingresos +
+        ingresosPOS +
+        ingresosVoucher +
+        ingresosTransfer +
+        ingresosCuentaCorriente;
+      doc.text(`Total Ingresos: ${formatMiles(totalIngresos)}`, 10, y);
+      y += 8;
+      // Costo de delivery cobrado (informativo: ya incluido en los ingresos).
+      if (costoDeliveryTotal > 0) {
+        doc.text(
+          `(incl.) Costo delivery (${costoDeliveryCant}): ${formatMiles(
+            costoDeliveryTotal
+          )}`,
+          10,
+          y
+        );
+        y += 8;
+      }
+      doc.text(`Total Egresos: ${formatMiles(egresos)}`, 10, y);
+      y += 8;
+      const diferencia = totalIngresos - egresos;
+      doc.text(`Diferencia: ${formatMiles(diferencia)}`, 10, y);
+      y += 8;
+      doc.line(10, y, 200, y);
+      y += 8;
+      doc.text(txtSobranteFaltante, 10, y);
+      y += 12;
     }
-    y += 4;
     doc.text("--GRACIAS POR SU PREFERENCIA--", 10, y);
 
     // Generar el PDF y abrirlo automáticamente
