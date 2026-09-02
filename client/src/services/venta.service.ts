@@ -355,6 +355,14 @@ export const devolverVenta = async (payload: DevolucionVentaPayload) => {
 };
 
 // --- Reporte de envíos (ventas tipo ENVÍO) ---
+// Desglose de dinero recibido por método de pago (Gs.).
+export interface PagosPorMetodo {
+  efectivo: number;
+  pos: number;
+  voucher: number;
+  transferencia: number;
+}
+
 export interface EnvioVenta {
   VentaId: number;
   VentaFecha: string;
@@ -367,7 +375,11 @@ export interface EnvioVenta {
   VendedorId?: number | null;
   VendedorNombre?: string;
   VendedorApellido?: string;
-  formaPago?: string; // etiqueta de método(s) de cobro de la venta
+  formaPago?: string | null; // etiqueta de método(s) de cobro de la venta
+  // Desglose real de lo cobrado por método (de registrodiariocaja). Lo devuelve
+  // el reporte de ventas por tipo; permite separar transferencia de efectivo en
+  // ventas con pago mixto.
+  pagos?: PagosPorMetodo;
   // Ganancia devengada de la venta (precio de venta − costo promedio). Sólo la
   // devuelve el reporte de envíos por móvil.
   Ganancia?: number;
@@ -568,6 +580,8 @@ export interface VentasTipoGrupo {
   totalVendido: number;
   totalEntregado: number;
   totalPendiente: number;
+  /** Total del grupo separado por método real de cobro. */
+  porMetodo: PagosPorMetodo;
   ventas: EnvioVenta[];
 }
 
@@ -578,6 +592,7 @@ export interface VentasPorTipo {
     totalVendido: number;
     totalEntregado: number;
     totalPendiente: number;
+    porMetodo: PagosPorMetodo;
   };
 }
 
@@ -595,6 +610,7 @@ export const getVentasPorTipo = async (params: {
           totalVendido: 0,
           totalEntregado: 0,
           totalPendiente: 0,
+          porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
         },
       }
     );

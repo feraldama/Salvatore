@@ -216,6 +216,86 @@ async function registrarPagosEnCaja(conn, {
   }
 }
 
+// Grupos de INGRESO de registrodiariocaja → método de pago (mostrador, cobro de
+// crédito y envío comparten método): efectivo 1/3/7, POS 4/8, voucher 5/9,
+// transferencia 6/10. El 11 (cuenta corriente) y el 12 (costo delivery) no son
+// dinero recibido y quedan fuera. Permite desglosar el pago REAL de una venta
+// mixta (el VentaTipo de cabecera guarda un solo código, prioridad CR>TR>PO>CO).
+const METODO_POR_GRUPO_INGRESO = {
+  1: "efectivo",
+  3: "efectivo",
+  7: "efectivo",
+  4: "pos",
+  8: "pos",
+  5: "voucher",
+  9: "voucher",
+  6: "transferencia",
+  10: "transferencia",
+};
+
+// SQL del desglose de pagos por venta: suma los ingresos de caja por venta y
+// grupo, atando cada movimiento por el N° del detalle (mismo patrón que
+// getEnviosResumen). Entran tanto los pagos de la confirmación ("Venta ... N°:")
+// como los cobros de crédito posteriores ("Cobro Crédito ... N°:"), así el
+// desglose acompaña a VentaEntrega, que también crece con esos cobros.
+// `where` son las condiciones sobre `v` (alias de venta) del reporte que lo usa.
+const desglosePagosSql = (where) => `
+  SELECT CAST(
+           substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+         ) AS venta_id,
+         r.TipoGastoGrupoId AS grupo,
+         COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS total
+    FROM registrodiariocaja r
+    JOIN venta v
+      ON v.VentaId = CAST(
+           substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+         )
+   WHERE r.TipoGastoId = 2
+     AND r.TipoGastoGrupoId IN (1, 3, 4, 5, 6, 7, 8, 9, 10)
+     AND ${where}
+   GROUP BY venta_id, r.TipoGastoGrupoId`;
+
+// Filas del SQL de arriba -> Map ventaId -> {efectivo, pos, voucher, transferencia}.
+function armarPagosPorVenta(pagosRows) {
+  const pagosPorVenta = new Map();
+  for (const p of pagosRows) {
+    const metodo = METODO_POR_GRUPO_INGRESO[Number(p.grupo)];
+    if (!metodo) continue;
+    const id = Number(p.venta_id);
+    if (!pagosPorVenta.has(id)) {
+      pagosPorVenta.set(id, {
+        efectivo: 0,
+        pos: 0,
+        voucher: 0,
+        transferencia: 0,
+      });
+    }
+    pagosPorVenta.get(id)[metodo] += Number(p.total);
+  }
+  return pagosPorVenta;
+}
+
+// Desglose + etiqueta de forma de pago de UNA venta. Fallback para ventas sin
+// movimientos atados en caja (p. ej. migradas): todo lo entregado al método que
+// indica el VentaTipo de cabecera.
+function desgloseDeVenta(pagosPorVenta, { VentaId, VentaTipo, VentaEntrega, Pendiente }) {
+  let pagos = pagosPorVenta.get(Number(VentaId));
+  if (!pagos) {
+    pagos = { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 };
+    const entrega = Number(VentaEntrega) || 0;
+    if (VentaTipo === "TR") pagos.transferencia = entrega;
+    else if (VentaTipo === "PO") pagos.pos = entrega;
+    else pagos.efectivo = entrega; // CO, y señas/cobros de CR sin desglose
+  }
+  const partes = [];
+  if (pagos.efectivo > 0) partes.push("Efectivo");
+  if (pagos.pos > 0) partes.push("POS");
+  if (pagos.voucher > 0) partes.push("Voucher");
+  if (pagos.transferencia > 0) partes.push("Transferencia");
+  if ((Number(Pendiente) || 0) > 0) partes.push("Crédito");
+  return { pagos, formaPago: partes.length ? partes.join(" + ") : null };
+}
+
 const Venta = {
   getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
@@ -734,6 +814,10 @@ const Venta = {
       const filtraModalidad = esDelivery === "S" || esDelivery === "N";
 
       const ejecutarVentas = (cliente) => {
+        const ventasWhere = `DATE(v.VentaFecha) BETWEEN ? AND ?
+          AND v.EmpresaId = ?
+          ${esTodos ? "" : "AND v.ClienteId = ?"}
+          ${filtraModalidad ? "AND v.EsDelivery = ?" : ""}`;
         const ventasQuery = `
           SELECT
             v.*,
@@ -752,10 +836,7 @@ const Venta = {
           LEFT JOIN clientes c ON v.ClienteId = c.ClienteId
           LEFT JOIN almacen a ON v.AlmacenId = a.AlmacenId
           LEFT JOIN usuario u ON v.VentaUsuario = u.UsuarioId
-          WHERE DATE(v.VentaFecha) BETWEEN ? AND ?
-          AND v.EmpresaId = ?
-          ${esTodos ? "" : "AND v.ClienteId = ?"}
-          ${filtraModalidad ? "AND v.EsDelivery = ?" : ""}
+          WHERE ${ventasWhere}
           ORDER BY v.VentaFecha ASC, v.VentaId ASC
         `;
 
@@ -791,13 +872,28 @@ const Venta = {
             .filter((v) => v.VentaTipo === "CR")
             .map((v) => v.VentaId);
 
-          const finalize = (creditosByVentaId, pagosByCreditoId) => {
+          const finalize = (creditosByVentaId, pagosByCreditoId, pagosPorVenta) => {
             const ventasConDetalle = ventasResults.map((venta) => {
-              const base = { ...venta, SaldoPendiente: 0, Pagos: [] };
-              if (venta.VentaTipo !== "CR") return base;
-
               const total = Number(venta.Total) || 0;
               const entrega = Number(venta.VentaEntrega) || 0;
+              // Desglose real de lo cobrado por método (registrodiariocaja):
+              // en pagos mixtos el VentaTipo de cabecera no alcanza para
+              // repartir el dinero por método.
+              const { pagos, formaPago } = desgloseDeVenta(pagosPorVenta, {
+                VentaId: venta.VentaId,
+                VentaTipo: venta.VentaTipo,
+                VentaEntrega: venta.VentaEntrega,
+                Pendiente: total - entrega,
+              });
+              const base = {
+                ...venta,
+                SaldoPendiente: 0,
+                Pagos: [],
+                pagosPorMetodo: pagos,
+                formaPago,
+              };
+              if (venta.VentaTipo !== "CR") return base;
+
               base.SaldoPendiente = total - entrega;
 
               const credito = creditosByVentaId.get(venta.VentaId);
@@ -820,48 +916,66 @@ const Venta = {
             });
           };
 
-          // Sin ventas a crédito: no hacen falta las otras 2 queries.
-          if (creditoVentaIds.length === 0) {
-            return finalize(new Map(), new Map());
-          }
-
-          // Query #2: todos los ventacredito del set en una sola tirada.
-          // El adaptador PG traduce cada ? a $N sin expandir arrays, así que
-          // el IN se arma con un placeholder por id.
-          const ventaIdPlaceholders = creditoVentaIds.map(() => "?").join(", ");
+          // Desglose de pagos por método de las ventas del filtro (ver
+          // desglosePagosSql / armarPagosPorVenta): mismas condiciones y
+          // parámetros que la query de ventas.
           db.query(
-            `SELECT * FROM ventacredito WHERE VentaId IN (${ventaIdPlaceholders})`,
-            creditoVentaIds,
-            (err, creditosResults) => {
+            desglosePagosSql(ventasWhere),
+            ventasParams,
+            (err, pagosRows) => {
               if (err) return reject(err);
+              const pagosPorVenta = armarPagosPorVenta(pagosRows);
 
-              const creditosByVentaId = new Map(
-                creditosResults.map((c) => [c.VentaId, c])
-              );
-              const creditoIds = creditosResults.map((c) => c.VentaCreditoId);
-
-              if (creditoIds.length === 0) {
-                return finalize(creditosByVentaId, new Map());
+              // Sin ventas a crédito: no hacen falta las otras 2 queries.
+              if (creditoVentaIds.length === 0) {
+                return finalize(new Map(), new Map(), pagosPorVenta);
               }
 
-              // Query #3: todos los pagos del set, ordenados y agrupados en memoria.
-              const creditoIdPlaceholders = creditoIds.map(() => "?").join(", ");
+              // Query #2: todos los ventacredito del set en una sola tirada.
+              // El adaptador PG traduce cada ? a $N sin expandir arrays, así que
+              // el IN se arma con un placeholder por id.
+              const ventaIdPlaceholders = creditoVentaIds
+                .map(() => "?")
+                .join(", ");
               db.query(
-                `SELECT * FROM ventacreditopago
-                 WHERE VentaCreditoId IN (${creditoIdPlaceholders})
-                 ORDER BY VentaCreditoPagoFecha ASC, VentaCreditoPagoId ASC`,
-                creditoIds,
-                (err, pagosResults) => {
+                `SELECT * FROM ventacredito WHERE VentaId IN (${ventaIdPlaceholders})`,
+                creditoVentaIds,
+                (err, creditosResults) => {
                   if (err) return reject(err);
 
-                  const pagosByCreditoId = new Map();
-                  for (const pago of pagosResults) {
-                    const arr = pagosByCreditoId.get(pago.VentaCreditoId);
-                    if (arr) arr.push(pago);
-                    else pagosByCreditoId.set(pago.VentaCreditoId, [pago]);
+                  const creditosByVentaId = new Map(
+                    creditosResults.map((c) => [c.VentaId, c])
+                  );
+                  const creditoIds = creditosResults.map(
+                    (c) => c.VentaCreditoId
+                  );
+
+                  if (creditoIds.length === 0) {
+                    return finalize(creditosByVentaId, new Map(), pagosPorVenta);
                   }
 
-                  finalize(creditosByVentaId, pagosByCreditoId);
+                  // Query #3: todos los pagos del set, ordenados y agrupados en memoria.
+                  const creditoIdPlaceholders = creditoIds
+                    .map(() => "?")
+                    .join(", ");
+                  db.query(
+                    `SELECT * FROM ventacreditopago
+                     WHERE VentaCreditoId IN (${creditoIdPlaceholders})
+                     ORDER BY VentaCreditoPagoFecha ASC, VentaCreditoPagoId ASC`,
+                    creditoIds,
+                    (err, pagosResults) => {
+                      if (err) return reject(err);
+
+                      const pagosByCreditoId = new Map();
+                      for (const pago of pagosResults) {
+                        const arr = pagosByCreditoId.get(pago.VentaCreditoId);
+                        if (arr) arr.push(pago);
+                        else pagosByCreditoId.set(pago.VentaCreditoId, [pago]);
+                      }
+
+                      finalize(creditosByVentaId, pagosByCreditoId, pagosPorVenta);
+                    }
+                  );
                 }
               );
             }
@@ -1503,6 +1617,13 @@ const Venta = {
   // grupo aparte (ENVIO_TR) para no mezclarse con las transferencias de
   // mostrador, y los envíos a crédito que suman al grupo CR como cualquier
   // crédito; el resto se agrupa por VentaTipo (CO/CR/PO/TR).
+  // Además de agrupar por VentaTipo (que en pagos mixtos guarda UN solo código,
+  // con prioridad CR > TR > PO > CO), cada venta lleva su desglose REAL por
+  // método (efectivo/POS/voucher/transferencia) leído de registrodiariocaja —
+  // misma fuente y mismo atado por el N° del detalle que getEnviosResumen — para
+  // que una venta mitad transferencia y mitad efectivo no infle el total de
+  // transferencia con la parte en efectivo, y los totales por método cierren
+  // contra el registro diario.
   // El agrupado se arma en JS para devolver también el detalle de cada venta.
   getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
@@ -1529,6 +1650,11 @@ const Venta = {
       params
     );
 
+    // Desglose de pagos POR VENTA desde registrodiariocaja (ver helpers
+    // desglosePagosSql / armarPagosPorVenta arriba).
+    const [pagosRows] = await pe.query(desglosePagosSql(where), params);
+    const pagosPorVenta = armarPagosPorVenta(pagosRows);
+
     const grupos = new Map();
     for (const r of rows) {
       const tipo =
@@ -1546,24 +1672,35 @@ const Venta = {
           totalVendido: 0,
           totalEntregado: 0,
           totalPendiente: 0,
+          porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
           ventas: [],
         });
       }
       const g = grupos.get(tipo);
+
+      const pendiente = Number(r.Pendiente) || 0;
+      const { pagos, formaPago } = desgloseDeVenta(pagosPorVenta, r);
+
       g.ventas.push({
         VentaId: r.VentaId,
         VentaFecha: r.VentaFecha,
         VentaTipo: r.VentaTipo,
         Total: Number(r.Total) || 0,
         VentaEntrega: Number(r.VentaEntrega) || 0,
-        Pendiente: Number(r.Pendiente) || 0,
+        Pendiente: pendiente,
         ClienteNombre: r.ClienteNombre ?? null,
         ClienteApellido: r.ClienteApellido ?? null,
+        pagos,
+        formaPago,
       });
       g.cantidad += 1;
       g.totalVendido += Number(r.Total) || 0;
       g.totalEntregado += Number(r.VentaEntrega) || 0;
-      g.totalPendiente += Number(r.Pendiente) || 0;
+      g.totalPendiente += pendiente;
+      g.porMetodo.efectivo += pagos.efectivo;
+      g.porMetodo.pos += pagos.pos;
+      g.porMetodo.voucher += pagos.voucher;
+      g.porMetodo.transferencia += pagos.transferencia;
     }
 
     const ORDEN_TIPOS = ["ENVIO", "ENVIO_TR", "CO", "CR", "PO", "TR"];
@@ -1579,8 +1716,21 @@ const Venta = {
         totalVendido: acc.totalVendido + g.totalVendido,
         totalEntregado: acc.totalEntregado + g.totalEntregado,
         totalPendiente: acc.totalPendiente + g.totalPendiente,
+        porMetodo: {
+          efectivo: acc.porMetodo.efectivo + g.porMetodo.efectivo,
+          pos: acc.porMetodo.pos + g.porMetodo.pos,
+          voucher: acc.porMetodo.voucher + g.porMetodo.voucher,
+          transferencia:
+            acc.porMetodo.transferencia + g.porMetodo.transferencia,
+        },
       }),
-      { cantidad: 0, totalVendido: 0, totalEntregado: 0, totalPendiente: 0 }
+      {
+        cantidad: 0,
+        totalVendido: 0,
+        totalEntregado: 0,
+        totalPendiente: 0,
+        porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
+      }
     );
 
     return { grupos: lista, totales };

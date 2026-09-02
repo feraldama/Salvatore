@@ -23,6 +23,7 @@ import {
   type VentasPorVendedor,
   getVentasPorTipo,
   type VentasPorTipo,
+  type PagosPorMetodo,
   getVentasPorProducto,
   type VentasPorProducto,
   getReporteCobrosGanancia,
@@ -71,6 +72,11 @@ interface Venta {
   ClienteApellido?: string;
   UsuarioId?: string;
   VentaUsuario?: string;
+  // Desglose real de lo cobrado por método (registrodiariocaja) y su etiqueta
+  // (ej. "Efectivo + Transferencia"): en pagos mixtos el VentaTipo de cabecera
+  // guarda un solo código y no sirve para repartir el dinero por método.
+  pagosPorMetodo?: PagosPorMetodo;
+  formaPago?: string | null;
 }
 
 interface ReporteData {
@@ -803,20 +809,24 @@ const ReportesPage: React.FC = () => {
       }
       y += 4;
 
-      // Totales por tipo de venta
+      // Totales por método de pago REAL (desglose de registrodiariocaja que
+      // envía el backend): en pagos mixtos el VentaTipo de cabecera guarda un
+      // solo código y sumaba el total completo al método equivocado.
       let totalVentas = 0;
       let totalCompra = 0;
       let totalSaldoPendiente = 0;
       let totalEfectivo = 0;
       let totalPOS = 0;
+      let totalVoucher = 0;
       let totalTransfer = 0;
-      let totalCredito = 0;
+      let totalCredito = 0; // saldo a crédito (no recibido)
 
       const ventasRows: string[][] = [];
 
       reporte.ventas.forEach((venta) => {
         const tipoVenta =
-          venta.VentaTipo === "CO"
+          venta.formaPago ??
+          (venta.VentaTipo === "CO"
             ? "Contado"
             : venta.VentaTipo === "CR"
               ? "Crédito"
@@ -824,7 +834,7 @@ const ReportesPage: React.FC = () => {
                 ? "POS"
                 : venta.VentaTipo === "TR"
                   ? "Transfer"
-                  : venta.VentaTipo;
+                  : venta.VentaTipo);
 
         const fechaVenta = formatearFechaHora(venta.VentaFecha);
         const clienteNombre = [venta.ClienteNombre, venta.ClienteApellido]
@@ -837,11 +847,24 @@ const ReportesPage: React.FC = () => {
 
         totalVentas += Number(venta.Total);
         totalCompra += montoCompra;
-        if (venta.VentaTipo === "CO") totalEfectivo += Number(venta.Total);
-        else if (venta.VentaTipo === "PO") totalPOS += Number(venta.Total);
-        else if (venta.VentaTipo === "TR") totalTransfer += Number(venta.Total);
-        else if (venta.VentaTipo === "CR") {
-          totalCredito += Number(venta.Total);
+        const pm = venta.pagosPorMetodo;
+        if (pm) {
+          totalEfectivo += Number(pm.efectivo) || 0;
+          totalPOS += Number(pm.pos) || 0;
+          totalVoucher += Number(pm.voucher) || 0;
+          totalTransfer += Number(pm.transferencia) || 0;
+        } else {
+          // Respuesta de un backend sin desglose: criterio viejo por cabecera.
+          if (venta.VentaTipo === "CO") totalEfectivo += Number(venta.Total);
+          else if (venta.VentaTipo === "PO") totalPOS += Number(venta.Total);
+          else if (venta.VentaTipo === "TR")
+            totalTransfer += Number(venta.Total);
+        }
+        // Saldo a crédito: lo vendido que aún no entró por ningún método.
+        const pendiente =
+          Number(venta.Total || 0) - Number(venta.VentaEntrega || 0);
+        if (pendiente > 0) totalCredito += pendiente;
+        if (venta.VentaTipo === "CR") {
           totalSaldoPendiente += Number(venta.SaldoPendiente);
         }
 
@@ -940,11 +963,15 @@ const ReportesPage: React.FC = () => {
         y,
       );
       y += 6;
-      doc.text(
-        `Efectivo: ${formatMiles(totalEfectivo)} | POS: ${formatMiles(totalPOS)} | Transfer: ${formatMiles(totalTransfer)} | Crédito: ${formatMiles(totalCredito)}`,
-        14,
-        y,
-      );
+      const partesCobrado = [
+        `Efectivo: ${formatMiles(totalEfectivo)}`,
+        `POS: ${formatMiles(totalPOS)}`,
+      ];
+      if (totalVoucher > 0)
+        partesCobrado.push(`Voucher: ${formatMiles(totalVoucher)}`);
+      partesCobrado.push(`Transfer: ${formatMiles(totalTransfer)}`);
+      partesCobrado.push(`Crédito (a cobrar): ${formatMiles(totalCredito)}`);
+      doc.text(partesCobrado.join(" | "), 14, y);
       y += 6;
       if (totalSaldoPendiente > 0) {
         doc.text(
@@ -1869,10 +1896,23 @@ const ReportesPage: React.FC = () => {
       14,
     );
 
-    const head = [["Fecha", "N° venta", "Cliente", "Forma pago", "Total", "Pendiente"]];
+    const head = [
+      [
+        "Fecha",
+        "N° venta",
+        "Cliente",
+        "Forma pago",
+        "Efectivo",
+        "Transferencia",
+        "Total",
+        "Pendiente",
+      ],
+    ];
     const columnStyles = {
       4: { halign: "right" as const },
       5: { halign: "right" as const },
+      6: { halign: "right" as const },
+      7: { halign: "right" as const },
     };
 
     let y = 24;
@@ -1894,7 +1934,13 @@ const ReportesPage: React.FC = () => {
           String(v.VentaId),
           [v.ClienteNombre, v.ClienteApellido].filter(Boolean).join(" ") ||
             "-",
-          labelTipoVenta(v.VentaTipo),
+          v.formaPago ?? labelTipoVenta(v.VentaTipo),
+          (v.pagos?.efectivo ?? 0) > 0
+            ? formatMiles(v.pagos?.efectivo ?? 0)
+            : "-",
+          (v.pagos?.transferencia ?? 0) > 0
+            ? formatMiles(v.pagos?.transferencia ?? 0)
+            : "-",
           formatMiles(v.Total),
           v.Pendiente > 0 ? formatMiles(v.Pendiente) : "-",
         ]),
@@ -1904,6 +1950,12 @@ const ReportesPage: React.FC = () => {
             "",
             "",
             `Total ${labelTipoVenta(grupo.tipo)}`,
+            grupo.porMetodo.efectivo > 0
+              ? formatMiles(grupo.porMetodo.efectivo)
+              : "-",
+            grupo.porMetodo.transferencia > 0
+              ? formatMiles(grupo.porMetodo.transferencia)
+              : "-",
             formatMiles(grupo.totalVendido),
             grupo.totalPendiente > 0 ? formatMiles(grupo.totalPendiente) : "-",
           ],
@@ -1936,7 +1988,9 @@ const ReportesPage: React.FC = () => {
     doc.setFontSize(9);
     for (const grupo of ventasPorTipo.grupos) {
       doc.text(
-        `${labelTipoVenta(grupo.tipo)}: ${formatMiles(grupo.totalVendido)} (${grupo.cantidad} venta(s))`,
+        `${labelTipoVenta(grupo.tipo)}: ${formatMiles(grupo.totalVendido)} (${grupo.cantidad} venta(s)) | Efectivo: ${formatMiles(
+          grupo.porMetodo.efectivo,
+        )} | Transferencia: ${formatMiles(grupo.porMetodo.transferencia)}`,
         14,
         y,
       );
@@ -1951,6 +2005,16 @@ const ReportesPage: React.FC = () => {
       14,
       y,
     );
+    y += 5;
+    const pm = ventasPorTipo.totales.porMetodo;
+    const partesMetodo = [
+      `Efectivo: ${formatMiles(pm.efectivo)}`,
+      `Transferencia: ${formatMiles(pm.transferencia)}`,
+    ];
+    if (pm.pos > 0) partesMetodo.push(`POS: ${formatMiles(pm.pos)}`);
+    if (pm.voucher > 0)
+      partesMetodo.push(`Voucher: ${formatMiles(pm.voucher)}`);
+    doc.text(`Cobrado por método: ${partesMetodo.join(" | ")}`, 14, y);
 
     const pdfBlob = doc.output("blob");
     const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -2915,7 +2979,7 @@ const ReportesPage: React.FC = () => {
                       {labelTipoVenta(grupo.tipo)} ({grupo.cantidad})
                     </h4>
                     <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
-                      <table className="w-full border-collapse text-sm min-w-[700px]">
+                      <table className="w-full border-collapse text-sm min-w-[860px]">
                         <thead className="sticky top-0 bg-blue-50 z-10">
                           <tr className="border-b border-slate-300">
                             <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
@@ -2929,6 +2993,12 @@ const ReportesPage: React.FC = () => {
                             </th>
                             <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
                               Forma pago
+                            </th>
+                            <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Efectivo
+                            </th>
+                            <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Transferencia
                             </th>
                             <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
                               Total
@@ -2956,7 +3026,17 @@ const ReportesPage: React.FC = () => {
                                   .join(" ") || "-"}
                               </td>
                               <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
-                                {labelTipoVenta(v.VentaTipo)}
+                                {v.formaPago ?? labelTipoVenta(v.VentaTipo)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {(v.pagos?.efectivo ?? 0) > 0
+                                  ? formatMiles(v.pagos?.efectivo ?? 0)
+                                  : "-"}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {(v.pagos?.transferencia ?? 0) > 0
+                                  ? formatMiles(v.pagos?.transferencia ?? 0)
+                                  : "-"}
                               </td>
                               <td className="py-1.5 px-2 text-right font-mono text-slate-700">
                                 {formatMiles(v.Total)}
@@ -2973,6 +3053,27 @@ const ReportesPage: React.FC = () => {
                           <tr className="bg-blue-100 font-semibold text-blue-900">
                             <td className="py-2 px-2" colSpan={4}>
                               Total {labelTipoVenta(grupo.tipo)}
+                              {(grupo.porMetodo?.pos ?? 0) +
+                                (grupo.porMetodo?.voucher ?? 0) >
+                                0 && (
+                                <span className="font-normal">
+                                  {" "}
+                                  (POS: {formatMiles(grupo.porMetodo.pos)}
+                                  {grupo.porMetodo.voucher > 0 &&
+                                    ` · Voucher: ${formatMiles(grupo.porMetodo.voucher)}`}
+                                  )
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {(grupo.porMetodo?.efectivo ?? 0) > 0
+                                ? formatMiles(grupo.porMetodo.efectivo)
+                                : "-"}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {(grupo.porMetodo?.transferencia ?? 0) > 0
+                                ? formatMiles(grupo.porMetodo.transferencia)
+                                : "-"}
                             </td>
                             <td className="py-2 px-2 text-right font-mono">
                               {formatMiles(grupo.totalVendido)}
@@ -3022,6 +3123,59 @@ const ReportesPage: React.FC = () => {
                       </span>
                     </div>
                   </div>
+                  {ventasPorTipo.totales.porMetodo && (
+                    <>
+                      <h3 className="font-semibold text-slate-800 mt-4 mb-3">
+                        COBRADO POR MÉTODO
+                      </h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
+                        <div>
+                          <span className="text-slate-500">Efectivo:</span>{" "}
+                          <span className="font-mono font-medium">
+                            {formatMiles(
+                              ventasPorTipo.totales.porMetodo.efectivo,
+                            )}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">
+                            Transferencia:
+                          </span>{" "}
+                          <span className="font-mono font-medium">
+                            {formatMiles(
+                              ventasPorTipo.totales.porMetodo.transferencia,
+                            )}
+                          </span>
+                        </div>
+                        {ventasPorTipo.totales.porMetodo.pos > 0 && (
+                          <div>
+                            <span className="text-slate-500">POS:</span>{" "}
+                            <span className="font-mono font-medium">
+                              {formatMiles(ventasPorTipo.totales.porMetodo.pos)}
+                            </span>
+                          </div>
+                        )}
+                        {ventasPorTipo.totales.porMetodo.voucher > 0 && (
+                          <div>
+                            <span className="text-slate-500">Voucher:</span>{" "}
+                            <span className="font-mono font-medium">
+                              {formatMiles(
+                                ventasPorTipo.totales.porMetodo.voucher,
+                              )}
+                            </span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-slate-500">
+                            Crédito pendiente:
+                          </span>{" "}
+                          <span className="font-mono font-medium">
+                            {formatMiles(ventasPorTipo.totales.totalPendiente)}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
