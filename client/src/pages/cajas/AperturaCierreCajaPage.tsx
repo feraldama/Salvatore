@@ -351,17 +351,7 @@ export default function AperturaCierreCajaPage() {
       doc.line(10, y, 200, y);
       y += 8;
       doc.text(txtSobranteFaltante, 10, y);
-      y += 8;
-      // Informativo (no entra al arqueo de efectivo): saldo fiado.
-      if (ingresosCuentaCorriente > 0) {
-        doc.text(
-          `${etiquetaCredito}: ${formatMiles(ingresosCuentaCorriente)}`,
-          10,
-          y
-        );
-        y += 8;
-      }
-      y += 4;
+      y += 12;
     } else {
       // Layout minorista: desglose por método de pago.
       doc.text(`Egresos: ${formatMiles(egresos)}`, 10, y);
