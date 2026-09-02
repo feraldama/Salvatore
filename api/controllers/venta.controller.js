@@ -124,7 +124,8 @@ exports.update = async (req, res) => {
 };
 
 // DELETE de venta: replica PBorrarRegistoDiarioWS con &regla=1. Revierte los
-// movimientos de caja asociados (los 7 detalles posibles que el GX inserta),
+// movimientos de caja asociados (todos los detalles que insertan la
+// confirmación y el cobro de crédito, incluidas las variantes ENVÍO/DELIVERY),
 // devuelve el efectivo a la caja, restituye stock de cada ventaproducto, y
 // borra ventacreditopago/ventacredito/ventaproducto/venta — todo en una
 // transacción para que no quede a medias.
@@ -150,45 +151,48 @@ exports.delete = async (req, res) => {
     }
     const almacenId = ventaRows[0].AlmacenId;
 
-    // 1. Reversión de caja. Los 7 detalles posibles que apventaconfirmarws
-    // y apcreditows insertan. De esos, solo "Venta N°" y "Cobro Crédito
-    // Efectivo N°" mueven efectivo físico — el resto (POS, TR, Voucher) NO
-    // afecta CajaMonto, por eso solo descontamos el efectivo al revertir.
-    const detalleVenta = `Venta N°: ${ventaId}`;
-    const detallePOS = `Venta POS N°: ${ventaId}`;
-    const detalleCred = `Venta Crédito N°: ${ventaId}`;
-    const detalleTrans = `Venta Transferencia N°: ${ventaId}`;
-    const detalleVoucher = `Venta Voucher N°: ${ventaId}`;
-    const detalleCredEfe = `Cobro Crédito Efectivo N°: ${ventaId}`;
-    const detalleCredPOS = `Cobro Crédito POS N°: ${ventaId}`;
-    const detalleCredTrans = `Cobro Crédito Transfer N°: ${ventaId}`;
-    const detalleCtaCte = `Venta Cuenta Corriente N°: ${ventaId}`;
+    // 1. Reversión de caja. Los detalles que insertan la confirmación
+    // (registrarPagosEnCaja) y el cobro de crédito, en sus tres variantes de
+    // sufijo: "", " (ENVÍO)" y " (DELIVERY)". Sin las variantes con sufijo, al
+    // anular un envío/delivery los movimientos quedaban huérfanos en
+    // registrodiariocaja e inflaban el cierre de caja (Ingresos ENVIOS).
+    const basesDetalle = [
+      `Venta N°: ${ventaId}`,
+      `Venta POS N°: ${ventaId}`,
+      `Venta Crédito N°: ${ventaId}`,
+      `Venta Transferencia N°: ${ventaId}`,
+      `Venta Voucher N°: ${ventaId}`,
+      `Cobro Crédito Efectivo N°: ${ventaId}`,
+      `Cobro Crédito POS N°: ${ventaId}`,
+      `Cobro Crédito Transfer N°: ${ventaId}`,
+      `Venta Cuenta Corriente N°: ${ventaId}`,
+    ];
+    const detalles = basesDetalle.flatMap((b) => [
+      b,
+      `${b} (ENVÍO)`,
+      `${b} (DELIVERY)`,
+    ]);
+    detalles.push(`Costo Delivery N°: ${ventaId}`);
 
     const [rdcRows] = await conn.query(
       `SELECT RegistroDiarioCajaId, CajaId, RegistroDiarioCajaMonto,
-              RegistroDiarioCajaDetalle
+              TipoGastoId, TipoGastoGrupoId
        FROM registrodiariocaja
-       WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        detalleVenta,
-        detallePOS,
-        detalleCred,
-        detalleTrans,
-        detalleVoucher,
-        detalleCredEfe,
-        detalleCredPOS,
-        detalleCredTrans,
-        detalleCtaCte,
-      ]
+       WHERE RegistroDiarioCajaDetalle IN (${detalles.map(() => "?").join(", ")})`,
+      detalles
     );
 
+    // El efectivo a descontar de CajaMonto se decide por grupo: solo 1 (venta
+    // contado) y 3 (efectivo de crédito/seña) suman a la caja física al
+    // registrarse. Los grupos de envío (7-10) los cobra el móvil y nunca
+    // entraron a CajaMonto; POS/voucher/transfer/cta cte/costo delivery tampoco.
     let cajaAfectada = null;
     let montoEfectivo = 0;
     for (const r of rdcRows) {
       cajaAfectada = r.CajaId;
       if (
-        r.RegistroDiarioCajaDetalle === detalleVenta ||
-        r.RegistroDiarioCajaDetalle === detalleCredEfe
+        Number(r.TipoGastoId) === 2 &&
+        (Number(r.TipoGastoGrupoId) === 1 || Number(r.TipoGastoGrupoId) === 3)
       ) {
         montoEfectivo += Number(r.RegistroDiarioCajaMonto);
       }
@@ -197,18 +201,8 @@ exports.delete = async (req, res) => {
     if (rdcRows.length) {
       await conn.query(
         `DELETE FROM registrodiariocaja
-         WHERE RegistroDiarioCajaDetalle IN (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          detalleVenta,
-          detallePOS,
-          detalleCred,
-          detalleTrans,
-          detalleVoucher,
-          detalleCredEfe,
-          detalleCredPOS,
-          detalleCredTrans,
-          detalleCtaCte,
-        ]
+         WHERE RegistroDiarioCajaId IN (${rdcRows.map(() => "?").join(", ")})`,
+        rdcRows.map((r) => r.RegistroDiarioCajaId)
       );
     }
     if (cajaAfectada !== null && montoEfectivo !== 0) {
