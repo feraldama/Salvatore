@@ -115,7 +115,31 @@ const numeroALetras = (numero: number): string => {
   return numero.toLocaleString("es-PY") + " GUARANÍES";
 };
 
-const generarHoja = (venta: FacturaVenta, productos: FacturaProducto[]) => {
+// El formulario preimpreso tiene lugar para 16 líneas de ítems. Si la venta
+// tiene más, NO se comprime nada: se continúa en hojas adicionales (cada hoja
+// es un formulario, con su propio número preimpreso) y cada una liquida el
+// total de los ítems que entraron en ELLA. La suma de los totales de todas las
+// hojas da el Total de la venta.
+export const FILAS_POR_HOJA = 16;
+
+// Cuántos formularios preimpresos consume la factura de esta venta. Lo usa la
+// UI para avisar al operador cuántas hojas cargar en la impresora.
+export const cantidadHojasFactura = (cantidadItems: number) =>
+  Math.max(1, Math.ceil((cantidadItems || 0) / FILAS_POR_HOJA));
+
+type LineaFactura = FacturaProducto & {
+  VentaProductoPrecioConRecargo: number;
+  VentaProductoPrecioTotalConRecargo: number;
+};
+
+// Aplica el recargo (Total de la venta vs. suma de los ítems) y absorbe la
+// diferencia de redondeo en el último ítem, para que la suma de las líneas dé
+// exactamente el Total. Se calcula sobre TODOS los ítems ANTES de repartirlos
+// en hojas: así el corte por hoja no altera ningún importe.
+const calcularLineas = (
+  venta: FacturaVenta,
+  productos: FacturaProducto[]
+): LineaFactura[] => {
   const subtotalProductos = productos.reduce(
     (sum, p) => sum + (p.VentaProductoPrecioTotal || 0),
     0
@@ -124,40 +148,54 @@ const generarHoja = (venta: FacturaVenta, productos: FacturaProducto[]) => {
   const factorRecargo =
     subtotalProductos > 0 ? totalReal / subtotalProductos : 1;
 
-  const productosConRecargo = productos.map((p) => {
-    const precioUnitarioOriginal = p.VentaProductoPrecio || 0;
+  const lineas: LineaFactura[] = productos.map((p) => {
     const precioUnitarioConRecargo = Math.round(
-      precioUnitarioOriginal * factorRecargo
+      (p.VentaProductoPrecio || 0) * factorRecargo
     );
     const cantidad = p.VentaProductoCantidad || 0;
-    const precioTotalConRecargo = Math.round(
-      precioUnitarioConRecargo * cantidad
-    );
     return {
       ...p,
       VentaProductoPrecioConRecargo: precioUnitarioConRecargo,
-      VentaProductoPrecioTotalConRecargo: precioTotalConRecargo,
+      VentaProductoPrecioTotalConRecargo: Math.round(
+        precioUnitarioConRecargo * cantidad
+      ),
     };
   });
 
-  const subtotalConRecargo = productosConRecargo.reduce(
-    (sum, p) => sum + (p.VentaProductoPrecioTotalConRecargo || 0),
+  const subtotalConRecargo = lineas.reduce(
+    (sum, p) => sum + p.VentaProductoPrecioTotalConRecargo,
     0
   );
-
   const diferenciaRedondeo = totalReal - subtotalConRecargo;
-  if (diferenciaRedondeo !== 0 && productosConRecargo.length > 0) {
-    const ultimoProducto = productosConRecargo[productosConRecargo.length - 1];
-    ultimoProducto.VentaProductoPrecioTotalConRecargo =
-      (ultimoProducto.VentaProductoPrecioTotalConRecargo || 0) +
-      diferenciaRedondeo;
-    const cantidadUltimo = ultimoProducto.VentaProductoCantidad || 1;
-    ultimoProducto.VentaProductoPrecioConRecargo = Math.round(
-      ultimoProducto.VentaProductoPrecioTotalConRecargo / cantidadUltimo
+  if (diferenciaRedondeo !== 0 && lineas.length > 0) {
+    const ultimaLinea = lineas[lineas.length - 1];
+    ultimaLinea.VentaProductoPrecioTotalConRecargo += diferenciaRedondeo;
+    const cantidadUltimo = ultimaLinea.VentaProductoCantidad || 1;
+    ultimaLinea.VentaProductoPrecioConRecargo = Math.round(
+      ultimaLinea.VentaProductoPrecioTotalConRecargo / cantidadUltimo
     );
   }
 
-  const ivaReal = calcularIVA(totalReal);
+  return lineas;
+};
+
+// Reparte las líneas en hojas de FILAS_POR_HOJA ítems.
+const repartirEnHojas = (lineas: LineaFactura[]): LineaFactura[][] => {
+  const hojas: LineaFactura[][] = [];
+  for (let i = 0; i < lineas.length; i += FILAS_POR_HOJA) {
+    hojas.push(lineas.slice(i, i + FILAS_POR_HOJA));
+  }
+  return hojas.length > 0 ? hojas : [[]];
+};
+
+// Una hoja = un formulario preimpreso completo: las 3 copias (original,
+// duplicado, triplicado) del mismo contenido en una A4.
+const generarHoja = (venta: FacturaVenta, lineas: LineaFactura[]) => {
+  const totalHoja = lineas.reduce(
+    (sum, p) => sum + p.VentaProductoPrecioTotalConRecargo,
+    0
+  );
+  const ivaHoja = calcularIVA(totalHoja);
 
   const facturaIndividual = `
     <div class="factura">
@@ -187,7 +225,7 @@ const generarHoja = (venta: FacturaVenta, productos: FacturaProducto[]) => {
       </div>
 
       <div class="productos-lista">
-        ${productosConRecargo
+        ${lineas
           .map(
             (p) => `
           <div class="producto-item">
@@ -211,7 +249,7 @@ const generarHoja = (venta: FacturaVenta, productos: FacturaProducto[]) => {
           .join("")}
 
         ${Array.from(
-          { length: Math.max(0, 16 - productosConRecargo.length) },
+          { length: Math.max(0, FILAS_POR_HOJA - lineas.length) },
           () => `
           <div class="producto-item">
             <span class="col-cantidad">&nbsp;</span>
@@ -229,24 +267,24 @@ const generarHoja = (venta: FacturaVenta, productos: FacturaProducto[]) => {
         <div class="totales-left">
           <p style="display: flex; justify-content: flex-end;">
             <span style="margin-right: 30px;" class="subtotal">${formatearNumero(
-              totalReal
+              totalHoja
             )}</span>
           </p>
           <p style="display: flex; justify-content: space-between;">
             <span style="margin-left: 80px;" class="total-letras">${numeroALetras(
-              totalReal
+              totalHoja
             )}</span>
             <span style="margin-right: 30px;" class="subtotal">${formatearNumero(
-              totalReal
+              totalHoja
             )}</span>
           </p>
           <p style="display: flex; justify-content: space-between; margin-top: -5px;">
             <span style="margin-left: 110px;" class="liquidacion-iva">0</span>
             <span style="margin-left: 0px;" class="liquidacion-iva">${formatearNumero(
-              ivaReal
+              ivaHoja
             )}</span>
             <span style="margin-right: 320px;" class="total-iva">${formatearNumero(
-              ivaReal
+              ivaHoja
             )}</span>
           </p>
         </div>
@@ -298,7 +336,10 @@ export const generarContenidoFactura = (
       <style>
         @media print {
           body { margin: 0; padding: 0; }
-          .factura { page-break-after: avoid; }
+          /* Las 3 copias de una hoja no se separan; la última copia queda sin
+             'avoid' para que no compita con el salto de hoja siguiente. */
+          .factura:not(:last-child) { page-break-after: avoid; }
+          .hoja + .hoja { page-break-before: always; break-before: page; }
           @page { margin: 0; size: A4; }
           body::before, body::after, *::before, *::after { display: none !important; }
         }
@@ -332,7 +373,9 @@ export const generarContenidoFactura = (
       </style>
     </head>
     <body>
-      ${generarHoja(venta, productos)}
+      ${repartirEnHojas(calcularLineas(venta, productos))
+        .map((lineas) => `<div class="hoja">${generarHoja(venta, lineas)}</div>`)
+        .join("")}
     </body>
     </html>
   `;

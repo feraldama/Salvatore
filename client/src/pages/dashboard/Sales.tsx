@@ -30,7 +30,7 @@ import {
 import ClienteModal from "../../components/common/ClienteModal";
 import type { Cliente } from "../../components/common/ClienteFormModal";
 import { loadPdf } from "../../utils/lazyPdf";
-import { imprimirFactura } from "../../utils/factura";
+import { imprimirFactura, cantidadHojasFactura } from "../../utils/factura";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
 import { getAlmacenByLocal } from "../../services/almacenes.service";
@@ -660,10 +660,17 @@ export default function Sales() {
       ClienteTelefono: clienteSeleccionado?.ClienteTelefono || "",
       ClienteDireccion: clienteSeleccionado?.ClienteDireccion || "",
     };
+    // La factura se imprime sin vista previa: si no entra en un solo formulario
+    // preimpreso, avisar cuántas hojas hay que cargar en la impresora.
+    const hojasFactura = cantidadHojasFactura(productosFactura.length);
     const r = await Swal.fire({
       icon: "success",
       title: "Delivery despachado",
-      text: "¿Qué querés imprimir para el chofer?",
+      text:
+        "¿Qué querés imprimir para el chofer?" +
+        (hojasFactura > 1
+          ? ` La factura ocupa ${hojasFactura} formularios preimpresos.`
+          : ""),
       showDenyButton: true,
       showCancelButton: true,
       confirmButtonText: "Factura",

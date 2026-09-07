@@ -12,7 +12,11 @@ import {
 } from "../../services/venta.service";
 import { getClienteById } from "../../services/clientes.service";
 import { formatFecha } from "../../utils/utils";
-import { imprimirFactura as imprimirFacturaPDF } from "../../utils/factura";
+import {
+  imprimirFactura as imprimirFacturaPDF,
+  cantidadHojasFactura,
+  FILAS_POR_HOJA,
+} from "../../utils/factura";
 import { Modal, Button, TextInput, LoadingState, EmptyState } from "./ui";
 
 interface VentaProducto {
@@ -370,6 +374,21 @@ const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                   <strong>Productos:</strong>{" "}
                   {ventaSeleccionada.VentaProductos?.length || 0}
                 </p>
+                {/* El formulario preimpreso tiene lugar para FILAS_POR_HOJA
+                    ítems: si la venta tiene más, la factura sigue en hojas
+                    adicionales y hay que cargarlas en la impresora. */}
+                {(() => {
+                  const items = ventaSeleccionada.VentaProductos?.length || 0;
+                  const hojas = cantidadHojasFactura(items);
+                  if (hojas <= 1) return null;
+                  return (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-sm text-amber-800">
+                      <strong>Ocupa {hojas} hojas.</strong> Cargá{" "}
+                      {hojas} formularios: entran {FILAS_POR_HOJA} ítems por
+                      hoja y cada una liquida el total de sus propios ítems.
+                    </p>
+                  );
+                })()}
 
                 {ventaSeleccionada.VentaProductos &&
                   ventaSeleccionada.VentaProductos.length > 0 && (
