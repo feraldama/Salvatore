@@ -255,7 +255,7 @@ export default function EquivalenciasTab({
           <button
             onClick={swapEmpresas}
             title="Invertir sentido"
-            className="px-3 py-1.5 border border-slate-300 rounded-md text-sm hover:bg-slate-50"
+            className="px-3 py-1.5 border border-slate-300 rounded-md text-sm hover:bg-slate-50 cursor-pointer"
           >
             ⇄
           </button>
@@ -318,7 +318,7 @@ export default function EquivalenciasTab({
                 setVista(v);
                 setPagina(1);
               }}
-              className={`px-3 py-1 text-xs rounded-full border ${
+              className={`cursor-pointer px-3 py-1 text-xs rounded-full border ${
                 vista === v
                   ? "bg-blue-600 text-white border-blue-600"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
@@ -385,7 +385,7 @@ export default function EquivalenciasTab({
             <button
               onClick={crearVinculo}
               disabled={!nuevoOrigen || !nuevoDestino}
-              className="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               Vincular
             </button>
@@ -434,7 +434,7 @@ export default function EquivalenciasTab({
                         {puedeEditar && (
                           <button
                             onClick={() => setNuevoOrigen(p.ProductoId)}
-                            className="text-blue-600 hover:text-blue-800 text-xs"
+                            className="text-blue-600 hover:text-blue-800 text-xs cursor-pointer"
                           >
                             Vincular
                           </button>
@@ -556,13 +556,13 @@ export default function EquivalenciasTab({
                                   const f = Number(factorTexto.replace(",", "."));
                                   if (Number.isFinite(f) && f > 0) guardarFactor(e, f);
                                 }}
-                                className="text-emerald-700 hover:text-emerald-900 text-xs mr-2"
+                                className="text-emerald-700 hover:text-emerald-900 text-xs mr-2 cursor-pointer"
                               >
                                 Guardar
                               </button>
                               <button
                                 onClick={() => setEditando(null)}
-                                className="text-slate-500 hover:text-slate-700 text-xs mr-2"
+                                className="text-slate-500 hover:text-slate-700 text-xs mr-2 cursor-pointer"
                               >
                                 Cancelar
                               </button>
@@ -574,14 +574,14 @@ export default function EquivalenciasTab({
                                   setEditando(e.ProductoOrigenId);
                                   setFactorTexto(String(n(e.FactorCaja)));
                                 }}
-                                className="text-blue-600 hover:text-blue-800 text-xs mr-2"
+                                className="text-blue-600 hover:text-blue-800 text-xs mr-2 cursor-pointer"
                               >
                                 Editar factor
                               </button>
                               {e.EquivalenciaConfianza === "R" && (
                                 <button
                                   onClick={() => confirmarSinCambios(e)}
-                                  className="text-emerald-700 hover:text-emerald-900 text-xs mr-2"
+                                  className="text-emerald-700 hover:text-emerald-900 text-xs mr-2 cursor-pointer"
                                 >
                                   Está bien
                                 </button>
@@ -591,7 +591,7 @@ export default function EquivalenciasTab({
                         {puedeEliminar && !enEdicion && (
                           <button
                             onClick={() => desvincular(e)}
-                            className="text-red-600 hover:text-red-800 text-xs"
+                            className="text-red-600 hover:text-red-800 text-xs cursor-pointer"
                           >
                             Desvincular
                           </button>

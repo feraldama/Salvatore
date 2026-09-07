@@ -6,6 +6,7 @@ import { usePermiso } from "../../hooks/usePermiso";
 import Combobox, { type OpcionCombo } from "./Combobox";
 import EquivalenciasTab from "./EquivalenciasTab";
 import { formatFechaHora, formatMiles } from "../../utils/utils";
+import { generarTicketTrasladoPDF } from "../../utils/ticketTraslado";
 import {
   anularTraslado,
   crearTraslado,
@@ -304,11 +305,19 @@ export default function TrasladosPage() {
           CantidadUnidad: l.unidades,
         })),
       });
-      await Swal.fire({
+      // Ofrecer el ticket en el acto: es el momento en que se necesita el
+      // papel para que el depósito destino reciba y controle la mercadería.
+      const nuevoId = res?.data?.TrasladoId;
+      const { isConfirmed } = await Swal.fire({
         icon: "success",
         title: "Traslado confirmado",
-        text: `N° ${res?.data?.TrasladoId}. El stock ya está actualizado en ambos almacenes.`,
+        text: `N° ${nuevoId}. El stock ya está actualizado en ambos almacenes.`,
+        showCancelButton: true,
+        confirmButtonText: "Imprimir ticket",
+        cancelButtonText: "Cerrar",
+        confirmButtonColor: "#2563eb",
       });
+      if (isConfirmed && nuevoId) await imprimirTicket(nuevoId);
       setLineas([]);
       setObs("");
       // Refrescar el stock disponible de los productos del origen.
@@ -367,6 +376,22 @@ export default function TrasladosPage() {
 
   // ── Historial ─────────────────────────────────────────────────────────────
 
+  // El ticket se arma con el traslado COMPLETO traído de la BD, no con lo que
+  // hay en pantalla: así se puede reimprimir igual días después y refleja lo
+  // que realmente se movió.
+  const imprimirTicket = async (id: number) => {
+    try {
+      await generarTicketTrasladoPDF(await getTrasladoById(id));
+    } catch (e) {
+      const err = e as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo generar el ticket",
+        text: err?.message || "Error al generar el PDF",
+      });
+    }
+  };
+
   const verDetalle = async (id: number) => {
     try {
       setDetalle(await getTrasladoById(id));
@@ -415,7 +440,7 @@ export default function TrasladosPage() {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            className={`cursor-pointer px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               tab === t
                 ? "border-blue-600 text-blue-700"
                 : "border-transparent text-slate-500 hover:text-slate-700"
@@ -547,13 +572,13 @@ export default function TrasladosPage() {
                         <button
                           onClick={confirmarVinculo}
                           disabled={!destinoElegido}
-                          className="px-3 py-1.5 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                          className="px-3 py-1.5 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                         >
                           Vincular y agregar
                         </button>
                         <button
                           onClick={() => setVinculando(null)}
-                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-50"
+                          className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-50 cursor-pointer"
                         >
                           Cancelar
                         </button>
@@ -643,7 +668,7 @@ export default function TrasladosPage() {
                               <td className="px-3 py-2 text-right">
                                 <button
                                   onClick={() => quitarLinea(l.key)}
-                                  className="text-red-600 hover:text-red-800 text-xs"
+                                  className="text-red-600 hover:text-red-800 text-xs cursor-pointer"
                                 >
                                   Quitar
                                 </button>
@@ -661,7 +686,7 @@ export default function TrasladosPage() {
                     <button
                       onClick={confirmar}
                       disabled={!lineasValidas || guardando}
-                      className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                      className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                     >
                       {guardando ? "Confirmando…" : "Confirmar traslado"}
                     </button>
@@ -767,9 +792,15 @@ export default function TrasladosPage() {
                         <td className="px-3 py-2 text-right">
                           <button
                             onClick={() => verDetalle(t.TrasladoId)}
-                            className="text-blue-600 hover:text-blue-800 text-xs"
+                            className="text-blue-600 hover:text-blue-800 text-xs mr-3 cursor-pointer"
                           >
                             Ver detalle
+                          </button>
+                          <button
+                            onClick={() => imprimirTicket(t.TrasladoId)}
+                            className="text-slate-600 hover:text-slate-900 text-xs cursor-pointer"
+                          >
+                            Ticket
                           </button>
                         </td>
                       </tr>
@@ -824,7 +855,7 @@ export default function TrasladosPage() {
               </div>
               <button
                 onClick={() => setDetalle(null)}
-                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none cursor-pointer"
               >
                 ×
               </button>
@@ -879,16 +910,22 @@ export default function TrasladosPage() {
               </table>
             </div>
 
-            {detalle.TrasladoEstado === "C" && puedeEliminar && (
-              <div className="px-4 py-3 border-t border-slate-200 flex justify-end">
+            <div className="px-4 py-3 border-t border-slate-200 flex justify-between gap-2">
+              <button
+                onClick={() => imprimirTicket(detalle.TrasladoId)}
+                className="px-4 py-2 text-sm rounded-md border border-slate-300 hover:bg-slate-50 cursor-pointer"
+              >
+                Imprimir ticket
+              </button>
+              {detalle.TrasladoEstado === "C" && puedeEliminar && (
                 <button
                   onClick={() => anular(detalle)}
-                  className="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700"
+                  className="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 cursor-pointer"
                 >
                   Anular traslado
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -8,6 +8,7 @@ import {
   getProductosByVentaId,
   type VentaProducto,
   deleteVenta,
+  getTicketVenta,
 } from "../../services/venta.service";
 import { getClienteById } from "../../services/clientes.service";
 import { getProductoById } from "../../services/productos.service";
@@ -20,6 +21,7 @@ import {
   PermissionDenied,
 } from "../../components/common/ui";
 import { formatCurrency, formatFechaHora } from "../../utils/utils";
+import { generarTicketVentaPDF } from "../../utils/ticket";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
 
@@ -294,6 +296,61 @@ export default function VentasPage() {
     }
   };
 
+  // Reimpresión del ticket: se rearma desde la BD (líneas, cliente y desglose
+  // de pago reales de esa venta), no desde el carrito, así se puede volver a
+  // sacar el ticket de cualquier venta vieja. Sale marcado como REIMPRESION.
+  const handleReprintTicket = async (venta: Venta) => {
+    try {
+      Swal.fire({
+        title: "Generando ticket...",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+      const { venta: cab, productos, pagos, costoDelivery } =
+        await getTicketVenta(venta.VentaId);
+
+      await generarTicketVentaPDF(
+        {
+          ventaId: Number(cab.VentaId),
+          fecha: cab.VentaFecha,
+          tipo:
+            cab.EsEnvio === "S"
+              ? "ENVIO"
+              : cab.EsDelivery === "S"
+              ? "DELIVERY"
+              : "CONTADO",
+          cliente: {
+            nombre: cab.ClienteNombre,
+            apellido: cab.ClienteApellido,
+            ruc: cab.ClienteRUC,
+            direccion: cab.ClienteDireccion,
+          },
+          productos: productos.map((p) => ({
+            nombre: p.ProductoNombre || `Producto #${p.ProductoId}`,
+            cantidad: Number(p.VentaProductoCantidad),
+            unidad: p.VentaProductoUnitario === "U" ? "U" : "C",
+            precioUnitario: Number(p.VentaProductoPrecio),
+            total: Number(p.VentaProductoPrecioTotal),
+          })),
+          pagos,
+          costoDelivery: Number(costoDelivery) || 0,
+          total: Number(cab.Total),
+        },
+        { reimpresion: true }
+      );
+      Swal.close();
+    } catch (error) {
+      console.error("Error al reimprimir el ticket:", error);
+      Swal.fire({
+        title: "Error",
+        text:
+          (error as { message?: string })?.message ||
+          "No se pudo generar el ticket de la venta",
+        icon: "error",
+      });
+    }
+  };
+
   const handleDelete = async (venta: Venta) => {
     Swal.fire({
       title: "¿Estás seguro?",
@@ -392,6 +449,7 @@ export default function VentasPage() {
         onViewDetails={handleViewDetails}
         onCreate={puedeCrear ? handleCreateVenta : undefined}
         onDelete={puedeEliminar ? handleDelete : undefined}
+        onReprintTicket={handleReprintTicket}
         onSearch={handleSearch}
         searchTerm={searchTerm}
         onKeyPress={handleKeyPress}

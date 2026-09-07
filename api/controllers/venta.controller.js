@@ -94,6 +94,26 @@ exports.getById = async (req, res) => {
   }
 };
 
+// Datos para reimprimir el ticket de una venta (cabecera + cliente + líneas +
+// desglose de pago). El PDF lo arma el frontend con el mismo layout que usa al
+// confirmar la venta.
+exports.getTicket = async (req, res) => {
+  try {
+    const ventaId = Number(req.params.id);
+    if (!Number.isInteger(ventaId) || ventaId <= 0) {
+      return res.status(400).json({ message: "VentaId inválido" });
+    }
+    const ticket = await Venta.getTicket(ventaId, req.empresaId);
+    if (!ticket) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+    res.json(ticket);
+  } catch (error) {
+    console.error("Error obteniendo ticket de venta:", error);
+    sendError(res, error, 500);
+  }
+};
+
 exports.create = async (req, res) => {
   try {
     const venta = await Venta.create({ ...req.body, EmpresaId: req.empresaId });

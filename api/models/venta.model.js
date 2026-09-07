@@ -331,6 +331,88 @@ const Venta = {
     });
   },
 
+  // Datos completos para REIMPRIMIR el ticket de una venta ya confirmada. Todo
+  // se reconstruye desde la BD (no desde el carrito de la pantalla de venta),
+  // así el ticket reimpreso muestra lo que realmente se vendió y cómo se pagó,
+  // aunque hayan pasado días. Devuelve null si la venta no existe en la empresa.
+  getTicket: async (ventaId, empresaId) => {
+    const pe = db.promise();
+    const [ventaRows] = await pe.query(
+      `SELECT v.VentaId, v.VentaFecha, v.VentaTipo, v.Total, v.VentaEntrega,
+              v.VentaNroPOS, v.VentaUsuario, v.EsEnvio, v.EsDelivery,
+              c.ClienteNombre, c.ClienteApellido, c.ClienteRUC,
+              c.ClienteDireccion, c.ClienteTipo
+         FROM venta v
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE v.VentaId = ? AND v.EmpresaId = ?`,
+      [ventaId, empresaId]
+    );
+    if (!ventaRows.length) return null;
+    const v = ventaRows[0];
+
+    // Líneas de la venta, en el mismo orden en que se cargaron al carrito.
+    // VentaProductoUnitario ('C'|'U') es lo que permite reponer la etiqueta
+    // Caja/Unidad del ticket original.
+    const [productos] = await pe.query(
+      `SELECT vp.VentaProductoId, vp.ProductoId, vp.VentaProductoCantidad,
+              vp.VentaProductoUnitario, vp.VentaProductoPrecio,
+              vp.VentaProductoPrecioTotal, p.ProductoNombre
+         FROM ventaproducto vp
+         LEFT JOIN producto p ON p.ProductoId = vp.ProductoId
+        WHERE vp.VentaId = ?
+        ORDER BY vp.VentaProductoId`,
+      [ventaId]
+    );
+
+    // Desglose de pago REAL: los movimientos de caja de ESTA venta. Se atan por
+    // el N° del detalle (mismo patrón que desglosePagosSql) y se filtra por el
+    // prefijo "Venta" para dejar afuera los cobros de crédito posteriores
+    // ("Cobro Crédito ... N°:") — el ticket refleja el momento de la venta.
+    // Grupos: efectivo 1/3/7, POS 4/8, voucher 5/9, transferencia 6/10 y
+    // cuenta corriente 11 (saldo a crédito, no es dinero recibido).
+    const [pagoRows] = await pe.query(
+      `SELECT r.TipoGastoGrupoId,
+              COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS monto
+         FROM registrodiariocaja r
+        WHERE r.TipoGastoId = 2
+          AND r.TipoGastoGrupoId IN (1, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+          AND r.RegistroDiarioCajaDetalle LIKE 'Venta%'
+          AND CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              ) = ?
+        GROUP BY r.TipoGastoGrupoId`,
+      [ventaId]
+    );
+    const pagos = {
+      efectivo: 0,
+      pos: 0,
+      voucher: 0,
+      transferencia: 0,
+      cuentaCliente: 0,
+    };
+    for (const row of pagoRows) {
+      const grupo = Number(row.TipoGastoGrupoId);
+      const monto = Number(row.monto) || 0;
+      if (grupo === 11) pagos.cuentaCliente += monto;
+      else if (METODO_POR_GRUPO_INGRESO[grupo]) {
+        pagos[METODO_POR_GRUPO_INGRESO[grupo]] += monto;
+      }
+    }
+
+    // Costo del envío a domicilio: sale de venta_delivery (fuente de verdad),
+    // no del grupo 12 de caja, que es sólo informativo.
+    let costoDelivery = 0;
+    if (v.EsDelivery === "S") {
+      const [delRows] = await pe.query(
+        `SELECT costo_delivery FROM venta_delivery WHERE venta_id = ?`,
+        [ventaId]
+      );
+      costoDelivery = Number(delRows[0]?.costo_delivery) || 0;
+    }
+
+    return { venta: v, productos, pagos, costoDelivery };
+  },
+
   create: (data) => {
     return new Promise((resolve, reject) => {
       const empresaId = data.EmpresaId || 1;

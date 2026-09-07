@@ -81,6 +81,7 @@ router.post("/devolucion", authMiddleware, ventaController.devolucion);
 router.get("/search", authMiddleware, ventaController.searchVentas);
 router.get("/", authMiddleware, ventaController.getAll);
 router.get("/paginated", authMiddleware, ventaController.getAllPaginated);
+router.get("/:id/ticket", authMiddleware, ventaController.getTicket);
 router.get("/:id", authMiddleware, ventaController.getById);
 router.post("/", authMiddleware, ventaController.create);
 router.put("/:id", authMiddleware, ventaController.update);

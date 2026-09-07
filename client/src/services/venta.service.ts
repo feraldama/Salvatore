@@ -120,6 +120,60 @@ export const getVentaById = async (id: string | number) => {
   }
 };
 
+// Datos crudos para reimprimir el ticket de una venta confirmada. Vienen de la
+// BD, no del carrito, así que el ticket se puede volver a sacar cuando sea.
+export interface TicketVentaResponse {
+  venta: {
+    VentaId: number;
+    VentaFecha: string;
+    VentaTipo: string;
+    Total: number;
+    VentaEntrega: number;
+    VentaNroPOS?: string | number;
+    VentaUsuario: string;
+    EsEnvio?: string;
+    EsDelivery?: string;
+    ClienteNombre?: string | null;
+    ClienteApellido?: string | null;
+    ClienteRUC?: string | null;
+    ClienteDireccion?: string | null;
+    ClienteTipo?: string | null;
+  };
+  productos: {
+    VentaProductoId: number;
+    ProductoId: number;
+    VentaProductoCantidad: number;
+    VentaProductoUnitario: string;
+    VentaProductoPrecio: number;
+    VentaProductoPrecioTotal: number;
+    ProductoNombre?: string | null;
+  }[];
+  pagos: {
+    efectivo: number;
+    pos: number;
+    voucher: number;
+    transferencia: number;
+    cuentaCliente: number;
+  };
+  costoDelivery: number;
+}
+
+export const getTicketVenta = async (
+  ventaId: string | number
+): Promise<TicketVentaResponse> => {
+  try {
+    const response = await api.get(`/venta/${ventaId}/ticket`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al obtener el ticket de la venta",
+      }
+    );
+  }
+};
+
 export const createVenta = async (data: Record<string, unknown>) => {
   try {
     const response = await api.post("/venta", data);

@@ -9,7 +9,12 @@ import { formatCurrency, formatMiles, formatFechaHora } from "../../utils/utils"
 import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
 import { Button, Modal } from "../common/ui";
-import { PlusIcon, FunnelIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import {
+  PlusIcon,
+  FunnelIcon,
+  XMarkIcon,
+  PrinterIcon,
+} from "@heroicons/react/24/outline";
 import Swal from "sweetalert2";
 import {
   getVentaCreditoByVentaId,
@@ -30,6 +35,8 @@ interface VentasListProps {
   onViewDetails?: (venta: Venta) => void;
   onCreate?: () => void;
   onDelete?: (venta: Venta) => void;
+  /** Reimprime el ticket de la venta (se rearma desde la BD). */
+  onReprintTicket?: (venta: Venta) => void;
   onSearch: (value: string) => void;
   searchTerm: string;
   onKeyPress?: React.KeyboardEventHandler<HTMLInputElement>;
@@ -60,6 +67,7 @@ const VentasList = ({
   onViewDetails,
   onCreate,
   onDelete,
+  onReprintTicket,
   onSearch,
   searchTerm,
   onKeyPress,
@@ -644,6 +652,20 @@ const VentasList = ({
         onEdit={onViewDetails}
         onDelete={onDelete}
         onViewCredit={handleViewCreditDetails}
+        extraActions={
+          onReprintTicket
+            ? (venta) => (
+                <button
+                  onClick={() => onReprintTicket(venta)}
+                  aria-label="Reimprimir ticket"
+                  title="Reimprimir ticket"
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-md text-text-muted hover:bg-surface-sunken hover:text-text transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                >
+                  <PrinterIcon className="h-5 w-5" />
+                </button>
+              )
+            : undefined
+        }
         emptyMessage="No hay ventas registradas"
         getStatusColor={getStatusColor}
         getStatusText={getStatusText}
