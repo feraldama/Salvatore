@@ -751,7 +751,7 @@ export default function SalesMayorista() {
   };
 
   const generateTicketPDF = async (ventaId?: number) => {
-    const { jsPDF, autoTable } = await loadPdf();
+    const { jsPDF } = await loadPdf();
     // Crear una instancia de jsPDF con un tamaño personalizado (80mm de ancho)
     const doc = new jsPDF({
       orientation: "portrait",
@@ -781,19 +781,34 @@ export default function SalesMayorista() {
     // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
     // en el ancho del papel, así que se avanza según lo que se imprimió.
     let y = 8;
+    // Corta la hoja cuando el bloque que sigue ya no entra (el dibujado es
+    // manual, no hay paginado automático).
+    const LIMITE_Y = 288; // 297mm de alto menos un margen inferior
+    const saltoSiNoEntra = (alto: number) => {
+      if (y + alto <= LIMITE_Y) return;
+      doc.addPage();
+      y = 10;
+    };
+
     // Todo el ticket va en negrita: en la térmica el trazo fino sale gris y
     // cuesta leerlo (`bold: false` queda disponible por si alguna línea
-    // necesitara texto normal).
+    // necesitara texto normal). `center` reproduce el encabezado centrado del
+    // sistema anterior.
     const linea = (
       texto: string,
-      opts: { bold?: boolean; size?: number } = {},
+      opts: { bold?: boolean; size?: number; center?: boolean } = {},
     ) => {
       const size = opts.size ?? FUENTE;
       doc.setFontSize(size);
       doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
       const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
       renglones.forEach((renglon) => {
-        doc.text(renglon, 0, y);
+        saltoSiNoEntra(size * 0.5);
+        if (opts.center) {
+          doc.text(renglon, ANCHO / 2, y, { align: "center" });
+        } else {
+          doc.text(renglon, 0, y);
+        }
         y += size * 0.5; // interlineado proporcional al tamaño de fuente
       });
       doc.setFontSize(FUENTE);
@@ -807,21 +822,23 @@ export default function SalesMayorista() {
 
     // Nro. de venta arriba de todo (si la venta ya fue confirmada)
     if (ventaId) {
-      linea(`VENTA NRO.: ${ventaId}`, { bold: true, size: 13 });
+      linea(`VENTA NRO.: ${ventaId}`, { size: 13, center: true });
       separador();
     }
 
-    // Encabezado del ticket
-    linea("Distribuidora Salvatore", { bold: true, size: 11 });
-    linea("COMERCIAL & BODEGA", { bold: true, size: 11 });
-    linea("Martin Ledezma e/ Niños Martires, Capiatá");
-    linea("Teléfono: +595 985 374240");
-    linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`);
+    // Encabezado del ticket: centrado, como en el sistema anterior.
+    linea("Distribuidora Salvatore", { size: 11, center: true });
+    linea("COMERCIAL & BODEGA", { size: 11, center: true });
+    linea("Martin Ledezma e/ Niños Martires, Capiatá", { center: true });
+    linea("Teléfono: +595 985 374240", { center: true });
+    linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, {
+      center: true,
+    });
 
     // Tipo de venta: CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
     // recibir).
     linea(`Venta Tipo: ${tipoVenta === "ENVIO" ? "Envio" : "Contado"}`, {
-      bold: true,
+      center: true,
     });
 
     // Métodos de pago de esta venta (solo los que tienen monto). En efectivo
@@ -838,10 +855,10 @@ export default function SalesMayorista() {
     ];
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
     if (metodosUsados.length === 0) {
-      linea("Forma de Pago: -", { bold: true });
+      linea("Forma de Pago: -", { center: true });
     } else {
       metodosUsados.forEach(([nombre, monto]) => {
-        linea(`${nombre}: ${monto.toLocaleString("es-ES")}`, { bold: true });
+        linea(`${nombre}: ${monto.toLocaleString("es-ES")}`, { center: true });
       });
     }
 
@@ -855,23 +872,34 @@ export default function SalesMayorista() {
         (clienteSeleccionado?.ClienteNombre +
           " " +
           clienteSeleccionado?.ClienteApellido || ""),
-      { bold: true },
     );
 
-    // Dirección del cliente (sólo si tiene una guardada). Corre la línea
-    // separadora y el inicio de la tabla hacia abajo.
+    // Dirección del cliente (sólo si tiene una guardada).
     if (clienteSeleccionado?.ClienteDireccion) {
       linea("Direccion: " + clienteSeleccionado.ClienteDireccion);
     }
 
-    // Línea separadora
+    // Encabezados de las columnas. Mismo formato que el sistema anterior:
+    // Desc. / Cant. / Precio Unitario / Total, y la línea separadora debajo.
+    // X_CANT es el centro de la columna de cantidad; X_PRECIO y X_TOTAL son
+    // los bordes derechos de sus columnas (importes alineados a la derecha).
+    const X_CANT = 20;
+    const X_PRECIO = 52;
+    const X_TOTAL = ANCHO;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("Desc.", 0, y);
+    doc.text("Cant.", X_CANT, y, { align: "center" });
+    doc.text("Precio Unitario", X_PRECIO, y, { align: "right" });
+    doc.text("Total", X_TOTAL, y, { align: "right" });
+    doc.setFontSize(FUENTE);
+    y += 3.5;
     separador();
+    y += 2.5;
 
-    // Encabezados de la tabla
-    const headers = [["Cant", "Desc.", "Precio", "Total"]];
-
-    // Datos de la tabla
-    const tableData = carrito.map((p) => {
+    // Un ítem por bloque de dos renglones: arriba los números alineados en
+    // sus columnas y abajo el nombre del producto ocupando todo el ancho.
+    carrito.forEach((p) => {
       // Usar los precios guardados en el carrito
       let precioUnitario = 0;
       let precioLabel = "";
@@ -900,51 +928,27 @@ export default function SalesMayorista() {
           totalLinea = precioUnitario * p.cantidad;
         }
       }
-      return [
-        p.cantidad,
-        p.nombre,
-        `${precioUnitario.toLocaleString("es-ES")}\n${precioLabel}`,
-        `${totalLinea.toLocaleString("es-ES")}`,
-      ];
-    });
 
-    // Agregar la tabla al PDF. Todo en negrita, fuente 9 (antes 7) e importes
-    // alineados a la derecha para que se lean de un vistazo. La cantidad va
-    // en 13pt: es el dato que más se controla al recibir la mercadería.
-    autoTable(doc, {
-      head: headers,
-      body: tableData,
-      startY: y,
-      theme: "plain",
-      styles: {
-        fontSize: 9,
-        fontStyle: "bold",
-        cellPadding: { top: 0.9, right: 0.5, bottom: 0.9, left: 0 },
-        textColor: [0, 0, 0],
-        fillColor: [255, 255, 255],
-        valign: "middle",
-      },
-      headStyles: { fontStyle: "bold", fontSize: 9 },
-      columnStyles: {
-        // Suman ANCHO (70mm). Precio y Total quedan anchos para que un importe
-        // de 7 dígitos entre en un solo renglón con la fuente más grande.
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 27 },
-        2: { cellWidth: 15, halign: "right" },
-        3: { cellWidth: 18, halign: "right" },
-      },
-      // La cantidad, más grande que el resto (solo en el cuerpo: el
-      // encabezado "Cant" en 13pt no entraría en la columna).
-      didParseCell: (data: {
-        section: string;
-        column: { index: number };
-        cell: { styles: { fontSize: number } };
-      }) => {
-        if (data.section === "body" && data.column.index === 0) {
-          data.cell.styles.fontSize = 13;
-        }
-      },
-      margin: { left: 0, right: 0 }, // Margen izquierdo
+      // El bloque completo (números + nombre) no se parte entre dos hojas.
+      saltoSiNoEntra(11);
+
+      // Renglón de números. La cantidad va en 13pt, más grande que el resto.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(String(p.cantidad), X_CANT, y, { align: "center" });
+      doc.setFontSize(FUENTE);
+      doc.text(precioUnitario.toLocaleString("es-ES"), X_PRECIO, y, {
+        align: "right",
+      });
+      doc.text(totalLinea.toLocaleString("es-ES"), X_TOTAL, y, {
+        align: "right",
+      });
+      y += 5;
+
+      // Renglón del nombre, con la unidad de venta entre paréntesis (caja,
+      // unidad o combo) porque el precio cambia según eso.
+      linea(`${p.nombre} (${precioLabel})`);
+      y += 1.5;
     });
 
     // Total de la compra
@@ -952,10 +956,8 @@ export default function SalesMayorista() {
       (sum, item) => sum + obtenerTotal(item),
       0,
     );
-    const lastAutoTable = (
-      doc as unknown as { lastAutoTable: { finalY: number } }
-    ).lastAutoTable;
-    y = lastAutoTable.finalY + 2;
+    saltoSiNoEntra(16);
+    y += 1;
     separador();
     y += 3;
 

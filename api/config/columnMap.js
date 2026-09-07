@@ -159,7 +159,40 @@ module.exports = {
   "ventaproductocantidad": "VentaProductoCantidad",
   "ventaproductoprecio": "VentaProductoPrecio",
   "ventaproductopreciototal": "VentaProductoPrecioTotal",
-  "ventaproductounitario": "VentaProductoUnitario"
+  "ventaproductounitario": "VentaProductoUnitario",
+
+  // --- Columnas agregadas por la migración 026 (traslados de inventario) ---
+  // `trasladoid`, `trasladofecha`, `almacenorigenid` y `almacendestinoid` ya
+  // estaban arriba (venían de la tabla traslado legacy de GeneXus).
+  "trasladoestado": "TrasladoEstado",
+  "trasladoobs": "TrasladoObs",
+  "trasladoanuladofecha": "TrasladoAnuladoFecha",
+  "trasladoanuladousuarioid": "TrasladoAnuladoUsuarioId",
+  "empresaorigenid": "EmpresaOrigenId",
+  "empresadestinoid": "EmpresaDestinoId",
+  "trasladoproductoid": "TrasladoProductoId",
+  "productoorigenid": "ProductoOrigenId",
+  "productodestinoid": "ProductoDestinoId",
+  "trasladocantidadcaja": "TrasladoCantidadCaja",
+  "trasladocantidadunidad": "TrasladoCantidadUnidad",
+  "trasladounidadesorigen": "TrasladoUnidadesOrigen",
+  "trasladounidadesdestino": "TrasladoUnidadesDestino",
+  "trasladofactorcaja": "TrasladoFactorCaja",
+  "trasladoccorigen": "TrasladoCcOrigen",
+  "trasladoccdestino": "TrasladoCcDestino",
+  "trasladocostocajaorigen": "TrasladoCostoCajaOrigen",
+  "factorcaja": "FactorCaja",
+  "equivalenciaconfianza": "EquivalenciaConfianza",
+  "equivalenciaorigen": "EquivalenciaOrigen",
+  "equivalenciafecha": "EquivalenciaFecha",
+  // Alias que devuelven las consultas de traslado (nombres de producto y
+  // almacén de cada lado del movimiento).
+  "productoorigennombre": "ProductoOrigenNombre",
+  "productodestinonombre": "ProductoDestinoNombre",
+  "almacenorigennombre": "AlmacenOrigenNombre",
+  "almacendestinonombre": "AlmacenDestinoNombre",
+  "empresaorigennombre": "EmpresaOrigenNombre",
+  "empresadestinonombre": "EmpresaDestinoNombre"
 },
   pkByTable: {
   "almacen": "AlmacenId",
