@@ -770,52 +770,99 @@ export default function SalesMayorista() {
     const fechaFormateada = `${dia}/${mes}/${año}`;
     const horaFormateada = `${horas}:${minutos}:${segundos}`;
 
-    // Configuración inicial
-    doc.setFontSize(8); // Tamaño de fuente más pequeño
+    // Configuración inicial. El cuerpo va en 9pt (antes 8) y los datos
+    // importantes en negrita: en la térmica el texto fino salía muy claro y
+    // costaba leerlo.
+    const FUENTE = 9; // tamaño base del texto del ticket
+    const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
+    doc.setFontSize(FUENTE);
     doc.setFont("helvetica", "normal");
+
+    // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
+    // en el ancho del papel, así que se avanza según lo que se imprimió.
+    let y = 8;
+    const linea = (
+      texto: string,
+      opts: { bold?: boolean; size?: number } = {},
+    ) => {
+      const size = opts.size ?? FUENTE;
+      doc.setFontSize(size);
+      doc.setFont("helvetica", opts.bold ? "bold" : "normal");
+      const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
+      renglones.forEach((renglon) => {
+        doc.text(renglon, 0, y);
+        y += size * 0.5; // interlineado proporcional al tamaño de fuente
+      });
+      doc.setFontSize(FUENTE);
+      doc.setFont("helvetica", "normal");
+    };
+    const separador = () => {
+      doc.setLineWidth(0.3);
+      doc.line(0, y - 1.5, ANCHO, y - 1.5);
+      y += 1.5;
+    };
 
     // Nro. de venta arriba de todo (si la venta ya fue confirmada)
     if (ventaId) {
-      doc.setFontSize(10);
-      doc.text(`VENTA NRO.: ${ventaId}`, 0, 8);
-      doc.setLineWidth(0.2);
-      doc.line(0, 10, 75, 10);
-      doc.setFontSize(8);
+      linea(`VENTA NRO.: ${ventaId}`, { bold: true, size: 13 });
+      separador();
     }
 
     // Encabezado del ticket
-    doc.text("Distribuidora Salvatore", 0, 15);
-    doc.text("COMERCIAL & BODEGA", 0, 20);
-    doc.text("Martin Ledezma e/ Niños Martires, Capiatá", 0, 25);
-    doc.text("Teléfono: +595 985 374240", 0, 30);
-    doc.text(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, 0, 35);
-    doc.text(
+    linea("Distribuidora Salvatore", { bold: true, size: 11 });
+    linea("COMERCIAL & BODEGA", { bold: true, size: 11 });
+    linea("Martin Ledezma e/ Niños Martires, Capiatá");
+    linea("Teléfono: +595 985 374240");
+    linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`);
+
+    // Tipo de venta: CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
+    // recibir).
+    linea(`Venta Tipo: ${tipoVenta === "ENVIO" ? "Envio" : "Contado"}`, {
+      bold: true,
+    });
+
+    // Métodos de pago de esta venta (solo los que tienen monto). En efectivo
+    // se descuenta el vuelto (totalRest negativo), igual que el monto que se
+    // envía al backend.
+    const efectivoCobrado = Math.max(0, Number(efectivo) + Number(totalRest));
+    const metodosPago: [string, number][] = [
+      ["Efectivo", efectivoCobrado],
+      ["Transferencia", Number(banco)],
+      ["Tarjeta Debito", Number(bancoDebito)],
+      ["Tarjeta Credito", Number(bancoCredito)],
+      ["Voucher", Number(voucher)],
+      ["Credito (cta. cte.)", Number(cuentaCliente)],
+    ];
+    const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
+    if (metodosUsados.length === 0) {
+      linea("Forma de Pago: -", { bold: true });
+    } else {
+      metodosUsados.forEach(([nombre, monto]) => {
+        linea(`${nombre}: ${monto.toLocaleString("es-ES")}`, { bold: true });
+      });
+    }
+
+    linea(
       clienteSeleccionado?.ClienteRUC
         ? "RUC: " + clienteSeleccionado.ClienteRUC
         : "RUC: SIN RUC",
-      0,
-      40,
     );
-    doc.text(
+    linea(
       "Cliente: " +
         (clienteSeleccionado?.ClienteNombre +
           " " +
           clienteSeleccionado?.ClienteApellido || ""),
-      0,
-      45,
+      { bold: true },
     );
 
     // Dirección del cliente (sólo si tiene una guardada). Corre la línea
     // separadora y el inicio de la tabla hacia abajo.
-    let separadorY = 48;
     if (clienteSeleccionado?.ClienteDireccion) {
-      doc.text("Direccion: " + clienteSeleccionado.ClienteDireccion, 0, 50);
-      separadorY = 53;
+      linea("Direccion: " + clienteSeleccionado.ClienteDireccion);
     }
 
     // Línea separadora
-    doc.setLineWidth(0.2); // Línea más delgada
-    doc.line(0, separadorY, 75, separadorY); // Ajustar el ancho de la línea
+    separador();
 
     // Encabezados de la tabla
     const headers = [["Cant", "Desc.", "Precio", "Total"]];
@@ -858,25 +905,30 @@ export default function SalesMayorista() {
       ];
     });
 
-    // Agregar la tabla al PDF
+    // Agregar la tabla al PDF. Fuente 9 (antes 7), descripción y total en
+    // negrita e importes alineados a la derecha para que se lean de un vistazo.
     autoTable(doc, {
       head: headers,
       body: tableData,
-      startY: separadorY + 2,
+      startY: y,
       theme: "plain",
       styles: {
-        fontSize: 7,
+        fontSize: 9,
+        cellPadding: { top: 0.9, right: 0.5, bottom: 0.9, left: 0 },
         textColor: [0, 0, 0],
         fillColor: [255, 255, 255],
+        valign: "middle",
       },
-      // headStyles: { fillColor: [200, 200, 200] },
+      headStyles: { fontStyle: "bold", fontSize: 9 },
       columnStyles: {
-        0: { cellWidth: 9 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 14 },
-        3: { cellWidth: 20 },
+        // Suman ANCHO (70mm). Precio y Total quedan anchos para que un importe
+        // de 7 dígitos entre en un solo renglón con la fuente más grande.
+        0: { cellWidth: 7 },
+        1: { cellWidth: 29, fontStyle: "bold" },
+        2: { cellWidth: 16, halign: "right" },
+        3: { cellWidth: 18, halign: "right", fontStyle: "bold" },
       },
-      margin: { left: 0 }, // Margen izquierdo
+      margin: { left: 0, right: 0 }, // Margen izquierdo
     });
 
     // Total de la compra
@@ -887,14 +939,19 @@ export default function SalesMayorista() {
     const lastAutoTable = (
       doc as unknown as { lastAutoTable: { finalY: number } }
     ).lastAutoTable;
-    doc.text(
-      `Total a Pagar Gs. ${totalCost.toLocaleString("es-ES")}`,
-      0,
-      lastAutoTable.finalY + 5,
-    );
+    y = lastAutoTable.finalY + 2;
+    separador();
+    y += 3;
+
+    // Total bien grande: es el dato que más se mira del ticket.
+    linea(`Total a Pagar Gs. ${totalCost.toLocaleString("es-ES")}`, {
+      bold: true,
+      size: 12,
+    });
 
     // Pie de página
-    doc.text("--GRACIAS POR SU PREFERENCIA--", 0, lastAutoTable.finalY + 10);
+    y += 3;
+    linea("--GRACIAS POR SU PREFERENCIA--");
 
     // Guardar el PDF
     doc.save("ticket_venta.pdf");
