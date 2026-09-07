@@ -42,6 +42,7 @@ const dashboardRoutes = require("./routes/dashboard.routes");
 const genAuthRoutes = require("./routes/genauth.routes");
 const flotaRoutes = require("./routes/flota.routes");
 const deliveryTarifaRoutes = require("./routes/deliveryTarifa.routes");
+const trasladoRoutes = require("./routes/traslado.routes");
 
 const app = express();
 
@@ -125,6 +126,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/gen/auth", genAuthRoutes);
 app.use("/api/gen/flota", flotaRoutes);
 app.use("/api/deliverytarifa", deliveryTarifaRoutes);
+app.use("/api/traslados", trasladoRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (req, res) => res.send("API funcionando"));

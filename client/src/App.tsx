@@ -33,6 +33,7 @@ import FacturasPage from "./pages/facturas/FacturasPage";
 import Compras from "./pages/compras/Compras";
 import ComprasPage from "./pages/compras/ComprasPage";
 import Inventario from "./pages/inventario/Inventario";
+import TrasladosPage from "./pages/traslados/TrasladosPage";
 import DocumentTitle from "./components/common/DocumentTitle";
 import VendedoresPage from "./pages/vendedores/VendedoresPage";
 import EmpresasPage from "./pages/empresas/EmpresasPage";
@@ -96,6 +97,7 @@ function App() {
             />
             <Route path="/locales" element={<LocalesPage />} />
             <Route path="/almacenes" element={<AlmacenesPage />} />
+            <Route path="/traslados" element={<TrasladosPage />} />
             <Route path="/combos" element={<CombosPage />} />
             <Route path="/perfiles" element={<PerfilesPage />} />
             <Route path="/menus" element={<MenusPage />} />
