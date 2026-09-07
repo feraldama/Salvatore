@@ -36,83 +36,127 @@ const formatearNumero = (numero: number) => {
   return Math.round(numero).toLocaleString("es-PY");
 };
 
-const numeroALetras = (numero: number): string => {
-  const unidades = [
-    "",
-    "UNO",
-    "DOS",
-    "TRES",
-    "CUATRO",
-    "CINCO",
-    "SEIS",
-    "SIETE",
-    "OCHO",
-    "NUEVE",
-  ];
-  const decenas = [
-    "",
-    "DIEZ",
-    "VEINTE",
-    "TREINTA",
-    "CUARENTA",
-    "CINCUENTA",
-    "SESENTA",
-    "SETENTA",
-    "OCHENTA",
-    "NOVENTA",
-  ];
-  const centenas = [
-    "",
-    "CIENTO",
-    "DOSCIENTOS",
-    "TRESCIENTOS",
-    "CUATROCIENTOS",
-    "QUINIENTOS",
-    "SEISCIENTOS",
-    "SETECIENTOS",
-    "OCHOCIENTOS",
-    "NOVECIENTOS",
-  ];
+// Monto en letras para el "TOTAL A PAGAR" del formulario. Cubre hasta el orden
+// de los millones: la versión anterior solo llegaba a 999.999 y todo monto
+// mayor caía a un fallback que imprimía los DÍGITOS ("1.262.200 GUARANÍES"),
+// justamente lo que no se quiere en una factura.
+const UNIDADES = [
+  "",
+  "UNO",
+  "DOS",
+  "TRES",
+  "CUATRO",
+  "CINCO",
+  "SEIS",
+  "SIETE",
+  "OCHO",
+  "NUEVE",
+  "DIEZ",
+  "ONCE",
+  "DOCE",
+  "TRECE",
+  "CATORCE",
+  "QUINCE",
+  "DIECISÉIS",
+  "DIECISIETE",
+  "DIECIOCHO",
+  "DIECINUEVE",
+  "VEINTE",
+  "VEINTIUNO",
+  "VEINTIDÓS",
+  "VEINTITRÉS",
+  "VEINTICUATRO",
+  "VEINTICINCO",
+  "VEINTISÉIS",
+  "VEINTISIETE",
+  "VEINTIOCHO",
+  "VEINTINUEVE",
+];
 
-  if (numero === 0) return "CERO";
-  const entero = Math.floor(numero);
-  if (entero < 10) return unidades[entero];
-  if (entero < 100) {
-    if (entero < 20) {
-      const especiales = [
-        "DIEZ",
-        "ONCE",
-        "DOCE",
-        "TRECE",
-        "CATORCE",
-        "QUINCE",
-        "DIECISÉIS",
-        "DIECISIETE",
-        "DIECIOCHO",
-        "DIECINUEVE",
-      ];
-      return especiales[entero - 10];
+const DECENAS = [
+  "",
+  "",
+  "VEINTE",
+  "TREINTA",
+  "CUARENTA",
+  "CINCUENTA",
+  "SESENTA",
+  "SETENTA",
+  "OCHENTA",
+  "NOVENTA",
+];
+
+const CENTENAS = [
+  "",
+  "CIENTO",
+  "DOSCIENTOS",
+  "TRESCIENTOS",
+  "CUATROCIENTOS",
+  "QUINIENTOS",
+  "SEISCIENTOS",
+  "SETECIENTOS",
+  "OCHOCIENTOS",
+  "NOVECIENTOS",
+];
+
+// Convierte 1..999. `apocope` = el tramo va seguido de MIL o MILLONES, donde
+// "UNO" se acorta a "UN" y "VEINTIUNO" a "VEINTIÚN" (ej. VEINTIÚN MIL).
+const tramoALetras = (n: number, apocope: boolean): string => {
+  if (n <= 0) return "";
+  if (n === 100) return "CIEN";
+
+  const centena = Math.floor(n / 100);
+  const resto = n % 100;
+  const partes: string[] = [];
+
+  if (centena > 0) partes.push(CENTENAS[centena]);
+
+  if (resto > 0) {
+    if (resto < 30) {
+      if (apocope && resto === 1) partes.push("UN");
+      else if (apocope && resto === 21) partes.push("VEINTIÚN");
+      else partes.push(UNIDADES[resto]);
+    } else {
+      const decena = Math.floor(resto / 10);
+      const unidad = resto % 10;
+      if (unidad === 0) partes.push(DECENAS[decena]);
+      else if (apocope && unidad === 1) partes.push(`${DECENAS[decena]} Y UN`);
+      else partes.push(`${DECENAS[decena]} Y ${UNIDADES[unidad]}`);
     }
-    const decena = Math.floor(entero / 10);
-    const unidad = entero % 10;
-    if (unidad === 0) return decenas[decena];
-    return decenas[decena] + " Y " + unidades[unidad];
   }
-  if (entero < 1000) {
-    const centena = Math.floor(entero / 100);
-    const resto = entero % 100;
-    if (centena === 1 && resto === 0) return "CIEN";
-    if (resto === 0) return centenas[centena];
-    return centenas[centena] + " " + numeroALetras(resto);
-  }
-  if (entero < 1000000) {
-    const miles = Math.floor(entero / 1000);
-    const resto = entero % 1000;
-    let resultado = miles === 1 ? "MIL" : numeroALetras(miles) + " MIL";
-    if (resto > 0) resultado += " " + numeroALetras(resto);
-    return resultado;
-  }
-  return numero.toLocaleString("es-PY") + " GUARANÍES";
+
+  return partes.join(" ");
+};
+
+// Convierte 1..999.999 (el bloque que se repite antes de MILLONES).
+const bloqueALetras = (n: number, apocope: boolean): string => {
+  const miles = Math.floor(n / 1000);
+  const resto = n % 1000;
+  const partes: string[] = [];
+
+  if (miles === 1) partes.push("MIL");
+  else if (miles > 1) partes.push(`${tramoALetras(miles, true)} MIL`);
+
+  if (resto > 0) partes.push(tramoALetras(resto, apocope));
+
+  return partes.join(" ");
+};
+
+const numeroALetras = (numero: number): string => {
+  if (!Number.isFinite(numero)) return "CERO";
+  const entero = Math.floor(Math.abs(numero));
+  if (entero === 0) return "CERO";
+
+  const millones = Math.floor(entero / 1000000);
+  const resto = entero % 1000000;
+  const partes: string[] = [];
+
+  if (millones === 1) partes.push("UN MILLÓN");
+  else if (millones > 1) partes.push(`${bloqueALetras(millones, true)} MILLONES`);
+
+  if (resto > 0) partes.push(bloqueALetras(resto, false));
+
+  return partes.join(" ");
 };
 
 // El formulario preimpreso tiene lugar para 16 líneas de ítems. Si la venta
