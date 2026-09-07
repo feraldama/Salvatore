@@ -384,6 +384,13 @@ const VentasList = ({
           : "-",
     },
     {
+      key: "VentaCantidadProductos",
+      label: "Productos",
+      numeric: true,
+      render: (venta: VentaWithId) =>
+        formatMiles(Number(venta.VentaCantidadProductos) || 0),
+    },
+    {
       key: "Total",
       label: "Total",
       numeric: true,
