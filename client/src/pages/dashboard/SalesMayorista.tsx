@@ -776,25 +776,28 @@ export default function SalesMayorista() {
     const FUENTE = 9; // tamaño base del texto del ticket
     const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
     doc.setFontSize(FUENTE);
-    doc.setFont("helvetica", "normal");
+    doc.setFont("helvetica", "bold");
 
     // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
     // en el ancho del papel, así que se avanza según lo que se imprimió.
     let y = 8;
+    // Todo el ticket va en negrita: en la térmica el trazo fino sale gris y
+    // cuesta leerlo (`bold: false` queda disponible por si alguna línea
+    // necesitara texto normal).
     const linea = (
       texto: string,
       opts: { bold?: boolean; size?: number } = {},
     ) => {
       const size = opts.size ?? FUENTE;
       doc.setFontSize(size);
-      doc.setFont("helvetica", opts.bold ? "bold" : "normal");
+      doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
       const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
       renglones.forEach((renglon) => {
         doc.text(renglon, 0, y);
         y += size * 0.5; // interlineado proporcional al tamaño de fuente
       });
       doc.setFontSize(FUENTE);
-      doc.setFont("helvetica", "normal");
+      doc.setFont("helvetica", "bold");
     };
     const separador = () => {
       doc.setLineWidth(0.3);
@@ -905,8 +908,9 @@ export default function SalesMayorista() {
       ];
     });
 
-    // Agregar la tabla al PDF. Fuente 9 (antes 7), descripción y total en
-    // negrita e importes alineados a la derecha para que se lean de un vistazo.
+    // Agregar la tabla al PDF. Todo en negrita, fuente 9 (antes 7) e importes
+    // alineados a la derecha para que se lean de un vistazo. La cantidad va
+    // en 13pt: es el dato que más se controla al recibir la mercadería.
     autoTable(doc, {
       head: headers,
       body: tableData,
@@ -914,6 +918,7 @@ export default function SalesMayorista() {
       theme: "plain",
       styles: {
         fontSize: 9,
+        fontStyle: "bold",
         cellPadding: { top: 0.9, right: 0.5, bottom: 0.9, left: 0 },
         textColor: [0, 0, 0],
         fillColor: [255, 255, 255],
@@ -923,10 +928,21 @@ export default function SalesMayorista() {
       columnStyles: {
         // Suman ANCHO (70mm). Precio y Total quedan anchos para que un importe
         // de 7 dígitos entre en un solo renglón con la fuente más grande.
-        0: { cellWidth: 7 },
-        1: { cellWidth: 29, fontStyle: "bold" },
-        2: { cellWidth: 16, halign: "right" },
-        3: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 27 },
+        2: { cellWidth: 15, halign: "right" },
+        3: { cellWidth: 18, halign: "right" },
+      },
+      // La cantidad, más grande que el resto (solo en el cuerpo: el
+      // encabezado "Cant" en 13pt no entraría en la columna).
+      didParseCell: (data: {
+        section: string;
+        column: { index: number };
+        cell: { styles: { fontSize: number } };
+      }) => {
+        if (data.section === "body" && data.column.index === 0) {
+          data.cell.styles.fontSize = 13;
+        }
       },
       margin: { left: 0, right: 0 }, // Margen izquierdo
     });
