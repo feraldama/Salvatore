@@ -105,16 +105,21 @@ export const getAlmacenesTraslado = async (): Promise<AlmacenTraslado[]> => {
   }
 };
 
+// Catálogo activo de la empresa del almacén, con el stock de cada producto EN
+// ese almacén (0 incluido). No filtra por stock: la pantalla necesita poder
+// mostrar "existe pero no hay" en vez de "Sin resultados".
+// `truncado` avisa si la lista llegó al tope, para no perder productos en
+// silencio.
 export const getProductosTraslado = async (
   almacenId: number,
   almacenDestinoId?: number,
   q = ""
-): Promise<ProductoTraslado[]> => {
+): Promise<{ productos: ProductoTraslado[]; truncado: boolean }> => {
   try {
     const { data } = await api.get("/traslados/productos", {
       params: { almacenId, almacenDestinoId, q: q || undefined },
     });
-    return data.data ?? [];
+    return { productos: data.data ?? [], truncado: Boolean(data.truncado) };
   } catch (error) {
     return fallar(error, "Error al obtener los productos del almacén");
   }
@@ -129,7 +134,7 @@ export const getProductosDeEmpresa = async (
     q?: string;
     soloSinEquivalencia?: boolean;
   } = {}
-): Promise<ProductoTraslado[]> => {
+): Promise<{ productos: ProductoTraslado[]; truncado: boolean }> => {
   try {
     const { data } = await api.get("/traslados/productos-empresa", {
       params: {
@@ -139,7 +144,7 @@ export const getProductosDeEmpresa = async (
         soloSinEquivalencia: opts.soloSinEquivalencia ? "true" : undefined,
       },
     });
-    return data.data ?? [];
+    return { productos: data.data ?? [], truncado: Boolean(data.truncado) };
   } catch (error) {
     return fallar(error, "Error al obtener el catálogo de la empresa");
   }

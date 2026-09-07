@@ -10,6 +10,7 @@ import {
   anularTraslado,
   crearTraslado,
   getAlmacenesTraslado,
+  getProductosDeEmpresa,
   getProductosTraslado,
   getTrasladoById,
   getTraslados,
@@ -83,6 +84,7 @@ export default function TrasladosPage() {
   const [obs, setObs] = useState("");
   const [productos, setProductos] = useState<ProductoTraslado[]>([]);
   const [cargandoProductos, setCargandoProductos] = useState(false);
+  const [listaCortada, setListaCortada] = useState(false);
   const [productoElegido, setProductoElegido] = useState<number | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [guardando, setGuardando] = useState(false);
@@ -123,7 +125,10 @@ export default function TrasladosPage() {
     }
     setCargandoProductos(true);
     getProductosTraslado(origenId, destinoId ?? undefined)
-      .then(setProductos)
+      .then((r) => {
+        setProductos(r.productos);
+        setListaCortada(r.truncado);
+      })
       .catch(() => setProductos([]))
       .finally(() => setCargandoProductos(false));
   }, [origenId, destinoId]);
@@ -177,16 +182,31 @@ export default function TrasladosPage() {
     [lineas]
   );
 
+  // Unidades disponibles del producto en el almacén origen.
+  const disponibleDe = (p: ProductoTraslado) =>
+    p.ProductoAlmacenStock * cc(p.ProductoCantidadCaja) + p.ProductoAlmacenStockUnitario;
+
+  // La lista incluye productos SIN stock, marcados. Esconderlos hacía que un
+  // producto existente pareciera no existir: el buscador contestaba "Sin
+  // resultados" y no había forma de distinguirlo de un producto inexistente.
   const opcionesProducto: OpcionCombo[] = productos
     .filter((p) => !yaEnLineas.has(p.ProductoId))
     .map((p) => {
       const ccO = cc(p.ProductoCantidadCaja);
-      const disp = p.ProductoAlmacenStock * ccO + p.ProductoAlmacenStockUnitario;
+      const disp = disponibleDe(p);
       return {
         id: p.ProductoId,
         label: etiquetaProducto(p),
-        detalle: `Disponible: ${formatMiles(p.ProductoAlmacenStock)} cajas de ${ccO} (${formatMiles(disp)} un.)`,
-        aviso: p.ProductoDestinoId ? undefined : "sin equivalencia",
+        detalle:
+          disp > 0
+            ? `Disponible: ${formatMiles(p.ProductoAlmacenStock)} cajas de ${ccO} (${formatMiles(disp)} un.)`
+            : `Sin stock en ${almOrigen?.AlmacenNombre ?? "el almacén origen"}`,
+        aviso:
+          disp <= 0
+            ? "sin stock"
+            : p.ProductoDestinoId
+              ? undefined
+              : "sin equivalencia",
       };
     });
 
@@ -196,15 +216,31 @@ export default function TrasladosPage() {
     if (!p) return;
     setProductoElegido(null);
 
+    // Sin stock no hay nada que mover. Se avisa explícitamente en vez de
+    // agregar una línea que nunca va a poder confirmarse.
+    if (disponibleDe(p) <= 0) {
+      Swal.fire({
+        icon: "info",
+        title: "Sin stock",
+        html:
+          `<b>${p.ProductoNombre}</b> existe en el catálogo, pero no tiene ` +
+          `stock en <b>${almOrigen?.AlmacenNombre ?? "el almacén origen"}</b>.`,
+      });
+      return;
+    }
+
     // Sin equivalencia no se puede trasladar: se ofrece vincular en el momento
     // en vez de mandar al usuario a otra pantalla a buscarlo de cero.
     if (!p.ProductoDestinoId) {
       setVinculando(p);
       setDestinoElegido(null);
       setFactorTexto("1");
+      // Catálogo destino COMPLETO por empresa. Antes se pedía por almacén, que
+      // filtra por stock: 87 productos activos de la bodega quedaban fuera y no
+      // se podían elegir como equivalente. Vincular no depende de tener stock.
       if (almDestino && productosDestino.length === 0) {
-        getProductosTraslado(almDestino.AlmacenId, undefined, "")
-          .then(setProductosDestino)
+        getProductosDeEmpresa(almDestino.EmpresaId)
+          .then((r) => setProductosDestino(r.productos))
           .catch(() => setProductosDestino([]));
       }
       return;
@@ -279,7 +315,7 @@ export default function TrasladosPage() {
       if (origenId) {
         setCargandoProductos(true);
         getProductosTraslado(origenId, destinoId ?? undefined)
-          .then(setProductos)
+          .then((r) => setProductos(r.productos))
           .finally(() => setCargandoProductos(false));
       }
     } catch (e) {
@@ -311,7 +347,8 @@ export default function TrasladosPage() {
       // Recargar para que el producto ya venga con su equivalencia resuelta.
       if (origenId) {
         setCargandoProductos(true);
-        const frescos = await getProductosTraslado(origenId, destinoId ?? undefined);
+        const frescos = (await getProductosTraslado(origenId, destinoId ?? undefined))
+          .productos;
         setProductos(frescos);
         setCargandoProductos(false);
         const p = frescos.find((x) => x.ProductoId === vinculando.ProductoId);
@@ -462,6 +499,12 @@ export default function TrasladosPage() {
                     vacio={cargandoProductos ? "Cargando productos…" : "Sin resultados"}
                     onSelect={agregarLinea}
                   />
+                  {listaCortada && (
+                    <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                      El catálogo es más grande que la lista cargada, así que puede faltar
+                      algún producto. Avisá para subir el tope.
+                    </p>
+                  )}
 
                   {vinculando && (
                     <div className="mt-3 border border-amber-300 bg-amber-50 rounded-md p-3">

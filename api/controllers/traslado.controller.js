@@ -104,13 +104,16 @@ exports.getProductos = async (req, res) => {
       empresaDestinoId = rows.length ? Number(rows[0].EmpresaId) : null;
     }
 
-    const data = await Traslado.getProductosDeAlmacen({
+    // `truncado` viaja al front para poder avisar que la lista quedó cortada.
+    // Truncar en silencio es lo que hacía que un producto existente pareciera
+    // no existir, que es el peor modo de fallar para un buscador.
+    const { productos, truncado } = await Traslado.getProductosDeAlmacen({
       almacenId,
       empresaDestinoId,
       busqueda: req.query.q || "",
-      limit: Math.min(parseInt(req.query.limit, 10) || 400, 1000),
+      limit: Math.min(parseInt(req.query.limit, 10) || 1000, 3000),
     });
-    res.json({ data });
+    res.json({ data: productos, truncado });
   } catch (error) {
     sendError(res, error, 500);
   }
@@ -122,14 +125,14 @@ exports.getProductosEmpresa = async (req, res) => {
   try {
     const empresaId = Number(req.query.empresaId);
     if (!empresaId) return res.status(400).json({ message: "Falta empresaId" });
-    const data = await Traslado.getProductosDeEmpresa({
+    const { productos, truncado } = await Traslado.getProductosDeEmpresa({
       empresaId,
       empresaDestinoId: Number(req.query.empresaDestinoId) || null,
       busqueda: req.query.q || "",
       soloSinEquivalencia: req.query.soloSinEquivalencia === "true",
-      limit: Math.min(parseInt(req.query.limit, 10) || 400, 1000),
+      limit: Math.min(parseInt(req.query.limit, 10) || 1000, 3000),
     });
-    res.json({ data });
+    res.json({ data: productos, truncado });
   } catch (error) {
     sendError(res, error, 500);
   }

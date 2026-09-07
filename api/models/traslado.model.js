@@ -148,18 +148,38 @@ const Traslado = {
     });
   },
 
-  // Productos que se pueden SACAR de un almacén: los del catálogo de su
-  // empresa, activos y con stock, ya con la cantidad disponible y si tienen
-  // equivalencia resuelta hacia el almacén destino.
+  // Productos que se pueden SACAR de un almacén.
   //
   // Se devuelve todo junto (y no reusando /api/productos) porque el combobox
   // necesita las tres cosas a la vez: nombre, stock en ESE almacén y si el
   // producto se puede trasladar al destino elegido. Con el endpoint genérico
   // harían falta N+1 llamadas.
-  getProductosDeAlmacen: ({ almacenId, empresaDestinoId, busqueda = "", limit = 400 }) => {
+  //
+  // Devuelve TODO el catálogo activo de la empresa del almacén, con el stock
+  // que cada producto tiene en ese depósito (0 si no tiene fila) y su
+  // equivalencia hacia el destino elegido.
+  //
+  // El stock NO se usa como filtro a propósito. Filtrar por `stock > 0` dejaba
+  // fuera 386 de los 752 productos activos de la distribuidora, y el buscador
+  // respondía "Sin resultados" sin manera de distinguir "no existe" de "no hay
+  // stock" -- que es justo lo que el usuario necesita saber. La pantalla los
+  // muestra marcados y no deja agregarlos; el backend igual rechaza por stock
+  // insuficiente al confirmar.
+  //
+  // El WHERE por empresa del almacén (en vez del JOIN contra productoalmacen
+  // que había antes) también deja fuera las filas cruzadas de productoalmacen
+  // que arrastra la base -- productos de una empresa con stock en el almacén
+  // de la otra.
+  //
+  // Se pide una fila de más que el límite para poder avisar si la lista quedó
+  // cortada, en lugar de truncar en silencio.
+  getProductosDeAlmacen: ({ almacenId, empresaDestinoId, busqueda = "", limit = 1000 }) => {
     return new Promise((resolve, reject) => {
-      const params = [];
-      let equivSelect = "NULL AS ProductoDestinoId, NULL AS ProductoDestinoNombre, NULL AS FactorCaja";
+      // El orden de los parámetros sigue el orden de aparición de los `?`.
+      const params = [almacenId];
+
+      let equivSelect = `NULL AS ProductoDestinoId, NULL AS ProductoDestinoNombre,
+                         NULL AS FactorCaja, NULL AS ProductoDestinoCantidadCaja`;
       let equivJoin = "";
       if (empresaDestinoId) {
         equivSelect = `eq.ProductoDestinoId, pd.ProductoNombre AS ProductoDestinoNombre,
@@ -177,25 +197,30 @@ const Traslado = {
         filtro = " AND (p.ProductoNombre LIKE ? OR CAST(p.ProductoCodigo AS CHAR) LIKE ?)";
         params.push(`%${busqueda}%`, `%${busqueda}%`);
       }
-      params.push(limit);
+      params.push(limit + 1);
 
       db.query(
         `SELECT p.ProductoId, p.ProductoCodigo, p.ProductoNombre,
                 p.ProductoCantidadCaja, p.ProductoPrecioPromedio, p.EmpresaId,
-                pa.ProductoAlmacenStock, pa.ProductoAlmacenStockUnitario,
+                COALESCE(pa.ProductoAlmacenStock, 0)         AS ProductoAlmacenStock,
+                COALESCE(pa.ProductoAlmacenStockUnitario, 0) AS ProductoAlmacenStockUnitario,
                 ${equivSelect}
            FROM producto p
-           JOIN productoalmacen pa ON pa.ProductoId = p.ProductoId
-           JOIN almacen a ON a.AlmacenId = pa.AlmacenId AND a.EmpresaId = p.EmpresaId
+           LEFT JOIN productoalmacen pa
+                  ON pa.ProductoId = p.ProductoId AND pa.AlmacenId = ?
            ${equivJoin}
-          WHERE pa.AlmacenId = ?
+          WHERE p.EmpresaId = (SELECT EmpresaId FROM almacen WHERE AlmacenId = ?)
             AND p.ProductoEstado = 'A'
-            AND (pa.ProductoAlmacenStock > 0 OR pa.ProductoAlmacenStockUnitario > 0)
             ${filtro}
-          ORDER BY p.ProductoNombre
+          ORDER BY (COALESCE(pa.ProductoAlmacenStock, 0) > 0
+                 OR COALESCE(pa.ProductoAlmacenStockUnitario, 0) > 0) DESC,
+                   p.ProductoNombre
           LIMIT ?`,
         params,
-        (err, rows) => (err ? reject(err) : resolve(rows))
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve({ productos: rows.slice(0, limit), truncado: rows.length > limit });
+        }
       );
     });
   },
@@ -210,7 +235,7 @@ const Traslado = {
     empresaDestinoId = null,
     busqueda = "",
     soloSinEquivalencia = false,
-    limit = 400,
+    limit = 1000,
   }) => {
     return new Promise((resolve, reject) => {
       const params = [];
@@ -230,7 +255,8 @@ const Traslado = {
         filtro = " AND (p.ProductoNombre LIKE ? OR CAST(p.ProductoCodigo AS CHAR) LIKE ?)";
         params.push(`%${busqueda}%`, `%${busqueda}%`);
       }
-      params.push(limit);
+      // Una fila de más para poder avisar si la lista quedó cortada.
+      params.push(limit + 1);
 
       db.query(
         `SELECT p.ProductoId, p.ProductoCodigo, p.ProductoNombre,
@@ -246,7 +272,10 @@ const Traslado = {
           ORDER BY p.ProductoNombre
           LIMIT ?`,
         params,
-        (err, rows) => (err ? reject(err) : resolve(rows))
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve({ productos: rows.slice(0, limit), truncado: rows.length > limit });
+        }
       );
     });
   },

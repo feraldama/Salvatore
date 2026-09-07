@@ -103,7 +103,7 @@ export default function EquivalenciasTab({
     setCargando(true);
     try {
       if (vista === "faltantes") {
-        const productos = await getProductosDeEmpresa(origenEmp, {
+        const { productos } = await getProductosDeEmpresa(origenEmp, {
           empresaDestinoId: destinoEmp,
           q: busquedaAplicada,
           soloSinEquivalencia: true,
@@ -139,7 +139,7 @@ export default function EquivalenciasTab({
   useEffect(() => {
     if (!destinoEmp) return;
     getProductosDeEmpresa(destinoEmp)
-      .then(setCatalogoDestino)
+      .then((r) => setCatalogoDestino(r.productos))
       .catch(() => setCatalogoDestino([]));
   }, [destinoEmp]);
 
