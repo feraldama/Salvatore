@@ -247,8 +247,26 @@ export const FUENTES = {
  * │    FUENTES.CHARIS_SIL              serif tipo Times (4,3, ojal justo)    │
  * │    FUENTES.ATKINSON_HYPERLEGIBLE   preparada, pero va a manchar          │
  * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Lo que fue diciendo el cliente, en orden, para no volver a probar lo mismo:
+ *
+ *   Courier                  rechazada (fue la primera prueba, y encima era la
+ *                            peor de las tres base 14: 4,0 filas)
+ *   DejaVu Cond. Bold        rechazada, las letras salían rellenas
+ *   DejaVu Cond. Regular     la vio y pidió probar otra
+ *   Charis SIL Regular       "el mejor hasta ahora"  ← la preferida hasta hoy
+ *   Noto Serif Regular       rechazada
+ *   Bitter Regular           ← en prueba
+ *
+ * Vale la pena notar que su preferencia NO sigue a las mediciones: eligió Charis
+ * (4,3 filas) por encima de la sans (4,9) y de Noto Serif (4,8), que miden
+ * mejor. O sea que lo que está decidiendo es el carácter de la letra y no la
+ * legibilidad. Si Bitter tampoco pasa, lo más probable es que lo que le gusta
+ * sea el trazo humanista de Charis en particular, y conviene volver a ella
+ * (opcionalmente subiendo el cuerpo a 10 pt para recuperar las filas de puntos)
+ * en vez de seguir probando familias.
  */
-export const FUENTE_ACTIVA: OpcionFuente = FUENTES.NOTO_SERIF;
+export const FUENTE_ACTIVA: OpcionFuente = FUENTES.BITTER;
 
 /** Nombre de la fuente activa, para los `setFont` del ticket. */
 export const FUENTE_TICKET = FUENTE_ACTIVA.nombre;
