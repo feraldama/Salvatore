@@ -37,6 +37,13 @@
  *   ── sans ──────────────────────────────────────────────────────────────
  *   Helvetica/Arial (la original)   0,532 em   4,8     —           95%
  *   DejaVu Cond. Regular            0,547 em   4,9     0,21 mm ✓   100%
+ *   Inter Regular                   0,546 em   4,9     0,36 mm ✓   109%
+ *   Encode Sans Cond. Regular       0,542 em   4,9     0,32 mm ✓   86%
+ *   Noto Sans Regular               0,536 em   4,8     0,19 mm     101%
+ *   Fira Sans Cond. Regular         0,526 em   4,7     0,26 mm     84%
+ *   Public Sans Regular             0,517 em   4,7     0,20 mm     106%
+ *   IBM Plex Sans Cond. Regular     0,516 em   4,6     0,23 mm     92%
+ *   Barlow SemiCond. Regular        0,506 em   4,6     0,24 mm     84%
  *   DejaVu Cond. Bold               0,547 em   4,9     0,15 mm ✗   112%
  *   Atkinson Hyperlegible Regular   0,496 em   4,5     0,07 mm ✗   103%
  *   Atkinson Hyperlegible Bold      0,496 em   4,5    −0,44 mm ✗✗  109%
@@ -227,9 +234,60 @@ const BITTER: OpcionFuente = {
   columnas: { X_CANT: 18.6, X_PRECIO: 40.6 },
 };
 
+/**
+ * Inter Regular (Rasmus Andersson).
+ *
+ * La única candidata que iguala la altura de la DejaVu (0,546 em contra 0,547,
+ * o sea las mismas 4,9 filas de puntos) y encima le gana en apertura: el ojal
+ * más cerrado da 0,36 mm impresos contra 0,21 mm, un 71% más abierto. Está
+ * diseñada específicamente para leerse a tamaño chico en pantalla, con ojales
+ * grandes y formas inconfundibles.
+ *
+ * El costo es el ancho: 109% de la DejaVu Condensed. Ninguna línea del ticket se
+ * parte a los tamaños actuales, pero hay menos resguardo que antes.
+ *
+ * Se ve bastante distinta a la DejaVu: más neutra y geométrica, menos
+ * "humanista". Es la mejor apuesta si el cliente quiere otra cosa sin perder
+ * nada de legibilidad.
+ *
+ * Separación mínima entre columnas en el peor caso: 2,03 mm.
+ */
+const INTER: OpcionFuente = {
+  nombre: "Inter",
+  archivo: "Inter.ttf",
+  cargarBase64: async () =>
+    (await import("../assets/fonts/interRegular")).INTER_REGULAR_BASE64,
+  columnas: { X_CANT: 14.2, X_PRECIO: 38.4 },
+};
+
+/**
+ * Encode Sans Condensed Regular (Pablo Impallari).
+ *
+ * Prácticamente empata en altura con la DejaVu (0,542 em, 4,9 filas), con el
+ * ojal más abierto (0,32 mm contra 0,21 mm) y —lo más interesante— es un 14% MÁS
+ * ANGOSTA. En el peor caso las tres columnas de importes ocupan 38,3 mm de los
+ * 62 disponibles, contra 45,8 mm de la DejaVu: sobra mucho más espacio.
+ *
+ * Ese margen es la carta que guarda: si en algún momento se quiere subir el
+ * cuerpo del ticket o meter una columna más, es la única que lo permite sin
+ * pelearse con el ancho del papel.
+ *
+ * Separación mínima entre columnas en el peor caso: 2,01 mm.
+ */
+const ENCODE_SANS_CONDENSED: OpcionFuente = {
+  nombre: "EncodeSansCondensed",
+  archivo: "EncodeSansCondensed.ttf",
+  cargarBase64: async () =>
+    (await import("../assets/fonts/encodeSansCondensedRegular"))
+      .ENCODE_SANS_CONDENSED_REGULAR_BASE64,
+  columnas: { X_CANT: 24.1, X_PRECIO: 43.3 },
+};
+
 /** Las fuentes preparadas para el ticket. Sólo se descarga la activa. */
 export const FUENTES = {
   DEJAVU_SANS_CONDENSED,
+  INTER,
+  ENCODE_SANS_CONDENSED,
   NOTO_SERIF,
   BITTER,
   CHARIS_SIL,
@@ -241,9 +299,11 @@ export const FUENTES = {
  * │  LA FUENTE DEL TICKET. Cambiar esta línea y listo: el nombre y las       │
  * │  columnas de importes se ajustan solos.                                  │
  * │                                                                          │
- * │    FUENTES.DEJAVU_SANS_CONDENSED   sans, la que mejor mide (4,9 filas)   │
+ * │    FUENTES.DEJAVU_SANS_CONDENSED   sans (4,9 filas) — la elegida hasta hoy│
+ * │    FUENTES.INTER                   sans (4,9), ojal 0,36 mm, 9% más ancha│
+ * │    FUENTES.ENCODE_SANS_CONDENSED   sans (4,9), ojal 0,32, 14% más angosta│
  * │    FUENTES.NOTO_SERIF              serif, la mejor de las serif (4,8)    │
- * │    FUENTES.BITTER                  slab, los ojales más abiertos (4,8)   │
+ * │    FUENTES.BITTER                  slab, ojales de 0,70 mm (4,8)         │
  * │    FUENTES.CHARIS_SIL              serif tipo Times (4,3, ojal justo)    │
  * │    FUENTES.ATKINSON_HYPERLEGIBLE   preparada, pero va a manchar          │
  * └──────────────────────────────────────────────────────────────────────────┘
@@ -253,20 +313,25 @@ export const FUENTES = {
  *   Courier                  rechazada (fue la primera prueba, y encima era la
  *                            peor de las tres base 14: 4,0 filas)
  *   DejaVu Cond. Bold        rechazada, las letras salían rellenas
- *   DejaVu Cond. Regular     la vio y pidió probar otra
- *   Charis SIL Regular       "el mejor hasta ahora"  ← la preferida hasta hoy
+ *   DejaVu Cond. Regular     LA MEJOR hasta ahora, según el cliente  ← referencia
+ *   Charis SIL Regular       la vio, no la eligió
  *   Noto Serif Regular       rechazada
- *   Bitter Regular           ← en prueba
+ *   Bitter Regular           rechazada
+ *   Inter Regular            ← en prueba
  *
- * Vale la pena notar que su preferencia NO sigue a las mediciones: eligió Charis
- * (4,3 filas) por encima de la sans (4,9) y de Noto Serif (4,8), que miden
- * mejor. O sea que lo que está decidiendo es el carácter de la letra y no la
- * legibilidad. Si Bitter tampoco pasa, lo más probable es que lo que le gusta
- * sea el trazo humanista de Charis en particular, y conviene volver a ella
- * (opcionalmente subiendo el cuerpo a 10 pt para recuperar las filas de puntos)
- * en vez de seguir probando familias.
+ * Su preferencia coincide con las mediciones: eligió justamente la que mide
+ * mejor de todas (4,9 filas de puntos y ojal de 0,21 mm impresos). Eso es una
+ * señal fuerte de que el criterio de este archivo —altura de la letra sobre la
+ * grilla de 72 dpi, y ojales que sobrevivan al punto de 0,3 mm de la aguja—
+ * predice bien lo que se ve mejor en el papel.
+ *
+ * Consecuencia práctica: si Bitter no pasa, las dos únicas candidatas que valen
+ * la pena son INTER y ENCODE_SANS_CONDENSED, que son las únicas que igualan las
+ * 4,9 filas de la DejaVu y encima tienen los ojales más abiertos que ella. Todo
+ * lo demás que se midió queda por debajo, así que después de esas dos la
+ * respuesta es volver a DEJAVU_SANS_CONDENSED y dejar de probar familias.
  */
-export const FUENTE_ACTIVA: OpcionFuente = FUENTES.BITTER;
+export const FUENTE_ACTIVA: OpcionFuente = FUENTES.INTER;
 
 /** Nombre de la fuente activa, para los `setFont` del ticket. */
 export const FUENTE_TICKET = FUENTE_ACTIVA.nombre;
