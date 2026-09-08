@@ -945,11 +945,22 @@ export default function SalesMayorista() {
         center: true,
       });
 
-      // Tipo de venta: CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
-      // recibir).
-      linea(`Venta Tipo: ${tipoVenta === "ENVIO" ? "Envio" : "Contado"}`, {
-        center: true,
-      });
+      // Tipo de venta —CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
+      // recibir)— y cantidad de ítems. El conteo va en la cabecera a pedido del
+      // cliente (en el ticket de traslado está al final) y sirve para controlar
+      // de un vistazo que no falte ninguna línea del detalle.
+      //
+      // Va PEGADO al tipo de venta y no en su propio renglón porque un renglón
+      // suelto cuesta 3,5 mm, y con eso un ticket de 15 ítems pasaba de 199,9 a
+      // 203,5 mm: cruzaba el techo de ALTO_MAXIMO_PAGINA y se partía en dos
+      // hojas. Así no cuesta nada, y sigue el mismo patrón que la línea de
+      // arriba ("Fecha: ... - Hora: ..."). En el peor caso mide 54,4 mm de 62.
+      linea(
+        `Venta Tipo: ${
+          tipoVenta === "ENVIO" ? "Envio" : "Contado"
+        } - ITEMS: ${formatMiles(items.length)}`,
+        { center: true },
+      );
 
       if (metodosUsados.length === 0) {
         linea("Forma de Pago: -", { center: true });

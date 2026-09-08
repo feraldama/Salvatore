@@ -218,7 +218,24 @@ export async function generarTicketVentaPDF(
     linea(`Fecha: ${formatFecha(venta.fecha)} - Hora: ${horaDe(venta.fecha)}`, {
       center: true,
     });
-    linea(`Venta Tipo: ${ETIQUETA_TIPO[venta.tipo]}`, { center: true });
+    // Tipo de venta y cantidad de ítems. El conteo de ítems va en la cabecera a
+    // pedido del cliente (en el ticket de traslado está al final) y sirve para
+    // controlar de un vistazo que no falte ninguna línea del detalle.
+    //
+    // Va PEGADO al tipo de venta y no en su propio renglón porque un renglón
+    // suelto cuesta 3,5 mm, y con eso un ticket de 15 ítems pasaba de 199,9 a
+    // 203,5 mm: cruzaba el techo de ALTO_MAXIMO_PAGINA y se partía en dos
+    // hojas. Así no cuesta nada, y sigue el mismo patrón que la línea de arriba
+    // ("Fecha: ... - Hora: ..."). En el peor caso mide 54,4 mm de los 62.
+    //
+    // Se cuentan los PRODUCTOS, no `items`: ese incluye la línea del delivery
+    // cuando hay reparto, y el costo del envío no es un ítem de mercadería.
+    linea(
+      `Venta Tipo: ${ETIQUETA_TIPO[venta.tipo]} - ITEMS: ${formatMiles(
+        venta.productos.length,
+      )}`,
+      { center: true },
+    );
 
     // Métodos de pago de esta venta (solo los que tienen monto). Débito y
     // crédito van juntos como POS: la caja los registra en un único grupo.
