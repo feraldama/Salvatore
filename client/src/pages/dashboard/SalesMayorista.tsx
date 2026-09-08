@@ -26,6 +26,11 @@ import type { Cliente } from "../../components/common/ClienteFormModal";
 import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "../../utils/lazyPdf";
 import {
+  cargarFuenteTicket,
+  FUENTE_TICKET,
+  registrarFuenteTicket,
+} from "../../utils/ticketFuente";
+import {
   ALTO_MAXIMO_PAGINA,
   ANCHO_PAGINA,
   ANCHO_UTIL,
@@ -761,6 +766,8 @@ export default function SalesMayorista() {
 
   const generateTicketPDF = async (ventaId?: number) => {
     const { jsPDF } = await loadPdf();
+    // La fuente viene en su propio chunk (ver ticketFuente.ts).
+    const fuente = await cargarFuenteTicket();
 
     const fechaActual = new Date();
     const dia = String(fechaActual.getDate()).padStart(2, "0");
@@ -839,9 +846,9 @@ export default function SalesMayorista() {
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
 
     // Tamaño de la cantidad. Va más grande que el resto para que se lea de un
-    // saltazo, pero en 11pt y no en 13: era ella la que marcaba el alto de la
+    // saltazo, pero en 10pt y no en 13: era ella la que marcaba el alto de la
     // fila de números y costaba 1,3 mm por ítem.
-    const CANTIDAD_PT = 11;
+    const CANTIDAD_PT = 10;
 
     // Alto del bloque de un ítem: la fila de números más el renglón del nombre,
     // más el aire que lo separa del ítem siguiente. Se usa para no partir un
@@ -859,7 +866,7 @@ export default function SalesMayorista() {
      */
     const dibujar = (doc: JsPdf, limiteY: number): number => {
       doc.setFontSize(FUENTE);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(FUENTE_TICKET, "bold");
 
       // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
       // en el ancho del papel, así que se avanza según lo que se imprimió.
@@ -881,7 +888,7 @@ export default function SalesMayorista() {
       ) => {
         const size = opts.size ?? FUENTE;
         doc.setFontSize(size);
-        doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
+        doc.setFont(FUENTE_TICKET, opts.bold === false ? "normal" : "bold");
         const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
         renglones.forEach((renglon) => {
           saltoSiNoEntra(interlineado(size));
@@ -893,7 +900,7 @@ export default function SalesMayorista() {
           y += interlineado(size);
         });
         doc.setFontSize(FUENTE);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(FUENTE_TICKET, "bold");
       };
       const separador = () => {
         doc.setLineWidth(0.3);
@@ -909,7 +916,7 @@ export default function SalesMayorista() {
        * envolverla.
        */
       const sizeQueEntra = (texto: string, size: number, minimo = 9) => {
-        doc.setFont("helvetica", "bold");
+        doc.setFont(FUENTE_TICKET, "bold");
         for (let s = size; s > minimo; s -= 0.5) {
           doc.setFontSize(s);
           if (doc.getTextWidth(texto) <= ANCHO) return s;
@@ -979,10 +986,10 @@ export default function SalesMayorista() {
       // y total de 10 dígitos en 9pt (15,7 y 20,1 mm). El layout de 70 mm se
       // pisaba con totales de 9 dígitos o más, y ahí hay importes reales.
       // "Precio Unitario" se abrevió para que el rótulo entre en su columna.
-      const X_CANT = 16;
-      const X_PRECIO = 40;
+      const X_CANT = 13;
+      const X_PRECIO = 37.7;
       const X_TOTAL = ANCHO;
-      doc.setFont("helvetica", "bold");
+      doc.setFont(FUENTE_TICKET, "bold");
       doc.setFontSize(8);
       doc.text("Desc.", 0, y);
       doc.text("Cant.", X_CANT, y, { align: "center" });
@@ -1003,7 +1010,7 @@ export default function SalesMayorista() {
 
         // Renglón de números. La cantidad va más grande que el resto, pero en
         // CANTIDAD_PT y no en 13 (ver arriba).
-        doc.setFont("helvetica", "bold");
+        doc.setFont(FUENTE_TICKET, "bold");
         doc.setFontSize(CANTIDAD_PT);
         doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
         doc.setFontSize(FUENTE);
@@ -1041,12 +1048,17 @@ export default function SalesMayorista() {
       return y;
     };
 
-    const nuevoDoc = (alto: number) =>
-      new jsPDF({
+    // La fuente se registra en cada documento que se crea: jsPDF la guarda
+    // por instancia, no globalmente.
+    const nuevoDoc = (alto: number) => {
+      const d = new jsPDF({
         orientation: "portrait",
         unit: "mm",
         format: [ANCHO_PAGINA, alto],
       });
+      registrarFuenteTicket(d, fuente);
+      return d;
+    };
 
     // El ticket se dibuja dos veces: la primera sobre un documento descartable
     // y sin paginar, solo para saber cuánto ocupa a lo alto; la segunda sobre el
