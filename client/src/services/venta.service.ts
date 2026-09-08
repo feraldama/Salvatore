@@ -639,6 +639,17 @@ export interface VentasTipoGrupo {
   ventas: EnvioVenta[];
 }
 
+/** Un cobro de crédito hecho dentro del período sobre una venta anterior. */
+export interface CobroCreditoPrevio {
+  VentaId: number;
+  VentaFecha: string;
+  FechaCobro: string;
+  ClienteNombre: string | null;
+  ClienteApellido: string | null;
+  metodo: "efectivo" | "pos" | "voucher" | "transferencia";
+  monto: number;
+}
+
 export interface VentasPorTipo {
   grupos: VentasTipoGrupo[];
   totales: {
@@ -646,7 +657,22 @@ export interface VentasPorTipo {
     totalVendido: number;
     totalEntregado: number;
     totalPendiente: number;
+    /**
+     * Dinero cobrado en el período por método. Incluye los cobros de créditos
+     * de ventas anteriores al período (ver `cobrosPrevios`), que no forman
+     * parte de `totalVendido`.
+     */
     porMetodo: PagosPorMetodo;
+  };
+  /**
+   * Cobros de créditos realizados dentro del período sobre ventas de fuera del
+   * período. No suman a las ventas, sí a `totales.porMetodo`.
+   */
+  cobrosPrevios?: {
+    cantidad: number;
+    total: number;
+    porMetodo: PagosPorMetodo;
+    cobros: CobroCreditoPrevio[];
   };
 }
 
@@ -665,6 +691,12 @@ export const getVentasPorTipo = async (params: {
           totalEntregado: 0,
           totalPendiente: 0,
           porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
+        },
+        cobrosPrevios: {
+          cantidad: 0,
+          total: 0,
+          porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
+          cobros: [],
         },
       }
     );

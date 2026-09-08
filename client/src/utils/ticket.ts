@@ -87,10 +87,13 @@ export async function generarTicketVentaPDF(
     format: [80, 297], // 80mm de ancho y 297mm de alto (A4 cortado)
   });
 
-  const FUENTE = 9; // tamaño base del texto del ticket
+  // Courier (monoespaciada) para que los importes queden alineados columna a
+  // columna y el trazo aguante bien la impresión térmica a tamaño chico.
+  const FAMILIA = "courier";
+  const FUENTE = 8; // tamaño base del texto del ticket
   const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
   doc.setFontSize(FUENTE);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(FAMILIA, "bold");
 
   // Cursor vertical: cada línea puede ocupar más de un renglón si no entra en
   // el ancho del papel, así que se avanza según lo que se imprimió.
@@ -108,7 +111,7 @@ export async function generarTicketVentaPDF(
   ) => {
     const size = opciones.size ?? FUENTE;
     doc.setFontSize(size);
-    doc.setFont("helvetica", opciones.bold === false ? "normal" : "bold");
+    doc.setFont(FAMILIA, opciones.bold === false ? "normal" : "bold");
     const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
     renglones.forEach((renglon) => {
       saltoSiNoEntra(size * 0.5);
@@ -120,7 +123,7 @@ export async function generarTicketVentaPDF(
       y += size * 0.5; // interlineado proporcional al tamaño de fuente
     });
     doc.setFontSize(FUENTE);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(FAMILIA, "bold");
   };
   const separador = () => {
     doc.setLineWidth(0.3);
@@ -128,13 +131,14 @@ export async function generarTicketVentaPDF(
     y += 1.5;
   };
 
-  // Nro. de venta arriba de todo.
-  linea(`VENTA NRO.: ${venta.ventaId}`, { size: 13, center: true });
+  // Nro. de venta arriba de todo. Va en el tamaño más chico del ticket: sirve
+  // de referencia para buscar la venta, pero no es un dato que el cliente mire.
+  linea(`VENTA NRO.: ${venta.ventaId}`, { size: 7, center: true });
   separador();
 
   // Encabezado del comercio.
-  linea("Distribuidora Salvatore", { size: 11, center: true });
-  linea("COMERCIAL & BODEGA", { size: 11, center: true });
+  linea("Distribuidora Salvatore", { size: 10, center: true });
+  linea("COMERCIAL & BODEGA", { size: 10, center: true });
   linea("Martin Ledezma e/ Niños Martires, Capiatá", { center: true });
   linea("Teléfono: +595 985 374240", { center: true });
 
@@ -148,7 +152,7 @@ export async function generarTicketVentaPDF(
   // Marca de copia: evita que una reimpresión se confunda con el original.
   if (opts.reimpresion) {
     const ahora = new Date();
-    linea("*** REIMPRESION ***", { size: 11, center: true });
+    linea("*** REIMPRESION ***", { size: 10, center: true });
     linea(
       `Reimpreso: ${formatFecha(ahora)} ${pad2(ahora.getHours())}:${pad2(
         ahora.getMinutes(),
@@ -192,8 +196,8 @@ export async function generarTicketVentaPDF(
   const X_CANT = 20;
   const X_PRECIO = 52;
   const X_TOTAL = ANCHO;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFont(FAMILIA, "bold");
+  doc.setFontSize(7);
   doc.text("Desc.", 0, y);
   doc.text("Cant.", X_CANT, y, { align: "center" });
   doc.text("Precio Unitario", X_PRECIO, y, { align: "right" });
@@ -227,9 +231,9 @@ export async function generarTicketVentaPDF(
     // El bloque completo (números + nombre) no se parte entre dos hojas.
     saltoSiNoEntra(11);
 
-    // Renglón de números. La cantidad va en 13pt, más grande que el resto.
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
+    // Renglón de números. La cantidad va en 12pt, más grande que el resto.
+    doc.setFont(FAMILIA, "bold");
+    doc.setFontSize(12);
     doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
     doc.setFontSize(FUENTE);
     doc.text(formatMiles(item.precio), X_PRECIO, y, { align: "right" });
@@ -246,7 +250,7 @@ export async function generarTicketVentaPDF(
   y += 3;
 
   // Total bien grande: es el dato que más se mira del ticket.
-  linea(`Total a Pagar Gs. ${formatMiles(venta.total)}`, { size: 12 });
+  linea(`Total a Pagar Gs. ${formatMiles(venta.total)}`, { size: 11 });
 
   y += 3;
   linea("--GRACIAS POR SU PREFERENCIA--");

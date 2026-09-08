@@ -1707,6 +1707,11 @@ const Venta = {
   // transferencia con la parte en efectivo, y los totales por método cierren
   // contra el registro diario.
   // El agrupado se arma en JS para devolver también el detalle de cada venta.
+  // Aparte de los grupos, devuelve `cobrosPrevios`: los cobros de crédito
+  // hechos DENTRO del período sobre ventas ANTERIORES a él. No son ventas del
+  // período (no tocan totalVendido) pero sí dinero cobrado en él, así que suman
+  // en totales.porMetodo — sin esto, cobrar por transferencia un crédito del
+  // mes pasado no aparecía en ninguna parte del reporte.
   getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
     const cond = ["v.EmpresaId = ?"];
@@ -1736,6 +1741,79 @@ const Venta = {
     // desglosePagosSql / armarPagosPorVenta arriba).
     const [pagosRows] = await pe.query(desglosePagosSql(where), params);
     const pagosPorVenta = armarPagosPorVenta(pagosRows);
+
+    // Cobros de crédito hechos DENTRO del período sobre ventas de FUERA del
+    // período. El desglose de arriba se filtra por la fecha de la VENTA, así
+    // que esa plata (p. ej. una transferencia que cancela un crédito del mes
+    // pasado) no caía en ningún grupo y faltaba en "cobrado por método".
+    // Se devuelven aparte para no tocar los totales vendidos del período, pero
+    // sí suman en totales.porMetodo.
+    const cobrosPrevios = {
+      cantidad: 0,
+      total: 0,
+      porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
+      cobros: [],
+    };
+    if (fechaDesde || fechaHasta) {
+      const cpCond = ["v.EmpresaId = ?"];
+      const cpParams = [Number(empresaId)];
+      const fueraDelPeriodo = [];
+      if (fechaDesde) {
+        cpCond.push("DATE(r.RegistroDiarioCajaFecha) >= ?");
+        cpParams.push(fechaDesde);
+      }
+      if (fechaHasta) {
+        cpCond.push("DATE(r.RegistroDiarioCajaFecha) <= ?");
+        cpParams.push(fechaHasta);
+      }
+      if (fechaDesde) {
+        fueraDelPeriodo.push("DATE(v.VentaFecha) < ?");
+        cpParams.push(fechaDesde);
+      }
+      if (fechaHasta) {
+        fueraDelPeriodo.push("DATE(v.VentaFecha) > ?");
+        cpParams.push(fechaHasta);
+      }
+      cpCond.push(`(${fueraDelPeriodo.join(" OR ")})`);
+
+      const [cobrosRows] = await pe.query(
+        `SELECT v.VentaId, v.VentaFecha,
+                r.RegistroDiarioCajaFecha AS FechaCobro,
+                r.TipoGastoGrupoId AS grupo,
+                r.RegistroDiarioCajaMonto AS monto,
+                c.ClienteNombre, c.ClienteApellido
+           FROM registrodiariocaja r
+           JOIN venta v
+             ON v.VentaId = CAST(
+                  substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+                )
+           LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+          WHERE r.TipoGastoId = 2
+            AND r.TipoGastoGrupoId IN (1, 3, 4, 5, 6, 7, 8, 9, 10)
+            AND r.RegistroDiarioCajaDetalle LIKE 'Cobro Crédito%'
+            AND ${cpCond.join(" AND ")}
+          ORDER BY r.RegistroDiarioCajaFecha ASC, v.VentaId ASC`,
+        cpParams
+      );
+
+      for (const c of cobrosRows) {
+        const metodo = METODO_POR_GRUPO_INGRESO[Number(c.grupo)];
+        if (!metodo) continue;
+        const monto = Number(c.monto) || 0;
+        cobrosPrevios.cantidad += 1;
+        cobrosPrevios.total += monto;
+        cobrosPrevios.porMetodo[metodo] += monto;
+        cobrosPrevios.cobros.push({
+          VentaId: c.VentaId,
+          VentaFecha: c.VentaFecha,
+          FechaCobro: c.FechaCobro,
+          ClienteNombre: c.ClienteNombre ?? null,
+          ClienteApellido: c.ClienteApellido ?? null,
+          metodo,
+          monto,
+        });
+      }
+    }
 
     const grupos = new Map();
     for (const r of rows) {
@@ -1815,7 +1893,15 @@ const Venta = {
       }
     );
 
-    return { grupos: lista, totales };
+    // Los cobros de créditos de otros períodos NO son ventas del período, así
+    // que no tocan cantidad/totalVendido/totalPendiente, pero sí son dinero
+    // recibido: suman en "cobrado por método".
+    totales.porMetodo.efectivo += cobrosPrevios.porMetodo.efectivo;
+    totales.porMetodo.pos += cobrosPrevios.porMetodo.pos;
+    totales.porMetodo.voucher += cobrosPrevios.porMetodo.voucher;
+    totales.porMetodo.transferencia += cobrosPrevios.porMetodo.transferencia;
+
+    return { grupos: lista, totales, cobrosPrevios };
   },
 
   // Reporte "Cobros y ganancia por día" — criterio de lo PERCIBIDO (base caja):

@@ -770,13 +770,15 @@ export default function SalesMayorista() {
     const fechaFormateada = `${dia}/${mes}/${año}`;
     const horaFormateada = `${horas}:${minutos}:${segundos}`;
 
-    // Configuración inicial. El cuerpo va en 9pt (antes 8) y los datos
-    // importantes en negrita: en la térmica el texto fino salía muy claro y
+    // Configuración inicial. Courier (monoespaciada) para que los importes
+    // queden alineados columna a columna y el trazo aguante bien la impresión
+    // térmica a tamaño chico. Todo en negrita: el texto fino salía muy claro y
     // costaba leerlo.
-    const FUENTE = 9; // tamaño base del texto del ticket
+    const FAMILIA = "courier";
+    const FUENTE = 8; // tamaño base del texto del ticket
     const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
     doc.setFontSize(FUENTE);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(FAMILIA, "bold");
 
     // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
     // en el ancho del papel, así que se avanza según lo que se imprimió.
@@ -800,7 +802,7 @@ export default function SalesMayorista() {
     ) => {
       const size = opts.size ?? FUENTE;
       doc.setFontSize(size);
-      doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
+      doc.setFont(FAMILIA, opts.bold === false ? "normal" : "bold");
       const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
       renglones.forEach((renglon) => {
         saltoSiNoEntra(size * 0.5);
@@ -812,7 +814,7 @@ export default function SalesMayorista() {
         y += size * 0.5; // interlineado proporcional al tamaño de fuente
       });
       doc.setFontSize(FUENTE);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(FAMILIA, "bold");
     };
     const separador = () => {
       doc.setLineWidth(0.3);
@@ -820,15 +822,17 @@ export default function SalesMayorista() {
       y += 1.5;
     };
 
-    // Nro. de venta arriba de todo (si la venta ya fue confirmada)
+    // Nro. de venta arriba de todo (si la venta ya fue confirmada). Va en el
+    // tamaño más chico del ticket: sirve de referencia para buscar la venta,
+    // pero no es un dato que el cliente mire.
     if (ventaId) {
-      linea(`VENTA NRO.: ${ventaId}`, { size: 13, center: true });
+      linea(`VENTA NRO.: ${ventaId}`, { size: 7, center: true });
       separador();
     }
 
     // Encabezado del ticket: centrado, como en el sistema anterior.
-    linea("Distribuidora Salvatore", { size: 11, center: true });
-    linea("COMERCIAL & BODEGA", { size: 11, center: true });
+    linea("Distribuidora Salvatore", { size: 10, center: true });
+    linea("COMERCIAL & BODEGA", { size: 10, center: true });
     linea("Martin Ledezma e/ Niños Martires, Capiatá", { center: true });
     linea("Teléfono: +595 985 374240", { center: true });
     linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, {
@@ -886,8 +890,8 @@ export default function SalesMayorista() {
     const X_CANT = 20;
     const X_PRECIO = 52;
     const X_TOTAL = ANCHO;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
+    doc.setFont(FAMILIA, "bold");
+    doc.setFontSize(7);
     doc.text("Desc.", 0, y);
     doc.text("Cant.", X_CANT, y, { align: "center" });
     doc.text("Precio Unitario", X_PRECIO, y, { align: "right" });
@@ -932,9 +936,9 @@ export default function SalesMayorista() {
       // El bloque completo (números + nombre) no se parte entre dos hojas.
       saltoSiNoEntra(11);
 
-      // Renglón de números. La cantidad va en 13pt, más grande que el resto.
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
+      // Renglón de números. La cantidad va en 12pt, más grande que el resto.
+      doc.setFont(FAMILIA, "bold");
+      doc.setFontSize(12);
       doc.text(String(p.cantidad), X_CANT, y, { align: "center" });
       doc.setFontSize(FUENTE);
       doc.text(precioUnitario.toLocaleString("es-ES"), X_PRECIO, y, {
@@ -964,7 +968,7 @@ export default function SalesMayorista() {
     // Total bien grande: es el dato que más se mira del ticket.
     linea(`Total a Pagar Gs. ${totalCost.toLocaleString("es-ES")}`, {
       bold: true,
-      size: 12,
+      size: 11,
     });
 
     // Pie de página

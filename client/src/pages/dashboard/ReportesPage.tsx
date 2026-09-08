@@ -298,6 +298,21 @@ const TIPO_VENTA_LABELS: Record<string, string> = {
 };
 const labelTipoVenta = (tipo: string) => TIPO_VENTA_LABELS[tipo] ?? tipo;
 
+// Etiquetas de método de cobro (cobros de créditos de períodos anteriores).
+const METODO_LABELS: Record<string, string> = {
+  efectivo: "Efectivo",
+  pos: "POS",
+  voucher: "Voucher",
+  transferencia: "Transferencia",
+};
+const labelMetodo = (m: string) => METODO_LABELS[m] ?? m;
+
+// El reporte "Ventas por tipo" tiene algo que mostrar si hubo ventas en el
+// período o si se cobraron créditos de ventas anteriores (esos cobros no son
+// ventas del período pero sí dinero cobrado en él).
+const hayDatosTipoV = (r: VentasPorTipo) =>
+  r.grupos.length > 0 || (r.cobrosPrevios?.cantidad ?? 0) > 0;
+
 const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
@@ -1886,7 +1901,7 @@ const ReportesPage: React.FC = () => {
   };
 
   const exportarVentasPorTipoPDF = async () => {
-    if (!ventasPorTipo || ventasPorTipo.grupos.length === 0) return;
+    if (!ventasPorTipo || !hayDatosTipoV(ventasPorTipo)) return;
     const { jsPDF, autoTable } = await loadPdf();
     const doc = new jsPDF({ orientation: "portrait", format: "a4" });
     doc.setFontSize(14);
@@ -1978,6 +1993,54 @@ const ReportesPage: React.FC = () => {
           .finalY + 10;
     }
 
+    // Cobros de créditos de ventas anteriores al período (no son ventas del
+    // período, pero sí dinero cobrado en él: suman en "cobrado por método").
+    const cp = ventasPorTipo.cobrosPrevios;
+    if (cp && cp.cantidad > 0) {
+      if (y > doc.internal.pageSize.getHeight() - 30) {
+        doc.addPage();
+        y = 14;
+      }
+      doc.setFontSize(12);
+      doc.text(`COBROS DE CRÉDITOS ANTERIORES (${cp.cantidad})`, 14, y);
+      autoTable(doc, {
+        head: [
+          [
+            "Fecha cobro",
+            "N° venta",
+            "Fecha venta",
+            "Cliente",
+            "Método",
+            "Monto cobrado",
+          ],
+        ],
+        body: cp.cobros.map((c) => [
+          formatFechaHoraLocal(c.FechaCobro),
+          String(c.VentaId),
+          formatFechaHoraLocal(c.VentaFecha),
+          [c.ClienteNombre, c.ClienteApellido].filter(Boolean).join(" ") || "-",
+          labelMetodo(c.metodo),
+          formatMiles(c.monto),
+        ]),
+        foot: [["", "", "", "", "Total cobrado", formatMiles(cp.total)]],
+        startY: y + 3,
+        theme: "grid",
+        headStyles: { fillColor: [180, 83, 9], fontSize: 8 },
+        footStyles: {
+          fillColor: [254, 243, 199],
+          textColor: [146, 64, 14],
+          fontStyle: "bold",
+          halign: "right",
+        },
+        styles: { fontSize: 7 },
+        columnStyles: { 5: { halign: "right" as const } },
+        margin: { left: 14, right: 14 },
+      });
+      y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 10;
+    }
+
     if (y > doc.internal.pageSize.getHeight() - 30) {
       doc.addPage();
       y = 14;
@@ -2015,6 +2078,15 @@ const ReportesPage: React.FC = () => {
     if (pm.voucher > 0)
       partesMetodo.push(`Voucher: ${formatMiles(pm.voucher)}`);
     doc.text(`Cobrado por método: ${partesMetodo.join(" | ")}`, 14, y);
+    if (cp && cp.cantidad > 0) {
+      y += 5;
+      doc.setFontSize(8);
+      doc.text(
+        `Incluye ${formatMiles(cp.total)} cobrado en el período por créditos de ventas anteriores.`,
+        14,
+        y,
+      );
+    }
 
     const pdfBlob = doc.output("blob");
     const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -2920,7 +2992,9 @@ const ReportesPage: React.FC = () => {
                   <p className="text-xs text-slate-500 mt-1">
                     Ventas del período agrupadas por tipo: envío, contado,
                     crédito, POS y transferencia (separando las transferencias
-                    de envíos). Cada grupo con su detalle y total.
+                    de envíos). Cada grupo con su detalle y total. Los cobros de
+                    créditos de ventas anteriores hechos dentro del período van
+                    en un bloque aparte y suman en “cobrado por método”.
                   </p>
                 </div>
               </div>
@@ -2956,7 +3030,7 @@ const ReportesPage: React.FC = () => {
                 >
                   {loading ? "Cargando…" : "Generar"}
                 </button>
-                {ventasPorTipo && ventasPorTipo.grupos.length > 0 && (
+                {ventasPorTipo && hayDatosTipoV(ventasPorTipo) && (
                   <button
                     className="bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold py-1.5 px-4 rounded-md shadow-sm transition"
                     onClick={exportarVentasPorTipoPDF}
@@ -2966,7 +3040,7 @@ const ReportesPage: React.FC = () => {
                 )}
               </div>
 
-              {ventasPorTipo && ventasPorTipo.grupos.length === 0 && (
+              {ventasPorTipo && !hayDatosTipoV(ventasPorTipo) && (
                 <p className="text-sm text-slate-500">
                   No hay ventas en el período seleccionado.
                 </p>
@@ -3090,7 +3164,104 @@ const ReportesPage: React.FC = () => {
                   </React.Fragment>
                 ))}
 
-              {ventasPorTipo && ventasPorTipo.grupos.length > 0 && (
+              {/* Cobros de créditos de ventas anteriores al período: no son
+                  ventas del período (no suman a los totales vendidos) pero sí
+                  es dinero cobrado, y suma en "cobrado por método". */}
+              {ventasPorTipo &&
+                (ventasPorTipo.cobrosPrevios?.cantidad ?? 0) > 0 && (
+                  <React.Fragment>
+                    <h4 className="font-semibold text-amber-700 text-sm mb-2">
+                      Cobros de créditos de ventas anteriores (
+                      {ventasPorTipo.cobrosPrevios!.cantidad})
+                    </h4>
+                    <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-2 mb-4 border border-slate-200 rounded-md">
+                      <table className="w-full border-collapse text-sm min-w-[860px]">
+                        <thead className="sticky top-0 bg-amber-50 z-10">
+                          <tr className="border-b border-slate-300">
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Fecha cobro
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              N° venta
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Fecha venta
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Cliente
+                            </th>
+                            <th className="text-left py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Método
+                            </th>
+                            <th className="text-right py-2 px-2 font-semibold text-slate-800 whitespace-nowrap">
+                              Monto cobrado
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ventasPorTipo.cobrosPrevios!.cobros.map((c, i) => (
+                            <tr
+                              key={`${c.VentaId}-${c.metodo}-${i}`}
+                              className="border-b border-slate-200 hover:bg-slate-50"
+                            >
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {formatFechaHoraLocal(c.FechaCobro)}
+                              </td>
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {c.VentaId}
+                              </td>
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {formatFechaHoraLocal(c.VentaFecha)}
+                              </td>
+                              <td className="py-1.5 px-2 text-slate-700">
+                                {[c.ClienteNombre, c.ClienteApellido]
+                                  .filter(Boolean)
+                                  .join(" ") || "-"}
+                              </td>
+                              <td className="py-1.5 px-2 whitespace-nowrap text-slate-700">
+                                {labelMetodo(c.metodo)}
+                              </td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">
+                                {formatMiles(c.monto)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="sticky bottom-0">
+                          <tr className="bg-amber-100 font-semibold text-amber-900">
+                            <td className="py-2 px-2" colSpan={5}>
+                              Total cobrado de créditos anteriores
+                              {(() => {
+                                const pm =
+                                  ventasPorTipo.cobrosPrevios!.porMetodo;
+                                const partes = [
+                                  pm.efectivo > 0 &&
+                                    `Efectivo: ${formatMiles(pm.efectivo)}`,
+                                  pm.transferencia > 0 &&
+                                    `Transferencia: ${formatMiles(pm.transferencia)}`,
+                                  pm.pos > 0 && `POS: ${formatMiles(pm.pos)}`,
+                                  pm.voucher > 0 &&
+                                    `Voucher: ${formatMiles(pm.voucher)}`,
+                                ].filter(Boolean) as string[];
+                                return partes.length ? (
+                                  <span className="font-normal">
+                                    {" "}
+                                    ({partes.join(" · ")})
+                                  </span>
+                                ) : null;
+                              })()}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">
+                              {formatMiles(ventasPorTipo.cobrosPrevios!.total)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </React.Fragment>
+                )}
+
+              {ventasPorTipo && hayDatosTipoV(ventasPorTipo) && (
                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                   <h3 className="font-semibold text-slate-800 mb-3">TOTALES</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
@@ -3128,6 +3299,14 @@ const ReportesPage: React.FC = () => {
                       <h3 className="font-semibold text-slate-800 mt-4 mb-3">
                         COBRADO POR MÉTODO
                       </h3>
+                      {(ventasPorTipo.cobrosPrevios?.cantidad ?? 0) > 0 && (
+                        <p className="text-xs text-slate-500 -mt-2 mb-3">
+                          Incluye{" "}
+                          {formatMiles(ventasPorTipo.cobrosPrevios!.total)}{" "}
+                          cobrado en el período por créditos de ventas
+                          anteriores.
+                        </p>
+                      )}
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
                         <div>
                           <span className="text-slate-500">Efectivo:</span>{" "}
