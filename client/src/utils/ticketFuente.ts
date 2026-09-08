@@ -248,7 +248,7 @@ export const FUENTES = {
  * │    FUENTES.ATKINSON_HYPERLEGIBLE   preparada, pero va a manchar          │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
-export const FUENTE_ACTIVA: OpcionFuente = FUENTES.CHARIS_SIL;
+export const FUENTE_ACTIVA: OpcionFuente = FUENTES.NOTO_SERIF;
 
 /** Nombre de la fuente activa, para los `setFont` del ticket. */
 export const FUENTE_TICKET = FUENTE_ACTIVA.nombre;
