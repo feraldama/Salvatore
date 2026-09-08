@@ -39,3 +39,25 @@ export const ANCHO_UTIL = 62;
 
 /** Aire que se deja abajo del último renglón antes de cortar la página. */
 export const MARGEN_INFERIOR = 6;
+
+/**
+ * Alto máximo de una página del ticket, en mm. Pasado esto se pagina.
+ *
+ * Hace falta un techo porque el "Ajustar al área de impresión" del navegador
+ * escala por `min(ancho_pagina / ancho_imprimible, alto_pagina / alto_imprimible)`.
+ * El ancho ya está clavado en 1,00 con ANCHO_PAGINA, pero si la página es MÁS
+ * ALTA que el largo de formulario que declara el driver, manda el factor del
+ * alto y se achica todo igual. Con tickets de pocos ítems no se nota; con
+ * muchos productos la página se va a 400-700 mm y el ticket sale ilegible.
+ *
+ * De dónde sale el número: con el layout viejo de 80 x 297 mm el factor
+ * observado era 0,79, que es exactamente el del ancho (63,4 / 80). Para que el
+ * ancho sea el que manda, el del alto tiene que haber sido mayor, o sea que el
+ * alto imprimible del driver es de al menos 0,79 x 297 = 235 mm. 200 mm deja
+ * un resguardo cómodo por debajo de ese piso.
+ *
+ * Si en la impresora se configura la escala en "Tamaño real" / 100% en lugar de
+ * "Ajustar al área de impresión", este techo deja de hacer falta y el ticket
+ * puede salir en una sola página continua sin cortes.
+ */
+export const ALTO_MAXIMO_PAGINA = 200;

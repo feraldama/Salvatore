@@ -26,6 +26,7 @@ import type { Cliente } from "../../components/common/ClienteFormModal";
 import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "../../utils/lazyPdf";
 import {
+  ALTO_MAXIMO_PAGINA,
   ANCHO_PAGINA,
   ANCHO_UTIL,
   MARGEN_INFERIOR,
@@ -831,14 +832,28 @@ export default function SalesMayorista() {
     ];
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
 
-    /** Dibuja el ticket completo y devuelve el alto que ocupó, en mm. */
-    const dibujar = (doc: JsPdf): number => {
+    /**
+     * Dibuja el ticket completo y devuelve el alto que ocupó, en mm.
+     *
+     * @param limiteY Y a partir del cual se pasa a una hoja nueva. `Infinity`
+     *   para dibujar de corrido, sin paginar (se usa en la pasada de medición y
+     *   cuando el ticket entra entero en una sola página).
+     */
+    const dibujar = (doc: JsPdf, limiteY: number): number => {
       doc.setFontSize(FUENTE);
       doc.setFont("helvetica", "bold");
 
       // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
       // en el ancho del papel, así que se avanza según lo que se imprimió.
       let y = 8;
+
+      // Corta la hoja cuando el bloque que sigue ya no entra (el dibujado es
+      // manual, no hay paginado automático).
+      const saltoSiNoEntra = (alto: number) => {
+        if (y + alto <= limiteY) return;
+        doc.addPage();
+        y = 8;
+      };
 
       // `bold: false` queda disponible por si alguna línea necesitara texto
       // normal. `center` reproduce el encabezado centrado del sistema anterior.
@@ -851,6 +866,7 @@ export default function SalesMayorista() {
         doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
         const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
         renglones.forEach((renglon) => {
+          saltoSiNoEntra(size * 0.5);
           if (opts.center) {
             doc.text(renglon, ANCHO / 2, y, { align: "center" });
           } else {
@@ -964,6 +980,9 @@ export default function SalesMayorista() {
       // con la unidad de venta entre paréntesis (caja, unidad o combo) porque
       // el precio cambia según eso.
       items.forEach((item) => {
+        // El bloque completo (números + nombre) no se parte entre dos hojas.
+        saltoSiNoEntra(11);
+
         // Renglón de números. La cantidad va en 13pt, más grande que el resto.
         doc.setFont("helvetica", "bold");
         doc.setFontSize(13);
@@ -981,6 +1000,8 @@ export default function SalesMayorista() {
         y += 1.5;
       });
 
+      // El cierre (separador + total + pie) tampoco se parte entre dos hojas.
+      saltoSiNoEntra(16);
       y += 1;
       separador();
       y += 3;
@@ -1001,14 +1022,6 @@ export default function SalesMayorista() {
       return y;
     };
 
-    // El ticket se dibuja dos veces: la primera sobre un documento
-    // descartable, solo para medir cuánto ocupa a lo alto; la segunda sobre el
-    // definitivo, ya con una página de ese alto exacto. El papel es un rollo
-    // continuo, así que una sola página del alto del contenido es lo correcto:
-    // el paginado fijo cada 297 mm que había antes partía los tickets largos en
-    // varias hojas y hacía avanzar papel en blanco en cada corte. Y con la
-    // página del alto justo, el "Ajustar al área de impresión" del navegador no
-    // tiene nada que achicar.
     const nuevoDoc = (alto: number) =>
       new jsPDF({
         orientation: "portrait",
@@ -1016,9 +1029,22 @@ export default function SalesMayorista() {
         format: [ANCHO_PAGINA, alto],
       });
 
-    const alto = dibujar(nuevoDoc(297)) + MARGEN_INFERIOR;
+    // El ticket se dibuja dos veces: la primera sobre un documento descartable
+    // y sin paginar, solo para saber cuánto ocupa a lo alto; la segunda sobre el
+    // definitivo, ya con la página del tamaño que corresponde.
+    //
+    // Si entra en ALTO_MAXIMO_PAGINA va en una sola página del alto exacto del
+    // contenido, que es lo ideal para un rollo continuo: sin cortes y sin papel
+    // en blanco. Si no entra, se pagina a ese alto fijo — NO se puede dejar
+    // crecer la página, porque una página más alta que el largo de formulario
+    // del driver hace que el navegador escale por el alto y el ticket salga
+    // chico (ver ALTO_MAXIMO_PAGINA en ticketPapel.ts).
+    const medido = dibujar(nuevoDoc(297), Infinity) + MARGEN_INFERIOR;
+    const unaSolaPagina = medido <= ALTO_MAXIMO_PAGINA;
+    const alto = unaSolaPagina ? medido : ALTO_MAXIMO_PAGINA;
+
     const doc = nuevoDoc(alto);
-    dibujar(doc);
+    dibujar(doc, unaSolaPagina ? Infinity : alto - MARGEN_INFERIOR);
 
     // Guardar el PDF
     doc.save("ticket_venta.pdf");
