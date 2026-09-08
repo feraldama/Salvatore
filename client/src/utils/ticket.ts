@@ -17,6 +17,7 @@ import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "./lazyPdf";
 import {
   cargarFuenteTicket,
+  COLUMNAS_TICKET,
   FUENTE_TICKET,
   registrarFuenteTicket,
 } from "./ticketFuente";
@@ -269,13 +270,13 @@ export async function generarTicketVentaPDF(
 
     // Encabezados de las columnas. X_CANT es el centro de la columna de
     // cantidad; X_PRECIO y X_TOTAL son los bordes derechos (importes a la
-    // derecha). Están calculados para el peor caso de cada columna sin que se
-    // pisen entre sí: cantidad de 5 dígitos en 11pt (10,7 mm), precio de 8
-    // dígitos y total de 10 dígitos en 9pt (15,7 y 20,1 mm). El layout de 70 mm
-    // se pisaba con totales de 9 dígitos o más, y ahí hay importes reales.
-    // "Precio Unitario" se abrevió para que el rótulo entre en su columna.
-    const X_CANT = 13;
-    const X_PRECIO = 37.7;
+    // derecha). Salen de la fuente activa porque dependen del ancho de sus
+    // dígitos: están calculadas para el peor caso simultáneo de cada columna
+    // sin que se pisen (ver `columnas` en ticketFuente.ts). El layout viejo de
+    // 70 mm se pisaba con totales de 9 dígitos o más, y ahí hay importes
+    // reales. "Precio Unitario" se abrevió para que el rótulo entre en su
+    // columna.
+    const { X_CANT, X_PRECIO } = COLUMNAS_TICKET;
     const X_TOTAL = ANCHO;
     doc.setFont(FUENTE_TICKET, "bold");
     doc.setFontSize(8);
