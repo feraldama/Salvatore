@@ -90,13 +90,14 @@ const horaDe = (value: string): string => {
  * Genera el PDF del ticket: lo descarga y además lo abre en una pestaña nueva
  * para poder mandarlo a la impresora en el acto.
  *
+ * El ticket sale idéntico al original, sin ninguna marca de copia: el cliente
+ * pidió expresamente sacar el "*** REIMPRESION ***" y la fecha de reimpresión
+ * que llevaba antes.
+ *
  * @param venta Datos de la venta ya confirmada.
- * @param opts.reimpresion Marca el ticket como copia y agrega la fecha/hora en
- *   que se reimprimió, para que no se confunda con el original.
  */
 export async function generarTicketVentaPDF(
   venta: TicketVenta,
-  opts: { reimpresion?: boolean } = {},
 ): Promise<void> {
   const { jsPDF } = await loadPdf();
   // La fuente viene en su propio chunk (ver ticketFuente.ts).
@@ -104,15 +105,6 @@ export async function generarTicketVentaPDF(
 
   const FUENTE = 9; // tamaño base del texto del ticket
   const ANCHO = ANCHO_UTIL; // ancho útil de impresión en mm
-
-  // Sello de la reimpresión. Se calcula una sola vez, fuera de `dibujar`,
-  // porque el ticket se dibuja dos veces y las dos pasadas tienen que dar el
-  // mismo alto: si cambiara de minuto entre una y otra, el texto sería
-  // distinto y la medición dejaría de servir.
-  const ahora = new Date();
-  const selloReimpresion = `Reimpreso: ${formatFecha(ahora)} ${pad2(
-    ahora.getHours(),
-  )}:${pad2(ahora.getMinutes())}`;
 
   const items = venta.productos.map((p) => ({
     // La unidad de venta va entre paréntesis porque el precio cambia según eso.
@@ -231,12 +223,6 @@ export async function generarTicketVentaPDF(
       center: true,
     });
     linea(`Venta Tipo: ${ETIQUETA_TIPO[venta.tipo]}`, { center: true });
-
-    // Marca de copia: evita que una reimpresión se confunda con el original.
-    if (opts.reimpresion) {
-      linea("*** REIMPRESION ***", { size: 11, center: true });
-      linea(selloReimpresion, { center: true });
-    }
 
     // Métodos de pago de esta venta (solo los que tienen monto). Débito y
     // crédito van juntos como POS: la caja los registra en un único grupo.

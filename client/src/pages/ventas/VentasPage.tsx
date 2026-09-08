@@ -336,7 +336,6 @@ export default function VentasPage() {
           costoDelivery: Number(costoDelivery) || 0,
           total: Number(cab.Total),
         },
-        { reimpresion: true }
       );
       Swal.close();
     } catch (error) {
