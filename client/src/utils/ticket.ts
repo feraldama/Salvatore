@@ -21,6 +21,7 @@ import {
   ANCHO_UTIL,
   interlineado,
   MARGEN_INFERIOR,
+  NOMBRE_PT,
 } from "./ticketPapel";
 import { formatFecha, formatMiles } from "./utils";
 
@@ -107,7 +108,10 @@ export async function generarTicketVentaPDF(
 
   const items = venta.productos.map((p) => ({
     // La unidad de venta va entre paréntesis porque el precio cambia según eso.
-    nombre: `${p.nombre} (${p.unidad === "U" ? "Unidad" : "Caja"})`,
+    // Todo en mayúsculas: es lo que permite imprimir el nombre en NOMBRE_PT sin
+    // perder legibilidad (ver ticketPapel.ts). Se fuerza acá y no se confía en
+    // cómo esté cargado el producto.
+    nombre: `${p.nombre} (${p.unidad === "U" ? "Unidad" : "Caja"})`.toUpperCase(),
     cantidad: p.cantidad,
     precio: p.precioUnitario,
     total: p.total,
@@ -116,7 +120,7 @@ export async function generarTicketVentaPDF(
   // El reparto se cobra como una línea más del ticket (igual que en la venta).
   if (venta.costoDelivery > 0) {
     items.push({
-      nombre: "DELIVERY (Envio)",
+      nombre: "DELIVERY (ENVIO)",
       cantidad: 1,
       precio: venta.costoDelivery,
       total: venta.costoDelivery,
@@ -133,7 +137,7 @@ export async function generarTicketVentaPDF(
   // entre dos hojas.
   const AIRE_ITEM = 1;
   const ALTO_ITEM =
-    interlineado(CANTIDAD_PT) + interlineado(FUENTE) + AIRE_ITEM;
+    interlineado(CANTIDAD_PT) + interlineado(NOMBRE_PT) + AIRE_ITEM;
 
   /**
    * Dibuja el ticket completo y devuelve el alto que ocupó, en mm.
@@ -293,7 +297,7 @@ export async function generarTicketVentaPDF(
       doc.text(formatMiles(item.total), X_TOTAL, y, { align: "right" });
       y += interlineado(CANTIDAD_PT);
 
-      linea(item.nombre);
+      linea(item.nombre, { size: NOMBRE_PT });
       y += AIRE_ITEM;
     });
 

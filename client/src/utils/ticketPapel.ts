@@ -69,6 +69,28 @@ export const interlineado = (size: number) =>
   Math.round((size * 0.4) / FILA_PUNTOS) * FILA_PUNTOS;
 
 /**
+ * Cuerpo del renglón del nombre del producto, en puntos.
+ *
+ * Va más chico que el resto del ticket (9 pt) y aun así se lee igual o mejor,
+ * porque el nombre se imprime SIEMPRE EN MAYÚSCULAS. Las mayúsculas se leen por
+ * la altura de caja (0,718 em) y no por la altura de x (0,532 em), así que sobre
+ * la grilla de 72 dpi de la impresora:
+ *
+ *   - cuerpo de 9 pt en minúsculas → 4,8 filas de puntos (lo que hay hoy)
+ *   - nombre de 7 pt en MAYÚSCULAS → 5,0 filas de puntos
+ *
+ * De ahí que el nombre en 7 pt no sea un retroceso: tiene más filas de puntos
+ * que el texto que ya se venía leyendo bien. Es lo que hace que el nombre se
+ * pueda achicar sin recortarlo, que era la alternativa.
+ *
+ * 7 pt es el piso: a 6,5 pt las mayúsculas caen a 4,7 filas y ahí sí se empieza
+ * a perder. Y el nombre tiene que ir en mayúsculas de verdad (se fuerza con
+ * `toUpperCase`, no se confía en cómo esté cargado el producto): en minúsculas,
+ * 7 pt da 3,7 filas y sale ilegible.
+ */
+export const NOMBRE_PT = 7;
+
+/**
  * Alto máximo de una página del ticket, en mm. Pasado esto se pagina.
  *
  * Hace falta un techo porque el "Ajustar al área de impresión" del navegador

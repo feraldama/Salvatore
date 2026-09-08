@@ -31,6 +31,7 @@ import {
   ANCHO_UTIL,
   interlineado,
   MARGEN_INFERIOR,
+  NOMBRE_PT,
 } from "../../utils/ticketPapel";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
@@ -780,6 +781,10 @@ export default function SalesMayorista() {
     // Los ítems se resuelven ANTES de dibujar porque el ticket se dibuja dos
     // veces (una para medir el alto y otra la definitiva) y los precios tienen
     // que ser exactamente los mismos en las dos pasadas.
+    //
+    // El nombre se arma SIEMPRE EN MAYÚSCULAS: es lo que permite imprimirlo en
+    // NOMBRE_PT sin perder legibilidad (ver ticketPapel.ts). Se fuerza acá y no
+    // se confía en cómo esté cargado el producto.
     const items = carrito.map((p) => {
       if (p.caja) {
         // Caja: precio minorista o mayorista según el cliente (misma regla
@@ -789,7 +794,7 @@ export default function SalesMayorista() {
           p.precioVentaMayorista,
         );
         return {
-          nombre: `${p.nombre} (Caja)`,
+          nombre: `${p.nombre} (Caja)`.toUpperCase(),
           cantidad: p.cantidad,
           precio,
           total: precio * p.cantidad,
@@ -799,14 +804,14 @@ export default function SalesMayorista() {
       const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
       if (combo && p.cantidad >= combo.ComboCantidad) {
         return {
-          nombre: `${p.nombre} (Unidad (Combo))`,
+          nombre: `${p.nombre} (Unidad (Combo))`.toUpperCase(),
           cantidad: p.cantidad,
           precio: p.precioUnitario,
           total: calcularPrecioConCombo(p.id, p.cantidad, p.precioUnitario),
         };
       }
       return {
-        nombre: `${p.nombre} (Unidad)`,
+        nombre: `${p.nombre} (Unidad)`.toUpperCase(),
         cantidad: p.cantidad,
         precio: p.precioUnitario,
         total: p.precioUnitario * p.cantidad,
@@ -843,7 +848,7 @@ export default function SalesMayorista() {
     // ítem entre dos hojas.
     const AIRE_ITEM = 1;
     const ALTO_ITEM =
-      interlineado(CANTIDAD_PT) + interlineado(FUENTE) + AIRE_ITEM;
+      interlineado(CANTIDAD_PT) + interlineado(NOMBRE_PT) + AIRE_ITEM;
 
     /**
      * Dibuja el ticket completo y devuelve el alto que ocupó, en mm.
@@ -1010,7 +1015,7 @@ export default function SalesMayorista() {
         });
         y += interlineado(CANTIDAD_PT);
 
-        linea(item.nombre);
+        linea(item.nombre, { size: NOMBRE_PT });
         y += AIRE_ITEM;
       });
 
