@@ -34,7 +34,7 @@
  *   fuente                          altura x   filas   trazo     ojal 8 impreso
  *   Helvetica/Arial (la original)   0,532 em   4,8     —         —
  *   DejaVu Cond. Bold               0,547 em   4,9     0,50 mm   0,15 mm  ✗ mancha
- *   DejaVu Cond. Regular  ← ACTIVA  0,547 em   4,9     0,26 mm   0,51 mm  ✓
+ *   DejaVu Cond. Regular            0,547 em   4,9     0,26 mm   0,51 mm  ✓
  *   Atkinson Hyperlegible Regular   0,496 em   4,5     0,49 mm   0,07 mm  ✗ mancha
  *   Atkinson Hyperlegible Bold      0,496 em   4,5     0,83 mm  −0,44 mm  ✗✗ sólida
  *
@@ -121,9 +121,51 @@ const ATKINSON_HYPERLEGIBLE: OpcionFuente = {
   columnas: { X_CANT: 18.1, X_PRECIO: 40.4 },
 };
 
+/**
+ * Charis SIL Regular (SIL International).
+ *
+ * La opción serif, para cuando se pide "algo parecido a Times New Roman". De las
+ * serif es la mejor candidata para esta impresora y no por casualidad: viene de
+ * Bitstream Charter, que Matthew Carter diseñó en 1987 pensando en impresoras de
+ * baja resolución — láser de 300 dpi y matriz de puntos. Sus serifas son gruesas
+ * a propósito, en vez de los pelos de Times, justamente para sobrevivir a una
+ * grilla gruesa.
+ *
+ * Igual es un paso atrás respecto de la DejaVu, y conviene tenerlo claro:
+ *
+ *   fuente               altura x   filas 9pt   ojal 'e' impreso   ancho
+ *   DejaVu Cond. Reg.    0,547 em   4,9         0,21 mm            100%
+ *   Charis SIL Regular   0,482 em   4,3         0,14 mm            107%
+ *   Times New Roman      0,447 em   4,0         0,08 mm            109%
+ *
+ * O sea: mejor que Times en las dos cosas, pero por debajo de la sans. A 9 pt da
+ * 4,3 filas de puntos contra las 4,9 de la DejaVu, y el ojal de la 'e' queda en
+ * 0,14 mm impresos, justo en el borde de rellenarse.
+ *
+ * Ese riesgo está acotado a las minúsculas, que en el ticket sólo aparecen en el
+ * encabezado ("Distribuidora Salvatore", "Teléfono", "Fecha", "Cliente:"). Los
+ * nombres de producto van todos en MAYÚSCULAS (ver NOMBRE_PT en ticketPapel.ts)
+ * y las mayúsculas no tienen ojales tan cerrados como la 'e'.
+ *
+ * Si el cliente la elige y le parece chica, la compensación es subir el cuerpo de
+ * 9 a 10 pt (a 10 pt da 4,8 filas, igual que la DejaVu a 9). Eso alarga el ticket
+ * ~10%, así que es una decisión a tomar con él y no de entrada: conviene mostrar
+ * primero la fuente sola, sin cambiar tamaños, para que se vea qué cambió.
+ *
+ * Separación mínima entre columnas en el peor caso: 1,56 mm.
+ */
+const CHARIS_SIL: OpcionFuente = {
+  nombre: "CharisSIL",
+  archivo: "CharisSIL.ttf",
+  cargarBase64: async () =>
+    (await import("../assets/fonts/charisSilRegular")).CHARIS_SIL_REGULAR_BASE64,
+  columnas: { X_CANT: 17.3, X_PRECIO: 39.9 },
+};
+
 /** Las fuentes preparadas para el ticket. Sólo se descarga la activa. */
 export const FUENTES = {
   DEJAVU_SANS_CONDENSED,
+  CHARIS_SIL,
   ATKINSON_HYPERLEGIBLE,
 } as const;
 
@@ -132,11 +174,12 @@ export const FUENTES = {
  * │  LA FUENTE DEL TICKET. Cambiar esta línea y listo: el nombre y las       │
  * │  columnas de importes se ajustan solos.                                  │
  * │                                                                          │
- * │    FUENTES.DEJAVU_SANS_CONDENSED   la que mejor mide (ver arriba)        │
+ * │    FUENTES.DEJAVU_SANS_CONDENSED   sans, la que mejor mide               │
+ * │    FUENTES.CHARIS_SIL              serif tipo Times, un paso atrás       │
  * │    FUENTES.ATKINSON_HYPERLEGIBLE   preparada, pero va a manchar          │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
-export const FUENTE_ACTIVA: OpcionFuente = FUENTES.DEJAVU_SANS_CONDENSED;
+export const FUENTE_ACTIVA: OpcionFuente = FUENTES.CHARIS_SIL;
 
 /** Nombre de la fuente activa, para los `setFont` del ticket. */
 export const FUENTE_TICKET = FUENTE_ACTIVA.nombre;
