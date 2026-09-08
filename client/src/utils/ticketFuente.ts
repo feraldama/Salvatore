@@ -29,14 +29,31 @@
  *      queda por debajo de ~0,15 mm, la letra se rellena y sale como mancha.
  *      Esto castiga a las negritas: son justo las que tienen los ojales chicos.
  *
- * Medido sobre los contornos reales de los glifos, a 9 pt:
+ * Medido sobre los contornos reales de los glifos, a 9 pt. El "peor ojal" es el
+ * más cerrado de la 'e', la 'o' y el '0', ya con los 0,3 mm de la aguja
+ * descontados: por debajo de 0,15 mm la letra se rellena.
  *
- *   fuente                          altura x   filas   trazo     ojal 8 impreso
- *   Helvetica/Arial (la original)   0,532 em   4,8     —         —
- *   DejaVu Cond. Bold               0,547 em   4,9     0,50 mm   0,15 mm  ✗ mancha
- *   DejaVu Cond. Regular            0,547 em   4,9     0,26 mm   0,51 mm  ✓
- *   Atkinson Hyperlegible Regular   0,496 em   4,5     0,49 mm   0,07 mm  ✗ mancha
- *   Atkinson Hyperlegible Bold      0,496 em   4,5     0,83 mm  −0,44 mm  ✗✗ sólida
+ *   fuente                          altura x   filas   peor ojal   ancho
+ *   ── sans ──────────────────────────────────────────────────────────────
+ *   Helvetica/Arial (la original)   0,532 em   4,8     —           95%
+ *   DejaVu Cond. Regular            0,547 em   4,9     0,21 mm ✓   100%
+ *   DejaVu Cond. Bold               0,547 em   4,9     0,15 mm ✗   112%
+ *   Atkinson Hyperlegible Regular   0,496 em   4,5     0,07 mm ✗   103%
+ *   Atkinson Hyperlegible Bold      0,496 em   4,5    −0,44 mm ✗✗  109%
+ *   ── serif y slab ──────────────────────────────────────────────────────
+ *   Noto Serif Regular              0,536 em   4,8     0,26 mm ✓   106%
+ *   Bitter Regular (slab)           0,532 em   4,8     0,70 mm ✓   103%
+ *   PT Serif Regular                0,500 em   4,5     0,25 mm ✓   103%
+ *   Charis SIL Bold                 0,488 em   4,4     0,13 mm ✗   109%
+ *   Charis SIL Regular              0,482 em   4,3     0,14 mm ✗   105%
+ *   Gentium (Plus / Book Plus)      0,454 em   4,1     0,40 mm     90%
+ *   Zilla Slab Regular              0,445 em   4,0     0,14 mm ✗   100%
+ *   Times New Roman                 0,447 em   4,0     0,08 mm ✗   109%
+ *
+ * Las que no están en el registro de abajo se descartaron por quedar debajo de
+ * la actual en las dos columnas que importan. Times además tiene un problema
+ * propio: sus serifas miden 0,057 mm, la sexta parte de una fila de puntos, así
+ * que ni se pueden dibujar.
  *
  * El peso NO cambia las alturas: la DejaVu regular tiene exactamente la misma
  * altura de x y de mayúsculas que su negrita. O sea que bajar el peso no cuesta
@@ -162,9 +179,59 @@ const CHARIS_SIL: OpcionFuente = {
   columnas: { X_CANT: 17.3, X_PRECIO: 39.9 },
 };
 
+/**
+ * Noto Serif Regular (proyecto Noto).
+ *
+ * La mejor serif medida, y por márgenes claros sobre Charis: 4,8 filas de puntos
+ * contra 4,3 (la letra es un 11% más alta) y el ojal más cerrado queda en
+ * 0,26 mm impresos contra 0,14 (casi el doble de abierto). Sólo es un 6% más
+ * ancha y ninguna línea del ticket se parte.
+ *
+ * Viene de la familia Droid Serif, que Steve Matteson diseñó para pantallas de
+ * baja resolución, así que las serifas son robustas y no pelos como las de
+ * Times. Es la candidata a mostrarle al cliente si le gustó Charis: mismo aire
+ * de serif, mejor en las dos métricas que importan acá.
+ *
+ * Separación mínima entre columnas en el peor caso: 1,77 mm.
+ */
+const NOTO_SERIF: OpcionFuente = {
+  nombre: "NotoSerif",
+  archivo: "NotoSerif.ttf",
+  cargarBase64: async () =>
+    (await import("../assets/fonts/notoSerifRegular")).NOTO_SERIF_REGULAR_BASE64,
+  columnas: { X_CANT: 17.6, X_PRECIO: 40.1 },
+};
+
+/**
+ * Bitter Regular (slab serif).
+ *
+ * La opción de serifa gruesa. Empata con Noto Serif en altura (4,8 filas) y
+ * tiene los ojales MÁS ABIERTOS de todas las candidatas, sans incluidas:
+ * 0,70 mm impresos, más del triple que la actual. Es slab, o sea que las
+ * serifas son bloques rectangulares en vez de remates finos — justo la forma
+ * que mejor sobrevive a una grilla de puntos gruesa.
+ *
+ * Fue diseñada específicamente para leerse en pantallas de baja resolución, que
+ * es casi exactamente el problema de esta impresora.
+ *
+ * Se ve más mecánica que Noto Serif, tipo máquina de escribir con serifas
+ * cuadradas. Si al cliente le gusta ese carácter, es la más robusta de todas.
+ *
+ * Separación mínima entre columnas en el peor caso: 1,75 mm.
+ */
+const BITTER: OpcionFuente = {
+  nombre: "Bitter",
+  archivo: "Bitter.ttf",
+  cargarBase64: async () =>
+    (await import("../assets/fonts/bitterRegular")).BITTER_REGULAR_BASE64,
+  columnas: { X_CANT: 18.6, X_PRECIO: 40.6 },
+};
+
 /** Las fuentes preparadas para el ticket. Sólo se descarga la activa. */
 export const FUENTES = {
   DEJAVU_SANS_CONDENSED,
+  NOTO_SERIF,
+  BITTER,
   CHARIS_SIL,
   ATKINSON_HYPERLEGIBLE,
 } as const;
@@ -174,8 +241,10 @@ export const FUENTES = {
  * │  LA FUENTE DEL TICKET. Cambiar esta línea y listo: el nombre y las       │
  * │  columnas de importes se ajustan solos.                                  │
  * │                                                                          │
- * │    FUENTES.DEJAVU_SANS_CONDENSED   sans, la que mejor mide               │
- * │    FUENTES.CHARIS_SIL              serif tipo Times, un paso atrás       │
+ * │    FUENTES.DEJAVU_SANS_CONDENSED   sans, la que mejor mide (4,9 filas)   │
+ * │    FUENTES.NOTO_SERIF              serif, la mejor de las serif (4,8)    │
+ * │    FUENTES.BITTER                  slab, los ojales más abiertos (4,8)   │
+ * │    FUENTES.CHARIS_SIL              serif tipo Times (4,3, ojal justo)    │
  * │    FUENTES.ATKINSON_HYPERLEGIBLE   preparada, pero va a manchar          │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
