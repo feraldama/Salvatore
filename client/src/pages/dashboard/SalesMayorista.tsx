@@ -29,6 +29,7 @@ import {
   ALTO_MAXIMO_PAGINA,
   ANCHO_PAGINA,
   ANCHO_UTIL,
+  interlineado,
   MARGEN_INFERIOR,
 } from "../../utils/ticketPapel";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
@@ -832,6 +833,18 @@ export default function SalesMayorista() {
     ];
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
 
+    // Tamaño de la cantidad. Va más grande que el resto para que se lea de un
+    // saltazo, pero en 11pt y no en 13: era ella la que marcaba el alto de la
+    // fila de números y costaba 1,3 mm por ítem.
+    const CANTIDAD_PT = 11;
+
+    // Alto del bloque de un ítem: la fila de números más el renglón del nombre,
+    // más el aire que lo separa del ítem siguiente. Se usa para no partir un
+    // ítem entre dos hojas.
+    const AIRE_ITEM = 1;
+    const ALTO_ITEM =
+      interlineado(CANTIDAD_PT) + interlineado(FUENTE) + AIRE_ITEM;
+
     /**
      * Dibuja el ticket completo y devuelve el alto que ocupó, en mm.
      *
@@ -866,13 +879,13 @@ export default function SalesMayorista() {
         doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
         const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
         renglones.forEach((renglon) => {
-          saltoSiNoEntra(size * 0.5);
+          saltoSiNoEntra(interlineado(size));
           if (opts.center) {
             doc.text(renglon, ANCHO / 2, y, { align: "center" });
           } else {
             doc.text(renglon, 0, y);
           }
-          y += size * 0.5; // interlineado proporcional al tamaño de fuente
+          y += interlineado(size);
         });
         doc.setFontSize(FUENTE);
         doc.setFont("helvetica", "bold");
@@ -957,7 +970,7 @@ export default function SalesMayorista() {
       // X_CANT es el centro de la columna de cantidad; X_PRECIO y X_TOTAL son
       // los bordes derechos de sus columnas (importes alineados a la derecha).
       // Están calculados para el peor caso de cada columna sin que se pisen
-      // entre sí: cantidad de 5 dígitos en 13pt (12,6 mm), precio de 8 dígitos
+      // entre sí: cantidad de 5 dígitos en 11pt (10,7 mm), precio de 8 dígitos
       // y total de 10 dígitos en 9pt (15,7 y 20,1 mm). El layout de 70 mm se
       // pisaba con totales de 9 dígitos o más, y ahí hay importes reales.
       // "Precio Unitario" se abrevió para que el rótulo entre en su columna.
@@ -973,7 +986,7 @@ export default function SalesMayorista() {
       doc.setFontSize(FUENTE);
       y += 3.5;
       separador();
-      y += 2.5;
+      y += 2;
 
       // Un ítem por bloque de dos renglones: arriba los números alineados en
       // sus columnas y abajo el nombre del producto ocupando todo el ancho,
@@ -981,11 +994,12 @@ export default function SalesMayorista() {
       // el precio cambia según eso.
       items.forEach((item) => {
         // El bloque completo (números + nombre) no se parte entre dos hojas.
-        saltoSiNoEntra(11);
+        saltoSiNoEntra(ALTO_ITEM);
 
-        // Renglón de números. La cantidad va en 13pt, más grande que el resto.
+        // Renglón de números. La cantidad va más grande que el resto, pero en
+        // CANTIDAD_PT y no en 13 (ver arriba).
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
+        doc.setFontSize(CANTIDAD_PT);
         doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
         doc.setFontSize(FUENTE);
         doc.text(item.precio.toLocaleString("es-ES"), X_PRECIO, y, {
@@ -994,17 +1008,17 @@ export default function SalesMayorista() {
         doc.text(item.total.toLocaleString("es-ES"), X_TOTAL, y, {
           align: "right",
         });
-        y += 5;
+        y += interlineado(CANTIDAD_PT);
 
         linea(item.nombre);
-        y += 1.5;
+        y += AIRE_ITEM;
       });
 
       // El cierre (separador + total + pie) tampoco se parte entre dos hojas.
       saltoSiNoEntra(16);
       y += 1;
       separador();
-      y += 3;
+      y += 2;
 
       // Total bien grande: es el dato que más se mira del ticket.
       const textoTotal = `Total a Pagar Gs. ${totalCost.toLocaleString(
@@ -1016,7 +1030,7 @@ export default function SalesMayorista() {
       });
 
       // Pie de página
-      y += 3;
+      y += 2;
       linea("--GRACIAS POR SU PREFERENCIA--");
 
       return y;

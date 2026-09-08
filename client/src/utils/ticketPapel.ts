@@ -41,6 +41,34 @@ export const ANCHO_UTIL = 62;
 export const MARGEN_INFERIOR = 6;
 
 /**
+ * Paso vertical de una fila de puntos de la TM-U220, en mm.
+ *
+ * La cabeza tiene 9 agujas repartidas en los 3,1 mm de alto de carácter, o sea
+ * ~72 dpi: 25,4/72 = 0,3528 mm por fila. Es la unidad mínima en la que la
+ * impresora puede poner tinta a lo alto.
+ */
+export const FILA_PUNTOS = 25.4 / 72;
+
+/**
+ * Interlineado (paso de un renglón al siguiente) para un cuerpo de `size`
+ * puntos, en mm.
+ *
+ * Antes era `size * 0.5`, que para 9 pt son 4,5 mm de paso para un glifo que
+ * mide 3,02 mm de alto (acentos incluidos): 1,49x, o sea un 33% de aire
+ * vertical puro. Para texto denso lo sano va de 1,15x a 1,25x, así que se pasó
+ * a `size * 0.4` (1,19x). El ticket se acorta ~24% y la letra no cambia: son
+ * los mismos glifos, solo más cerca.
+ *
+ * El resultado se redondea a un número entero de filas de puntos. Si el paso no
+ * es múltiplo de FILA_PUNTOS, cada renglón cae en un punto distinto de la grilla
+ * de 72 dpi y el driver los redondea distinto, así que el espacio entre líneas
+ * alterna entre 12 y 13 filas. Redondeando, todos los renglones quedan a la
+ * misma distancia real sobre el papel.
+ */
+export const interlineado = (size: number) =>
+  Math.round((size * 0.4) / FILA_PUNTOS) * FILA_PUNTOS;
+
+/**
  * Alto máximo de una página del ticket, en mm. Pasado esto se pagina.
  *
  * Hace falta un techo porque el "Ajustar al área de impresión" del navegador
