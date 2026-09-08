@@ -23,7 +23,13 @@ import {
 import { getVendedores, type Vendedor } from "../../services/vendedores.service";
 import ClienteModal from "../../components/common/ClienteModal";
 import type { Cliente } from "../../components/common/ClienteFormModal";
+import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "../../utils/lazyPdf";
+import {
+  ANCHO_PAGINA,
+  ANCHO_UTIL,
+  MARGEN_INFERIOR,
+} from "../../utils/ticketPapel";
 import { getEstadoAperturaPorUsuario } from "../../services/registrodiariocaja.service";
 import { getCajaById } from "../../services/cajas.service";
 import { getAlmacenByLocal } from "../../services/almacenes.service";
@@ -752,12 +758,6 @@ export default function SalesMayorista() {
 
   const generateTicketPDF = async (ventaId?: number) => {
     const { jsPDF } = await loadPdf();
-    // Crear una instancia de jsPDF con un tamaño personalizado (80mm de ancho)
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: [80, 297], // 80mm de ancho y 297mm de alto (A4 cortado)
-    });
 
     const fechaActual = new Date();
     const dia = String(fechaActual.getDate()).padStart(2, "0");
@@ -770,80 +770,52 @@ export default function SalesMayorista() {
     const fechaFormateada = `${dia}/${mes}/${año}`;
     const horaFormateada = `${horas}:${minutos}:${segundos}`;
 
-    // Configuración inicial. Courier (monoespaciada) para que los importes
-    // queden alineados columna a columna y el trazo aguante bien la impresión
-    // térmica a tamaño chico. Todo en negrita: el texto fino salía muy claro y
-    // costaba leerlo.
-    const FAMILIA = "courier";
-    const FUENTE = 8; // tamaño base del texto del ticket
-    const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
-    doc.setFontSize(FUENTE);
-    doc.setFont(FAMILIA, "bold");
+    // Configuración inicial. Todo en negrita: la TM-U220 es de impacto y con
+    // la cinta gastada el trazo fino sale muy claro y cuesta leerlo.
+    const FUENTE = 9; // tamaño base del texto del ticket
+    const ANCHO = ANCHO_UTIL; // ancho útil de impresión en mm
 
-    // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
-    // en el ancho del papel, así que se avanza según lo que se imprimió.
-    let y = 8;
-    // Corta la hoja cuando el bloque que sigue ya no entra (el dibujado es
-    // manual, no hay paginado automático).
-    const LIMITE_Y = 288; // 297mm de alto menos un margen inferior
-    const saltoSiNoEntra = (alto: number) => {
-      if (y + alto <= LIMITE_Y) return;
-      doc.addPage();
-      y = 10;
-    };
-
-    // Todo el ticket va en negrita: en la térmica el trazo fino sale gris y
-    // cuesta leerlo (`bold: false` queda disponible por si alguna línea
-    // necesitara texto normal). `center` reproduce el encabezado centrado del
-    // sistema anterior.
-    const linea = (
-      texto: string,
-      opts: { bold?: boolean; size?: number; center?: boolean } = {},
-    ) => {
-      const size = opts.size ?? FUENTE;
-      doc.setFontSize(size);
-      doc.setFont(FAMILIA, opts.bold === false ? "normal" : "bold");
-      const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
-      renglones.forEach((renglon) => {
-        saltoSiNoEntra(size * 0.5);
-        if (opts.center) {
-          doc.text(renglon, ANCHO / 2, y, { align: "center" });
-        } else {
-          doc.text(renglon, 0, y);
-        }
-        y += size * 0.5; // interlineado proporcional al tamaño de fuente
-      });
-      doc.setFontSize(FUENTE);
-      doc.setFont(FAMILIA, "bold");
-    };
-    const separador = () => {
-      doc.setLineWidth(0.3);
-      doc.line(0, y - 1.5, ANCHO, y - 1.5);
-      y += 1.5;
-    };
-
-    // Nro. de venta arriba de todo (si la venta ya fue confirmada). Va en el
-    // tamaño más chico del ticket: sirve de referencia para buscar la venta,
-    // pero no es un dato que el cliente mire.
-    if (ventaId) {
-      linea(`VENTA NRO.: ${ventaId}`, { size: 7, center: true });
-      separador();
-    }
-
-    // Encabezado del ticket: centrado, como en el sistema anterior.
-    linea("Distribuidora Salvatore", { size: 10, center: true });
-    linea("COMERCIAL & BODEGA", { size: 10, center: true });
-    linea("Martin Ledezma e/ Niños Martires, Capiatá", { center: true });
-    linea("Teléfono: +595 985 374240", { center: true });
-    linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, {
-      center: true,
+    // Los ítems se resuelven ANTES de dibujar porque el ticket se dibuja dos
+    // veces (una para medir el alto y otra la definitiva) y los precios tienen
+    // que ser exactamente los mismos en las dos pasadas.
+    const items = carrito.map((p) => {
+      if (p.caja) {
+        // Caja: precio minorista o mayorista según el cliente (misma regla
+        // que el carrito, con caída al mayorista si no hay precio minorista).
+        const precio = precioCajaSegunCliente(
+          p.precioVenta,
+          p.precioVentaMayorista,
+        );
+        return {
+          nombre: `${p.nombre} (Caja)`,
+          cantidad: p.cantidad,
+          precio,
+          total: precio * p.cantidad,
+        };
+      }
+      // Unidad: puede aplicar combo
+      const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
+      if (combo && p.cantidad >= combo.ComboCantidad) {
+        return {
+          nombre: `${p.nombre} (Unidad (Combo))`,
+          cantidad: p.cantidad,
+          precio: p.precioUnitario,
+          total: calcularPrecioConCombo(p.id, p.cantidad, p.precioUnitario),
+        };
+      }
+      return {
+        nombre: `${p.nombre} (Unidad)`,
+        cantidad: p.cantidad,
+        precio: p.precioUnitario,
+        total: p.precioUnitario * p.cantidad,
+      };
     });
 
-    // Tipo de venta: CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
-    // recibir).
-    linea(`Venta Tipo: ${tipoVenta === "ENVIO" ? "Envio" : "Contado"}`, {
-      center: true,
-    });
+    // Total de la compra
+    const totalCost = carrito.reduce(
+      (sum, item) => sum + obtenerTotal(item),
+      0,
+    );
 
     // Métodos de pago de esta venta (solo los que tienen monto). En efectivo
     // se descuenta el vuelto (totalRest negativo), igual que el monto que se
@@ -858,122 +830,195 @@ export default function SalesMayorista() {
       ["Credito (cta. cte.)", Number(cuentaCliente)],
     ];
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
-    if (metodosUsados.length === 0) {
-      linea("Forma de Pago: -", { center: true });
-    } else {
-      metodosUsados.forEach(([nombre, monto]) => {
-        linea(`${nombre}: ${monto.toLocaleString("es-ES")}`, { center: true });
-      });
-    }
 
-    linea(
-      clienteSeleccionado?.ClienteRUC
-        ? "RUC: " + clienteSeleccionado.ClienteRUC
-        : "RUC: SIN RUC",
-    );
-    linea(
-      "Cliente: " +
-        (clienteSeleccionado?.ClienteNombre +
-          " " +
-          clienteSeleccionado?.ClienteApellido || ""),
-    );
+    /** Dibuja el ticket completo y devuelve el alto que ocupó, en mm. */
+    const dibujar = (doc: JsPdf): number => {
+      doc.setFontSize(FUENTE);
+      doc.setFont("helvetica", "bold");
 
-    // Dirección del cliente (sólo si tiene una guardada).
-    if (clienteSeleccionado?.ClienteDireccion) {
-      linea("Direccion: " + clienteSeleccionado.ClienteDireccion);
-    }
+      // Cursor vertical: cada línea puede ocupar más de un renglón si no entra
+      // en el ancho del papel, así que se avanza según lo que se imprimió.
+      let y = 8;
 
-    // Encabezados de las columnas. Mismo formato que el sistema anterior:
-    // Desc. / Cant. / Precio Unitario / Total, y la línea separadora debajo.
-    // X_CANT es el centro de la columna de cantidad; X_PRECIO y X_TOTAL son
-    // los bordes derechos de sus columnas (importes alineados a la derecha).
-    const X_CANT = 20;
-    const X_PRECIO = 52;
-    const X_TOTAL = ANCHO;
-    doc.setFont(FAMILIA, "bold");
-    doc.setFontSize(7);
-    doc.text("Desc.", 0, y);
-    doc.text("Cant.", X_CANT, y, { align: "center" });
-    doc.text("Precio Unitario", X_PRECIO, y, { align: "right" });
-    doc.text("Total", X_TOTAL, y, { align: "right" });
-    doc.setFontSize(FUENTE);
-    y += 3.5;
-    separador();
-    y += 2.5;
+      // `bold: false` queda disponible por si alguna línea necesitara texto
+      // normal. `center` reproduce el encabezado centrado del sistema anterior.
+      const linea = (
+        texto: string,
+        opts: { bold?: boolean; size?: number; center?: boolean } = {},
+      ) => {
+        const size = opts.size ?? FUENTE;
+        doc.setFontSize(size);
+        doc.setFont("helvetica", opts.bold === false ? "normal" : "bold");
+        const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
+        renglones.forEach((renglon) => {
+          if (opts.center) {
+            doc.text(renglon, ANCHO / 2, y, { align: "center" });
+          } else {
+            doc.text(renglon, 0, y);
+          }
+          y += size * 0.5; // interlineado proporcional al tamaño de fuente
+        });
+        doc.setFontSize(FUENTE);
+        doc.setFont("helvetica", "bold");
+      };
+      const separador = () => {
+        doc.setLineWidth(0.3);
+        doc.line(0, y - 1.5, ANCHO, y - 1.5);
+        y += 1.5;
+      };
 
-    // Un ítem por bloque de dos renglones: arriba los números alineados en
-    // sus columnas y abajo el nombre del producto ocupando todo el ancho.
-    carrito.forEach((p) => {
-      // Usar los precios guardados en el carrito
-      let precioUnitario = 0;
-      let precioLabel = "";
-      let totalLinea = 0;
-      if (p.caja) {
-        // Caja: precio minorista o mayorista según el cliente (misma regla
-        // que el carrito, con caída al mayorista si no hay precio minorista).
-        precioUnitario = precioCajaSegunCliente(
-          p.precioVenta,
-          p.precioVentaMayorista,
-        );
-        precioLabel = `Caja`;
-        totalLinea = precioUnitario * p.cantidad;
-      } else {
-        // Unidad: puede aplicar combo
-        const combo = combos.find((c) => Number(c.ProductoId) === Number(p.id));
-        if (combo && p.cantidad >= combo.ComboCantidad) {
-          // Aplica combo
-          precioUnitario = p.precioUnitario;
-          precioLabel = `Unidad (Combo)`;
-          totalLinea = calcularPrecioConCombo(p.id, p.cantidad, precioUnitario);
-        } else {
-          // Solo unidad
-          precioUnitario = p.precioUnitario;
-          precioLabel = `Unidad`;
-          totalLinea = precioUnitario * p.cantidad;
+      /**
+       * El tamaño más grande, desde `size` para abajo, con el que `texto` entra
+       * en un solo renglón. Se usa para el total: es la línea que más se mira
+       * del ticket y partida en dos queda ilegible, así que con importes de 10
+       * dígitos (más de mil millones) es preferible achicarla un punto que
+       * envolverla.
+       */
+      const sizeQueEntra = (texto: string, size: number, minimo = 9) => {
+        doc.setFont("helvetica", "bold");
+        for (let s = size; s > minimo; s -= 0.5) {
+          doc.setFontSize(s);
+          if (doc.getTextWidth(texto) <= ANCHO) return s;
         }
+        return minimo;
+      };
+
+      // Nro. de venta arriba de todo (si la venta ya fue confirmada)
+      if (ventaId) {
+        linea(`VENTA NRO.: ${ventaId}`, { size: 13, center: true });
+        separador();
       }
 
-      // El bloque completo (números + nombre) no se parte entre dos hojas.
-      saltoSiNoEntra(11);
+      // Encabezado del ticket: centrado, como en el sistema anterior. La
+      // dirección va un punto más chica porque en 62 mm de ancho no entra en un
+      // renglón y partida en dos queda fea.
+      linea("Distribuidora Salvatore", { size: 11, center: true });
+      linea("COMERCIAL & BODEGA", { size: 11, center: true });
+      linea("Martin Ledezma e/ Niños Martires, Capiatá", {
+        size: 8,
+        center: true,
+      });
+      linea("Teléfono: +595 985 374240", { center: true });
+      linea(`Fecha: ${fechaFormateada} - Hora: ${horaFormateada}`, {
+        center: true,
+      });
 
-      // Renglón de números. La cantidad va en 12pt, más grande que el resto.
-      doc.setFont(FAMILIA, "bold");
-      doc.setFontSize(12);
-      doc.text(String(p.cantidad), X_CANT, y, { align: "center" });
+      // Tipo de venta: CONTADO (cobro inmediato) o ENVÍO (entrega y cobro al
+      // recibir).
+      linea(`Venta Tipo: ${tipoVenta === "ENVIO" ? "Envio" : "Contado"}`, {
+        center: true,
+      });
+
+      if (metodosUsados.length === 0) {
+        linea("Forma de Pago: -", { center: true });
+      } else {
+        metodosUsados.forEach(([nombre, monto]) => {
+          linea(`${nombre}: ${monto.toLocaleString("es-ES")}`, {
+            center: true,
+          });
+        });
+      }
+
+      linea(
+        clienteSeleccionado?.ClienteRUC
+          ? "RUC: " + clienteSeleccionado.ClienteRUC
+          : "RUC: SIN RUC",
+      );
+      linea(
+        "Cliente: " +
+          (clienteSeleccionado?.ClienteNombre +
+            " " +
+            clienteSeleccionado?.ClienteApellido || ""),
+      );
+
+      // Dirección del cliente (sólo si tiene una guardada).
+      if (clienteSeleccionado?.ClienteDireccion) {
+        linea("Direccion: " + clienteSeleccionado.ClienteDireccion);
+      }
+
+      // Encabezados de las columnas. Mismo formato que el sistema anterior:
+      // Desc. / Cant. / Precio Unit. / Total, y la línea separadora debajo.
+      // X_CANT es el centro de la columna de cantidad; X_PRECIO y X_TOTAL son
+      // los bordes derechos de sus columnas (importes alineados a la derecha).
+      // Están calculados para el peor caso de cada columna sin que se pisen
+      // entre sí: cantidad de 5 dígitos en 13pt (12,6 mm), precio de 8 dígitos
+      // y total de 10 dígitos en 9pt (15,7 y 20,1 mm). El layout de 70 mm se
+      // pisaba con totales de 9 dígitos o más, y ahí hay importes reales.
+      // "Precio Unitario" se abrevió para que el rótulo entre en su columna.
+      const X_CANT = 16;
+      const X_PRECIO = 40;
+      const X_TOTAL = ANCHO;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text("Desc.", 0, y);
+      doc.text("Cant.", X_CANT, y, { align: "center" });
+      doc.text("Precio Unit.", X_PRECIO, y, { align: "right" });
+      doc.text("Total", X_TOTAL, y, { align: "right" });
       doc.setFontSize(FUENTE);
-      doc.text(precioUnitario.toLocaleString("es-ES"), X_PRECIO, y, {
-        align: "right",
+      y += 3.5;
+      separador();
+      y += 2.5;
+
+      // Un ítem por bloque de dos renglones: arriba los números alineados en
+      // sus columnas y abajo el nombre del producto ocupando todo el ancho,
+      // con la unidad de venta entre paréntesis (caja, unidad o combo) porque
+      // el precio cambia según eso.
+      items.forEach((item) => {
+        // Renglón de números. La cantidad va en 13pt, más grande que el resto.
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
+        doc.setFontSize(FUENTE);
+        doc.text(item.precio.toLocaleString("es-ES"), X_PRECIO, y, {
+          align: "right",
+        });
+        doc.text(item.total.toLocaleString("es-ES"), X_TOTAL, y, {
+          align: "right",
+        });
+        y += 5;
+
+        linea(item.nombre);
+        y += 1.5;
       });
-      doc.text(totalLinea.toLocaleString("es-ES"), X_TOTAL, y, {
-        align: "right",
+
+      y += 1;
+      separador();
+      y += 3;
+
+      // Total bien grande: es el dato que más se mira del ticket.
+      const textoTotal = `Total a Pagar Gs. ${totalCost.toLocaleString(
+        "es-ES",
+      )}`;
+      linea(textoTotal, {
+        bold: true,
+        size: sizeQueEntra(textoTotal, 12),
       });
-      y += 5;
 
-      // Renglón del nombre, con la unidad de venta entre paréntesis (caja,
-      // unidad o combo) porque el precio cambia según eso.
-      linea(`${p.nombre} (${precioLabel})`);
-      y += 1.5;
-    });
+      // Pie de página
+      y += 3;
+      linea("--GRACIAS POR SU PREFERENCIA--");
 
-    // Total de la compra
-    const totalCost = carrito.reduce(
-      (sum, item) => sum + obtenerTotal(item),
-      0,
-    );
-    saltoSiNoEntra(16);
-    y += 1;
-    separador();
-    y += 3;
+      return y;
+    };
 
-    // Total bien grande: es el dato que más se mira del ticket.
-    linea(`Total a Pagar Gs. ${totalCost.toLocaleString("es-ES")}`, {
-      bold: true,
-      size: 11,
-    });
+    // El ticket se dibuja dos veces: la primera sobre un documento
+    // descartable, solo para medir cuánto ocupa a lo alto; la segunda sobre el
+    // definitivo, ya con una página de ese alto exacto. El papel es un rollo
+    // continuo, así que una sola página del alto del contenido es lo correcto:
+    // el paginado fijo cada 297 mm que había antes partía los tickets largos en
+    // varias hojas y hacía avanzar papel en blanco en cada corte. Y con la
+    // página del alto justo, el "Ajustar al área de impresión" del navegador no
+    // tiene nada que achicar.
+    const nuevoDoc = (alto: number) =>
+      new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [ANCHO_PAGINA, alto],
+      });
 
-    // Pie de página
-    y += 3;
-    linea("--GRACIAS POR SU PREFERENCIA--");
+    const alto = dibujar(nuevoDoc(297)) + MARGEN_INFERIOR;
+    const doc = nuevoDoc(alto);
+    dibujar(doc);
 
     // Guardar el PDF
     doc.save("ticket_venta.pdf");

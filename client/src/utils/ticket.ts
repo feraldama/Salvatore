@@ -1,5 +1,5 @@
 /**
- * Ticket de venta en PDF (papel térmico de 80 mm).
+ * Ticket de venta en PDF (papel de 76 mm, Epson TM-U220).
  *
  * Se usa para REIMPRIMIR el ticket de una venta ya confirmada: los datos no
  * salen del carrito de la pantalla de venta sino de la BD (endpoint
@@ -7,10 +7,15 @@
  * y sigue mostrando lo que realmente se vendió y cómo se pagó.
  *
  * El layout replica el del ticket que se imprime al confirmar la venta en la
- * pantalla mayorista: todo en negrita (el trazo fino sale gris en la térmica),
- * encabezado centrado y un bloque de dos renglones por ítem.
+ * pantalla mayorista: todo en negrita, encabezado centrado y un bloque de dos
+ * renglones por ítem.
+ *
+ * La geometría del papel sale de `ticketPapel.ts`: ahí está explicado por qué
+ * la página mide 63,4 mm de ancho y no 80.
  */
+import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "./lazyPdf";
+import { ANCHO_PAGINA, ANCHO_UTIL, MARGEN_INFERIOR } from "./ticketPapel";
 import { formatFecha, formatMiles } from "./utils";
 
 export interface TicketProducto {
@@ -81,131 +86,18 @@ export async function generarTicketVentaPDF(
   opts: { reimpresion?: boolean } = {},
 ): Promise<void> {
   const { jsPDF } = await loadPdf();
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: [80, 297], // 80mm de ancho y 297mm de alto (A4 cortado)
-  });
 
-  // Courier (monoespaciada) para que los importes queden alineados columna a
-  // columna y el trazo aguante bien la impresión térmica a tamaño chico.
-  const FAMILIA = "courier";
-  const FUENTE = 8; // tamaño base del texto del ticket
-  const ANCHO = 70; // ancho útil de impresión en mm (papel de 80mm)
-  doc.setFontSize(FUENTE);
-  doc.setFont(FAMILIA, "bold");
+  const FUENTE = 9; // tamaño base del texto del ticket
+  const ANCHO = ANCHO_UTIL; // ancho útil de impresión en mm
 
-  // Cursor vertical: cada línea puede ocupar más de un renglón si no entra en
-  // el ancho del papel, así que se avanza según lo que se imprimió.
-  let y = 8;
-  const LIMITE_Y = 288; // 297mm de alto menos un margen inferior
-  const saltoSiNoEntra = (alto: number) => {
-    if (y + alto <= LIMITE_Y) return;
-    doc.addPage();
-    y = 10;
-  };
-
-  const linea = (
-    texto: string,
-    opciones: { bold?: boolean; size?: number; center?: boolean } = {},
-  ) => {
-    const size = opciones.size ?? FUENTE;
-    doc.setFontSize(size);
-    doc.setFont(FAMILIA, opciones.bold === false ? "normal" : "bold");
-    const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
-    renglones.forEach((renglon) => {
-      saltoSiNoEntra(size * 0.5);
-      if (opciones.center) {
-        doc.text(renglon, ANCHO / 2, y, { align: "center" });
-      } else {
-        doc.text(renglon, 0, y);
-      }
-      y += size * 0.5; // interlineado proporcional al tamaño de fuente
-    });
-    doc.setFontSize(FUENTE);
-    doc.setFont(FAMILIA, "bold");
-  };
-  const separador = () => {
-    doc.setLineWidth(0.3);
-    doc.line(0, y - 1.5, ANCHO, y - 1.5);
-    y += 1.5;
-  };
-
-  // Nro. de venta arriba de todo. Va en el tamaño más chico del ticket: sirve
-  // de referencia para buscar la venta, pero no es un dato que el cliente mire.
-  linea(`VENTA NRO.: ${venta.ventaId}`, { size: 7, center: true });
-  separador();
-
-  // Encabezado del comercio.
-  linea("Distribuidora Salvatore", { size: 10, center: true });
-  linea("COMERCIAL & BODEGA", { size: 10, center: true });
-  linea("Martin Ledezma e/ Niños Martires, Capiatá", { center: true });
-  linea("Teléfono: +595 985 374240", { center: true });
-
-  // Fecha de la VENTA (no la de hoy): el ticket se puede reimprimir semanas
-  // después y la que importa es la del comprobante original.
-  linea(`Fecha: ${formatFecha(venta.fecha)} - Hora: ${horaDe(venta.fecha)}`, {
-    center: true,
-  });
-  linea(`Venta Tipo: ${ETIQUETA_TIPO[venta.tipo]}`, { center: true });
-
-  // Marca de copia: evita que una reimpresión se confunda con el original.
-  if (opts.reimpresion) {
-    const ahora = new Date();
-    linea("*** REIMPRESION ***", { size: 10, center: true });
-    linea(
-      `Reimpreso: ${formatFecha(ahora)} ${pad2(ahora.getHours())}:${pad2(
-        ahora.getMinutes(),
-      )}`,
-      { center: true },
-    );
-  }
-
-  // Métodos de pago de esta venta (solo los que tienen monto). Débito y crédito
-  // van juntos como POS: la caja los registra en un único grupo.
-  const metodosPago: [string, number][] = [
-    ["Efectivo", venta.pagos.efectivo],
-    ["Transferencia", venta.pagos.transferencia],
-    ["Tarjeta (POS)", venta.pagos.pos],
-    ["Voucher", venta.pagos.voucher],
-    ["Credito (cta. cte.)", venta.pagos.cuentaCliente],
-  ];
-  const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
-  if (metodosUsados.length === 0) {
-    linea("Forma de Pago: -", { center: true });
-  } else {
-    metodosUsados.forEach(([nombre, monto]) => {
-      linea(`${nombre}: ${formatMiles(monto)}`, { center: true });
-    });
-  }
-
-  linea(venta.cliente.ruc ? `RUC: ${venta.cliente.ruc}` : "RUC: SIN RUC");
-  linea(
-    "Cliente: " +
-      [venta.cliente.nombre, venta.cliente.apellido]
-        .filter(Boolean)
-        .join(" ")
-        .trim(),
-  );
-  if (venta.cliente.direccion) {
-    linea(`Direccion: ${venta.cliente.direccion}`);
-  }
-
-  // Encabezados de las columnas. X_CANT es el centro de la columna de cantidad;
-  // X_PRECIO y X_TOTAL son los bordes derechos (importes a la derecha).
-  const X_CANT = 20;
-  const X_PRECIO = 52;
-  const X_TOTAL = ANCHO;
-  doc.setFont(FAMILIA, "bold");
-  doc.setFontSize(7);
-  doc.text("Desc.", 0, y);
-  doc.text("Cant.", X_CANT, y, { align: "center" });
-  doc.text("Precio Unitario", X_PRECIO, y, { align: "right" });
-  doc.text("Total", X_TOTAL, y, { align: "right" });
-  doc.setFontSize(FUENTE);
-  y += 3.5;
-  separador();
-  y += 2.5;
+  // Sello de la reimpresión. Se calcula una sola vez, fuera de `dibujar`,
+  // porque el ticket se dibuja dos veces y las dos pasadas tienen que dar el
+  // mismo alto: si cambiara de minuto entre una y otra, el texto sería
+  // distinto y la medición dejaría de servir.
+  const ahora = new Date();
+  const selloReimpresion = `Reimpreso: ${formatFecha(ahora)} ${pad2(
+    ahora.getHours(),
+  )}:${pad2(ahora.getMinutes())}`;
 
   const items = venta.productos.map((p) => ({
     // La unidad de venta va entre paréntesis porque el precio cambia según eso.
@@ -225,38 +117,183 @@ export async function generarTicketVentaPDF(
     });
   }
 
-  // Un ítem por bloque de dos renglones: arriba los números alineados en sus
-  // columnas y abajo el nombre del producto ocupando todo el ancho.
-  items.forEach((item) => {
-    // El bloque completo (números + nombre) no se parte entre dos hojas.
-    saltoSiNoEntra(11);
-
-    // Renglón de números. La cantidad va en 12pt, más grande que el resto.
-    doc.setFont(FAMILIA, "bold");
-    doc.setFontSize(12);
-    doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
+  /** Dibuja el ticket completo y devuelve el alto que ocupó, en mm. */
+  const dibujar = (doc: JsPdf): number => {
     doc.setFontSize(FUENTE);
-    doc.text(formatMiles(item.precio), X_PRECIO, y, { align: "right" });
-    doc.text(formatMiles(item.total), X_TOTAL, y, { align: "right" });
-    y += 5;
+    doc.setFont("helvetica", "bold");
 
-    linea(item.nombre);
-    y += 1.5;
-  });
+    // Cursor vertical: cada línea puede ocupar más de un renglón si no entra en
+    // el ancho del papel, así que se avanza según lo que se imprimió.
+    let y = 8;
 
-  saltoSiNoEntra(16);
-  y += 1;
-  separador();
-  y += 3;
+    const linea = (
+      texto: string,
+      opciones: { bold?: boolean; size?: number; center?: boolean } = {},
+    ) => {
+      const size = opciones.size ?? FUENTE;
+      doc.setFontSize(size);
+      doc.setFont("helvetica", opciones.bold === false ? "normal" : "bold");
+      const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
+      renglones.forEach((renglon) => {
+        if (opciones.center) {
+          doc.text(renglon, ANCHO / 2, y, { align: "center" });
+        } else {
+          doc.text(renglon, 0, y);
+        }
+        y += size * 0.5; // interlineado proporcional al tamaño de fuente
+      });
+      doc.setFontSize(FUENTE);
+      doc.setFont("helvetica", "bold");
+    };
+    const separador = () => {
+      doc.setLineWidth(0.3);
+      doc.line(0, y - 1.5, ANCHO, y - 1.5);
+      y += 1.5;
+    };
 
-  // Total bien grande: es el dato que más se mira del ticket.
-  linea(`Total a Pagar Gs. ${formatMiles(venta.total)}`, { size: 11 });
+    /**
+     * El tamaño más grande, desde `size` para abajo, con el que `texto` entra
+     * en un solo renglón. Se usa para el total: es la línea que más se mira del
+     * ticket y partida en dos queda ilegible, así que con importes de 10 dígitos
+     * (más de mil millones) es preferible achicarla un punto que envolverla.
+     */
+    const sizeQueEntra = (texto: string, size: number, minimo = 9) => {
+      doc.setFont("helvetica", "bold");
+      for (let s = size; s > minimo; s -= 0.5) {
+        doc.setFontSize(s);
+        if (doc.getTextWidth(texto) <= ANCHO) return s;
+      }
+      return minimo;
+    };
 
-  y += 3;
-  linea("--GRACIAS POR SU PREFERENCIA--");
+    // Nro. de venta arriba de todo.
+    linea(`VENTA NRO.: ${venta.ventaId}`, { size: 13, center: true });
+    separador();
+
+    // Encabezado del comercio. La dirección va un punto más chica porque en
+    // 62 mm de ancho no entra en un renglón y partida en dos queda fea.
+    linea("Distribuidora Salvatore", { size: 11, center: true });
+    linea("COMERCIAL & BODEGA", { size: 11, center: true });
+    linea("Martin Ledezma e/ Niños Martires, Capiatá", {
+      size: 8,
+      center: true,
+    });
+    linea("Teléfono: +595 985 374240", { center: true });
+
+    // Fecha de la VENTA (no la de hoy): el ticket se puede reimprimir semanas
+    // después y la que importa es la del comprobante original.
+    linea(`Fecha: ${formatFecha(venta.fecha)} - Hora: ${horaDe(venta.fecha)}`, {
+      center: true,
+    });
+    linea(`Venta Tipo: ${ETIQUETA_TIPO[venta.tipo]}`, { center: true });
+
+    // Marca de copia: evita que una reimpresión se confunda con el original.
+    if (opts.reimpresion) {
+      linea("*** REIMPRESION ***", { size: 11, center: true });
+      linea(selloReimpresion, { center: true });
+    }
+
+    // Métodos de pago de esta venta (solo los que tienen monto). Débito y
+    // crédito van juntos como POS: la caja los registra en un único grupo.
+    const metodosPago: [string, number][] = [
+      ["Efectivo", venta.pagos.efectivo],
+      ["Transferencia", venta.pagos.transferencia],
+      ["Tarjeta (POS)", venta.pagos.pos],
+      ["Voucher", venta.pagos.voucher],
+      ["Credito (cta. cte.)", venta.pagos.cuentaCliente],
+    ];
+    const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
+    if (metodosUsados.length === 0) {
+      linea("Forma de Pago: -", { center: true });
+    } else {
+      metodosUsados.forEach(([nombre, monto]) => {
+        linea(`${nombre}: ${formatMiles(monto)}`, { center: true });
+      });
+    }
+
+    linea(venta.cliente.ruc ? `RUC: ${venta.cliente.ruc}` : "RUC: SIN RUC");
+    linea(
+      "Cliente: " +
+        [venta.cliente.nombre, venta.cliente.apellido]
+          .filter(Boolean)
+          .join(" ")
+          .trim(),
+    );
+    if (venta.cliente.direccion) {
+      linea(`Direccion: ${venta.cliente.direccion}`);
+    }
+
+    // Encabezados de las columnas. X_CANT es el centro de la columna de
+    // cantidad; X_PRECIO y X_TOTAL son los bordes derechos (importes a la
+    // derecha). Están calculados para el peor caso de cada columna sin que se
+    // pisen entre sí: cantidad de 5 dígitos en 13pt (12,6 mm), precio de 8
+    // dígitos y total de 10 dígitos en 9pt (15,7 y 20,1 mm). El layout de 70 mm
+    // se pisaba con totales de 9 dígitos o más, y ahí hay importes reales.
+    // "Precio Unitario" se abrevió para que el rótulo entre en su columna.
+    const X_CANT = 16;
+    const X_PRECIO = 40;
+    const X_TOTAL = ANCHO;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("Desc.", 0, y);
+    doc.text("Cant.", X_CANT, y, { align: "center" });
+    doc.text("Precio Unit.", X_PRECIO, y, { align: "right" });
+    doc.text("Total", X_TOTAL, y, { align: "right" });
+    doc.setFontSize(FUENTE);
+    y += 3.5;
+    separador();
+    y += 2.5;
+
+    // Un ítem por bloque de dos renglones: arriba los números alineados en sus
+    // columnas y abajo el nombre del producto ocupando todo el ancho.
+    items.forEach((item) => {
+      // Renglón de números. La cantidad va en 13pt, más grande que el resto.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(String(item.cantidad), X_CANT, y, { align: "center" });
+      doc.setFontSize(FUENTE);
+      doc.text(formatMiles(item.precio), X_PRECIO, y, { align: "right" });
+      doc.text(formatMiles(item.total), X_TOTAL, y, { align: "right" });
+      y += 5;
+
+      linea(item.nombre);
+      y += 1.5;
+    });
+
+    y += 1;
+    separador();
+    y += 3;
+
+    // Total bien grande: es el dato que más se mira del ticket.
+    const textoTotal = `Total a Pagar Gs. ${formatMiles(venta.total)}`;
+    linea(textoTotal, { size: sizeQueEntra(textoTotal, 12) });
+
+    y += 3;
+    linea("--GRACIAS POR SU PREFERENCIA--");
+
+    return y;
+  };
+
+  // El ticket se dibuja dos veces: la primera sobre un documento descartable,
+  // solo para medir cuánto ocupa a lo alto; la segunda sobre el definitivo, ya
+  // con una página de ese alto exacto. El papel es un rollo continuo, así que
+  // una sola página del alto del contenido es lo correcto: el paginado fijo
+  // cada 297 mm que había antes partía los tickets largos en varias hojas y
+  // hacía avanzar papel en blanco en cada corte. Y con la página del alto justo
+  // el "Ajustar al área de impresión" del navegador no tiene nada que achicar.
+  const nuevoDoc = (alto: number) =>
+    new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [ANCHO_PAGINA, alto],
+    });
+
+  const alto = dibujar(nuevoDoc(297)) + MARGEN_INFERIOR;
+  const doc = nuevoDoc(alto);
+  dibujar(doc);
 
   // Se descarga Y se abre en una pestaña nueva, para poder mandarlo a la
-  // térmica en el acto sin tener que buscar el archivo bajado. Mismo patrón
+  // impresora en el acto sin tener que buscar el archivo bajado. Mismo patrón
   // que el cierre de caja y los reportes.
   const pdfUrl = URL.createObjectURL(doc.output("blob"));
   const nombre = `ticket_venta_${venta.ventaId}.pdf`;
