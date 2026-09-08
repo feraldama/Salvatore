@@ -22,9 +22,11 @@ import {
   registrarFuenteTicket,
 } from "./ticketFuente";
 import {
+  AIRE_ITEM,
   ALTO_MAXIMO_PAGINA,
   ANCHO_PAGINA,
   ANCHO_UTIL,
+  CANTIDAD_PT,
   interlineado,
   MARGEN_INFERIOR,
   NOMBRE_PT,
@@ -127,15 +129,9 @@ export async function generarTicketVentaPDF(
     });
   }
 
-  // Tamaño de la cantidad. Va más grande que el resto para que se lea de un
-  // saltazo, pero en 10pt y no en 13: era ella la que marcaba el alto de la
-  // fila de números y costaba 1,3 mm por ítem.
-  const CANTIDAD_PT = 10;
-
   // Alto del bloque de un ítem: la fila de números más el renglón del nombre,
   // más el aire que lo separa del ítem siguiente. Se usa para no partir un ítem
   // entre dos hojas.
-  const AIRE_ITEM = 1;
   const ALTO_ITEM =
     interlineado(CANTIDAD_PT) + interlineado(NOMBRE_PT) + AIRE_ITEM;
 
@@ -281,8 +277,8 @@ export async function generarTicketVentaPDF(
       // El bloque completo (números + nombre) no se parte entre dos hojas.
       saltoSiNoEntra(ALTO_ITEM);
 
-      // Renglón de números. La cantidad va más grande que el resto, pero en
-      // CANTIDAD_PT y no en 13 (ver arriba).
+      // Renglón de números. La cantidad va en CANTIDAD_PT, más grande que el
+      // resto (ver ticketPapel.ts).
       doc.setFont(FUENTE_TICKET, "bold");
       doc.setFontSize(CANTIDAD_PT);
       doc.text(String(item.cantidad), X_CANT, y, { align: "center" });

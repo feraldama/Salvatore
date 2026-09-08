@@ -91,6 +91,19 @@ export const interlineado = (size: number) =>
 export const NOMBRE_PT = 8;
 
 /**
+ * Cuerpo de la cantidad, en puntos.
+ *
+ * Va más grande que el resto para que se lea de un saltazo. Estuvo en 13 pt y se
+ * bajó a 10: era ella la que marcaba el alto de la fila de números y costaba
+ * 1,3 mm por ítem. A 10 pt los dígitos siguen dando 7,2 filas de puntos, por
+ * encima de las 6,5 de los importes en 9 pt, así que sigue destacando.
+ */
+export const CANTIDAD_PT = 10;
+
+/** Aire entre el bloque de un ítem y el siguiente, en mm. */
+export const AIRE_ITEM = 1;
+
+/**
  * Alto máximo de una página del ticket, en mm. Pasado esto se pagina.
  *
  * Hace falta un techo porque el "Ajustar al área de impresión" del navegador
