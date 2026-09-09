@@ -328,9 +328,12 @@ export default function Inventario() {
     try {
       for (const item of carrito) {
         const { totalCajas, totalUnitario } = computeTotals(item);
-        const fullProduct = await getProductoById(item.id);
+        // Update parcial: solo el stock. Antes se traía el producto completo
+        // con getProductoById y se reenviaba entero, incluida ProductoImagen
+        // (varios MB en base64 en los productos migrados de GeneXus), lo que
+        // hacía que el proxy rechazara el PUT con 413. El backend ignora los
+        // campos ausentes, así que mandamos únicamente lo que cambia.
         const payload = {
-          ...fullProduct,
           productoAlmacen: item.almacenesStock.map((pa) => ({
             AlmacenId: pa.AlmacenId,
             ProductoAlmacenStock: Number(pa.ProductoAlmacenStock) || 0,
