@@ -58,8 +58,6 @@ type FilaCantidad = { cantidad: number; unidad: string };
 type ItemTraslado = {
   filas: FilaCantidad[];
   nombre: string;
-  /** Nombre en el catálogo origen, sólo si difiere del de destino. */
-  nombreOrigen: string | null;
 };
 
 /**
@@ -106,9 +104,10 @@ export async function construirTicketTraslado(t: Traslado) {
       });
     }
 
-    // Se muestra el nombre del catálogo DESTINO porque es el que reconoce
-    // quien recibe. Si en el origen se llama distinto, va debajo en cuerpo
-    // chico para que el que despacha también pueda cruzarlo con su pantalla.
+    // Se muestra únicamente el nombre del catálogo DESTINO, que es el que
+    // reconoce quien recibe. A pedido del cliente no se imprime el nombre del
+    // catálogo origen aunque difiera: agregaba un renglón por ítem y confundía
+    // al que cuenta.
     //
     // Todo en mayúsculas: es lo que permite imprimir el nombre en NOMBRE_PT sin
     // perder legibilidad (ver ticketPapel.ts).
@@ -117,13 +116,8 @@ export async function construirTicketTraslado(t: Traslado) {
       l.ProductoOrigenNombre ||
       ""
     ).toUpperCase();
-    const origen = (l.ProductoOrigenNombre || "").toUpperCase();
 
-    return {
-      filas,
-      nombre,
-      nombreOrigen: origen && origen.trim() !== nombre.trim() ? origen : null,
-    };
+    return { filas, nombre };
   });
 
   /**
@@ -151,19 +145,18 @@ export async function construirTicketTraslado(t: Traslado) {
 
     const linea = (
       texto: string,
-      opciones: { size?: number; center?: boolean; x?: number } = {},
+      opciones: { size?: number; center?: boolean } = {},
     ) => {
       const size = opciones.size ?? FUENTE;
       doc.setFontSize(size);
       doc.setFont(FUENTE_TICKET, "bold");
-      const x = opciones.x ?? 0;
-      const renglones = doc.splitTextToSize(texto, ANCHO - x) as string[];
+      const renglones = doc.splitTextToSize(texto, ANCHO) as string[];
       renglones.forEach((renglon) => {
         saltoSiNoEntra(interlineado(size));
         if (opciones.center) {
           doc.text(renglon, ANCHO / 2, y, { align: "center" });
         } else {
-          doc.text(renglon, x, y);
+          doc.text(renglon, 0, y);
         }
         y += interlineado(size);
       });
@@ -232,7 +225,6 @@ export async function construirTicketTraslado(t: Traslado) {
       const alto =
         item.filas.length * interlineado(CANTIDAD_PT) +
         interlineado(NOMBRE_PT) +
-        (item.nombreOrigen ? interlineado(NOMBRE_PT - 1) : 0) +
         AIRE_ITEM;
       saltoSiNoEntra(alto);
 
@@ -246,12 +238,6 @@ export async function construirTicketTraslado(t: Traslado) {
       });
 
       linea(item.nombre, { size: NOMBRE_PT });
-      if (item.nombreOrigen) {
-        linea(`(ORIGEN: ${item.nombreOrigen})`, {
-          size: NOMBRE_PT - 1,
-          x: 3,
-        });
-      }
       y += AIRE_ITEM;
     });
 
