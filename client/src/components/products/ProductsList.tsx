@@ -12,6 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { getAlmacenes } from "../../services/almacenes.service";
 import { formatMiles, formatMilesWithDecimals } from "../../utils/utils";
+import { comprimirImagenABase64 } from "../../utils/productImage";
 import type { ProductoFilters } from "../../services/productos.service";
 import { useAuth } from "../../contexts/useAuth";
 
@@ -174,6 +175,10 @@ export default function ProductsList({
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [precioCostoFocused, setPrecioCostoFocused] = useState(false);
+  // Solo enviamos ProductoImagen si el usuario tocó la imagen en este modal.
+  // Al editar, el form carga la imagen actual (varios MB en productos venidos
+  // de GeneXus) y reenviarla en cada guardado disparaba 413 en el proxy.
+  const [imagenTocada, setImagenTocada] = useState(false);
 
   useEffect(() => {
     getAlmacenes(1, 200).then((res) => {
@@ -240,6 +245,7 @@ export default function ProductsList({
       });
     }
     setPrecioCostoFocused(false); // Resetear el estado de foco cuando cambia el producto
+    setImagenTocada(false);
   }, [currentProduct]);
 
   // Manejar cambios en el formulario
@@ -262,23 +268,27 @@ export default function ProductsList({
     }));
   };
 
-  // Manejar cambio de imagen (file input)
+  // Manejar cambio de imagen (file input): se redimensiona y reencodea a JPEG
+  // antes de guardarla en el form, para no enviar la foto original en el JSON.
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFormData((prev) => ({
-        ...prev,
-        ProductoImagen: (reader.result as string).split(",")[1] || "",
-      }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const base64 = await comprimirImagenABase64(file);
+      setFormData((prev) => ({ ...prev, ProductoImagen: base64 }));
+      setImagenTocada(true);
+    } catch {
+      alert("No se pudo procesar la imagen seleccionada.");
+    } finally {
+      // Permite volver a elegir el mismo archivo tras un error.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // Eliminar imagen
   const handleRemoveImage = () => {
     setFormData((prev) => ({ ...prev, ProductoImagen: "" }));
+    setImagenTocada(true);
   };
 
   const addStockAlmacen = () => {
@@ -343,10 +353,16 @@ export default function ProductsList({
   // Enviar formulario
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { ProductoImagen_GXI, ...cleanFormData } = formData; // Limpiamos ProductoImagen_GXI antes de enviar
+    const {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ProductoImagen_GXI, // Limpiamos ProductoImagen_GXI antes de enviar
+      ProductoImagen,
+      ...cleanFormData
+    } = formData;
     const payload = {
       ...cleanFormData,
+      // Si no se tocó la imagen, la omitimos: el backend preserva la actual.
+      ...(imagenTocada ? { ProductoImagen } : {}),
       ProductoStock: stockTotalCajas,
       ProductoStockUnitario: stockUnitarioTotal,
       productoAlmacen: stockAlmacenes.map((pa) => ({
