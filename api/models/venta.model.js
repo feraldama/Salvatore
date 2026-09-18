@@ -883,23 +883,28 @@ const Venta = {
 
   // Obtener reporte de ventas por cliente y rango de fechas
   // Si clienteId es "TODOS", devuelve ventas de todos los clientes
+  // localId: scope por sucursal (las ventas del local son las de sus
+  // almacenes). null = todas las sucursales de la empresa.
   getReporteVentasPorCliente: (
     clienteId,
     fechaDesde,
     fechaHasta,
     empresaId,
-    esDelivery = null
+    esDelivery = null,
+    localId = null
   ) => {
     return new Promise((resolve, reject) => {
       const esTodos = String(clienteId).toUpperCase() === "TODOS";
       // Filtro de modalidad minorista: 'S' = solo delivery, 'N' = solo ventana.
       const filtraModalidad = esDelivery === "S" || esDelivery === "N";
+      const filtraLocal = localId != null;
 
       const ejecutarVentas = (cliente) => {
         const ventasWhere = `DATE(v.VentaFecha) BETWEEN ? AND ?
           AND v.EmpresaId = ?
           ${esTodos ? "" : "AND v.ClienteId = ?"}
-          ${filtraModalidad ? "AND v.EsDelivery = ?" : ""}`;
+          ${filtraModalidad ? "AND v.EsDelivery = ?" : ""}
+          ${filtraLocal ? "AND v.AlmacenId IN (SELECT a2.AlmacenId FROM almacen a2 WHERE a2.LocalId = ?)" : ""}`;
         const ventasQuery = `
           SELECT
             v.*,
@@ -926,6 +931,7 @@ const Venta = {
           ? [fechaDesde, fechaHasta, empresaId]
           : [fechaDesde, fechaHasta, empresaId, clienteId];
         if (filtraModalidad) ventasParams.push(esDelivery);
+        if (filtraLocal) ventasParams.push(Number(localId));
 
         db.query(ventasQuery, ventasParams, (err, ventasResults) => {
           if (err) return reject(err);
@@ -1921,8 +1927,21 @@ const Venta = {
   // se deriva como VentaEntrega − Σ pagos de crédito y se atribuye al día de
   // la venta. El margen se calcula sobre venta.Total, así los recargos de
   // tarjeta o el costo de delivery incluidos en el total no inflan la ganancia.
-  getReporteCobrosGanancia: async ({ empresaId, fechaDesde, fechaHasta }) => {
+  // localId: scope por sucursal. Las ventas se filtran por su almacén; los
+  // cobros de créditos anteriores se atribuyen a la sucursal donde se hizo la
+  // VENTA original — ventacreditopago no guarda dónde se cobró.
+  getReporteCobrosGanancia: async ({
+    empresaId,
+    fechaDesde,
+    fechaHasta,
+    localId = null,
+  }) => {
     const pe = db.promise();
+    const localSql =
+      localId != null
+        ? " AND v.AlmacenId IN (SELECT a2.AlmacenId FROM almacen a2 WHERE a2.LocalId = ?)"
+        : "";
+    const localParams = localId != null ? [Number(localId)] : [];
 
     // El driver puede devolver DATE/TIMESTAMP como Date u string según la
     // columna: normalizar a 'YYYY-MM-DD' para agrupar por día.
@@ -1956,9 +1975,9 @@ const Venta = {
               ${costoSubqueries}
          FROM venta v
          LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
-        WHERE v.EmpresaId = ? AND DATE(v.VentaFecha) BETWEEN ? AND ?
+        WHERE v.EmpresaId = ? AND DATE(v.VentaFecha) BETWEEN ? AND ?${localSql}
         ORDER BY v.VentaFecha ASC, v.VentaId ASC`,
-      [Number(empresaId), fechaDesde, fechaHasta]
+      [Number(empresaId), fechaDesde, fechaHasta, ...localParams]
     );
 
     // Cobros (y señas) registrados en el rango, con los datos de SU venta —
@@ -1973,9 +1992,9 @@ const Venta = {
          JOIN ventacredito vc ON vc.VentaCreditoId = vcp.VentaCreditoId
          JOIN venta v ON v.VentaId = vc.VentaId
          LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
-        WHERE v.EmpresaId = ? AND vcp.VentaCreditoPagoFecha BETWEEN ? AND ?
+        WHERE v.EmpresaId = ? AND vcp.VentaCreditoPagoFecha BETWEEN ? AND ?${localSql}
         ORDER BY vcp.VentaCreditoPagoFecha ASC, vc.VentaId ASC, vcp.VentaCreditoPagoId ASC`,
-      [Number(empresaId), fechaDesde, fechaHasta]
+      [Number(empresaId), fechaDesde, fechaHasta, ...localParams]
     );
 
     const margenDe = (r) => {
@@ -2092,10 +2111,18 @@ const Venta = {
     productoId,
     fechaDesde,
     fechaHasta,
+    localId = null,
   }) => {
     const pe = db.promise();
     const cond = ["vp.ProductoId = ?", "v.EmpresaId = ?"];
     const params = [Number(productoId), Number(empresaId)];
+    // Scope por sucursal: las ventas del local son las de sus almacenes.
+    if (localId != null) {
+      cond.push(
+        "v.AlmacenId IN (SELECT a2.AlmacenId FROM almacen a2 WHERE a2.LocalId = ?)"
+      );
+      params.push(Number(localId));
+    }
     if (fechaDesde) {
       cond.push("DATE(v.VentaFecha) >= ?");
       params.push(fechaDesde);

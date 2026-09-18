@@ -195,6 +195,9 @@ exports.login = async (req, res) => {
         isAdmin: usuario.UsuarioIsAdmin,
         estado: usuario.UsuarioEstado,
         LocalId: usuario.LocalId,
+        // Nombre de la sucursal: lo usan las cabeceras de los reportes para
+        // los usuarios regulares (que no tienen el switcher de sucursal).
+        LocalNombre: usuario.LocalNombre ?? null,
         AlmacenId: usuario.AlmacenId || null,
         EmpresaId: empresaIdEfectiva,
         EmpresaTipo: empresaTipoEfectivo,

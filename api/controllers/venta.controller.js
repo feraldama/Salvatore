@@ -614,6 +614,7 @@ exports.getReporteCobrosGanancia = async (req, res) => {
       empresaId: req.empresaId,
       fechaDesde,
       fechaHasta,
+      localId: req.localId, // sucursal activa del switcher; null = todas
     });
     res.json({ data });
   } catch (error) {
@@ -655,6 +656,7 @@ exports.getVentasPorProducto = async (req, res) => {
       productoId,
       fechaDesde,
       fechaHasta,
+      localId: req.localId, // sucursal activa del switcher; null = todas
     });
     res.json({ data });
   } catch (error) {
@@ -1441,7 +1443,8 @@ exports.getReporteVentasPorCliente = async (req, res) => {
       fechaDesde,
       fechaHasta,
       req.empresaId,
-      esDelivery
+      esDelivery,
+      req.localId // sucursal activa del switcher; null = todas
     );
 
     res.json({

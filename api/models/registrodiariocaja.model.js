@@ -411,7 +411,13 @@ const RegistroDiarioCaja = {
     });
   },
 
-  getByDateRange: (fechaDesdeStr, fechaHastaStr, limit = 10000, empresaId = null) => {
+  getByDateRange: (
+    fechaDesdeStr,
+    fechaHastaStr,
+    limit = 10000,
+    empresaId = null,
+    localId = null
+  ) => {
     return new Promise((resolve, reject) => {
       // Scope por empresa: la caja pertenece a una empresa (caja.EmpresaId), así
       // que filtramos los registros por la empresa de su caja. Sin esto, el cierre
@@ -424,6 +430,12 @@ const RegistroDiarioCaja = {
       if (empresaId != null) {
         cond.push("c.EmpresaId = ?");
         params.push(empresaId);
+      }
+      // Scope por sucursal: la caja pertenece a un local (caja.LocalId).
+      // null = todas las sucursales de la empresa.
+      if (localId != null) {
+        cond.push("c.LocalId = ?");
+        params.push(Number(localId));
       }
       params.push(limit);
       const query = `

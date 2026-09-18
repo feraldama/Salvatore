@@ -58,6 +58,7 @@ const Usuario = {
       db.query(
         `SELECT u.*,
                 a.AlmacenId AS AlmacenId,
+                l.LocalNombre AS LocalNombre,
                 l.EmpresaId AS LocalEmpresaId,
                 e.EmpresaTipo AS LocalEmpresaTipo
            FROM usuario u

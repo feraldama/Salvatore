@@ -110,7 +110,8 @@ exports.getByDateRange = async (req, res) => {
       fechaDesdeStr,
       fechaHastaStr,
       limit,
-      req.empresaId
+      req.empresaId,
+      req.localId // sucursal activa del switcher; null = todas
     );
     res.json({ data });
   } catch (error) {

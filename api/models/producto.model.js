@@ -620,8 +620,23 @@ const Producto = {
    *
    * Ganancia y margen se calculan en el frontend (Ganancia = Monto - Costo).
    */
-  getReporteMovimientosPorRango: (fechaDesde, fechaHasta, empresaId) => {
+  // localId: scope por sucursal. Las ventas se filtran por el almacén de la
+  // venta y las compras por el almacén donde ingresó la mercadería
+  // (compraproducto.AlmacenOrigenId). null = todas las sucursales.
+  getReporteMovimientosPorRango: (
+    fechaDesde,
+    fechaHasta,
+    empresaId,
+    localId = null
+  ) => {
     return new Promise((resolve, reject) => {
+      const filtraLocal = localId != null;
+      const localVentasSql = filtraLocal
+        ? "AND vv.AlmacenId IN (SELECT a2.AlmacenId FROM almacen a2 WHERE a2.LocalId = ?)"
+        : "";
+      const localComprasSql = filtraLocal
+        ? "AND cp.AlmacenOrigenId IN (SELECT a3.AlmacenId FROM almacen a3 WHERE a3.LocalId = ?)"
+        : "";
       const query = `
         SELECT
           p.ProductoId,
@@ -654,6 +669,7 @@ const Producto = {
           INNER JOIN venta vv ON vv.VentaId = vp.VentaId
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
             AND vv.EmpresaId = ?
+            ${localVentasSql}
           GROUP BY vp.ProductoId
         ) v ON v.ProductoId = p.ProductoId
         LEFT JOIN (
@@ -670,6 +686,7 @@ const Producto = {
           INNER JOIN compra cc ON cc.CompraId = cp.CompraId
           WHERE DATE(cc.CompraFecha) BETWEEN ? AND ?
             AND cc.EmpresaId = ?
+            ${localComprasSql}
           GROUP BY cp.ProductoId
         ) c ON c.ProductoId = p.ProductoId
         WHERE p.EmpresaId = ?
@@ -679,9 +696,14 @@ const Producto = {
             OR COALESCE(c.comprada_unidades, 0) <> 0)
         ORDER BY p.ProductoNombre ASC
       `;
+      const params = [fechaDesde, fechaHasta, empresaId];
+      if (filtraLocal) params.push(Number(localId));
+      params.push(fechaDesde, fechaHasta, empresaId);
+      if (filtraLocal) params.push(Number(localId));
+      params.push(empresaId);
       db.query(
         query,
-        [fechaDesde, fechaHasta, empresaId, fechaDesde, fechaHasta, empresaId, empresaId],
+        params,
         (err, rows) => {
           if (err) return reject(err);
           const productos = rows.map((r) => ({
@@ -720,8 +742,35 @@ const Producto = {
    *
    * `productoId` (opcional): si viene, limita el reporte a ese producto.
    */
-  getReporteMasVendidos: (fechaDesde, fechaHasta, empresaId, productoId) => {
+  // localId: scope por sucursal. Filtra las ventas por el almacén de la venta
+  // y, además, reemplaza el stock actual global por el stock de esa sucursal
+  // (el reporte se usa para reponer: interesa lo que hay en ESE local).
+  getReporteMasVendidos: (
+    fechaDesde,
+    fechaHasta,
+    empresaId,
+    productoId,
+    localId = null
+  ) => {
     return new Promise((resolve, reject) => {
+      const filtraLocal = localId != null;
+      const localVentasSql = filtraLocal
+        ? "AND vv.AlmacenId IN (SELECT a2.AlmacenId FROM almacen a2 WHERE a2.LocalId = ?)"
+        : "";
+      // Stock de la sucursal = suma de productoalmacen de sus almacenes.
+      const stockSql = filtraLocal
+        ? `COALESCE((SELECT SUM(pa.ProductoAlmacenStock)
+                       FROM productoalmacen pa
+                       JOIN almacen a4 ON a4.AlmacenId = pa.AlmacenId
+                      WHERE pa.ProductoId = p.ProductoId AND a4.LocalId = ?), 0)
+             AS ProductoStock,
+           COALESCE((SELECT SUM(pa.ProductoAlmacenStockUnitario)
+                       FROM productoalmacen pa
+                       JOIN almacen a5 ON a5.AlmacenId = pa.AlmacenId
+                      WHERE pa.ProductoId = p.ProductoId AND a5.LocalId = ?), 0)
+             AS ProductoStockUnitario,`
+        : `COALESCE(p.ProductoStock, 0)          AS ProductoStock,
+           COALESCE(p.ProductoStockUnitario, 0)  AS ProductoStockUnitario,`;
       // La agregación va en subquery por ProductoId y recién después se
       // cruza con producto. Si se hacía GROUP BY sobre producto directo,
       // la columna BLOB ProductoImagen colgaba el query en MySQL.
@@ -742,8 +791,7 @@ const Producto = {
           COALESCE(p.ProductoPrecioVenta, 0)    AS ProductoPrecioVenta,
           COALESCE(p.ProductoPrecioUnitario, 0) AS ProductoPrecioUnitario,
           COALESCE(p.ProductoPrecioPromedio, 0) AS ProductoPrecioPromedio,
-          COALESCE(p.ProductoStock, 0)          AS ProductoStock,
-          COALESCE(p.ProductoStockUnitario, 0)  AS ProductoStockUnitario,
+          ${stockSql}
           v.vendida_cajas    AS CantidadVendidaCajas,
           v.vendida_unidades AS CantidadVendidaUnidades,
           v.monto_vendido    AS MontoVendido,
@@ -765,14 +813,19 @@ const Producto = {
           WHERE DATE(vv.VentaFecha) BETWEEN ? AND ?
             AND vv.EmpresaId = ?
             ${filtroProducto}
+            ${localVentasSql}
           GROUP BY vp.ProductoId
         ) v
         INNER JOIN producto p ON p.ProductoId = v.ProductoId
         WHERE p.EmpresaId = ?
           AND (v.vendida_cajas <> 0 OR v.vendida_unidades <> 0)
       `;
-      const params = [fechaDesde, fechaHasta, empresaId];
+      // El orden sigue la posición de los placeholders en el texto del query:
+      // primero los del SELECT (stock por sucursal), después los del subquery.
+      const params = filtraLocal ? [Number(localId), Number(localId)] : [];
+      params.push(fechaDesde, fechaHasta, empresaId);
       if (productoId) params.push(productoId);
+      if (filtraLocal) params.push(Number(localId));
       params.push(empresaId);
       db.query(query, params, (err, rows) => {
         if (err) return reject(err);
@@ -813,8 +866,16 @@ const Producto = {
     });
   },
 
-  getReporteStock: (empresaId) => {
+  // localId: scope por sucursal. Solo se listan los almacenes de ese local y
+  // el stock del producto pasa a ser el de esa sucursal (no el global), que es
+  // lo que hay que valorizar. null = todas las sucursales de la empresa.
+  getReporteStock: (empresaId, localId = null) => {
     return new Promise((resolve, reject) => {
+      const filtraLocal = localId != null;
+      // La condición va en el ON del LEFT JOIN, no en el WHERE: así los
+      // productos sin stock en la sucursal siguen apareciendo (y el filtro por
+      // stock > 0 lo hace el frontend).
+      const localJoinSql = filtraLocal ? "AND a.LocalId = ?" : "";
       // Incluye precio de costo por caja (ProductoPrecioPromedio) y la
       // cantidad por caja para que el frontend calcule el valor del stock
       // (capital inmovilizado) por producto y sume el total.
@@ -828,17 +889,18 @@ const Producto = {
           COALESCE(p.ProductoPrecioVenta, 0)    AS ProductoPrecioVenta,
           COALESCE(p.ProductoStock, 0)          AS ProductoStock,
           COALESCE(p.ProductoStockUnitario, 0)  AS ProductoStockUnitario,
-          pa.AlmacenId,
+          a.AlmacenId,
           a.AlmacenNombre,
           COALESCE(pa.ProductoAlmacenStock, 0)          AS ProductoAlmacenStock,
           COALESCE(pa.ProductoAlmacenStockUnitario, 0)  AS ProductoAlmacenStockUnitario
         FROM producto p
         LEFT JOIN productoalmacen pa ON p.ProductoId = pa.ProductoId
-        LEFT JOIN Almacen a ON pa.AlmacenId = a.AlmacenId
+        LEFT JOIN Almacen a ON pa.AlmacenId = a.AlmacenId ${localJoinSql}
         WHERE p.EmpresaId = ?
         ORDER BY p.ProductoNombre, a.AlmacenNombre
       `;
-      db.query(query, [empresaId], (err, rows) => {
+      const params = filtraLocal ? [Number(localId), empresaId] : [empresaId];
+      db.query(query, params, (err, rows) => {
         if (err) return reject(err);
         const byProduct = {};
         rows.forEach((row) => {
@@ -856,6 +918,8 @@ const Producto = {
               productoAlmacen: [],
             };
           }
+          // Con la condición en el ON, el almacén de otra sucursal viene con
+          // a.* en NULL: no se agrega renglón.
           if (row.AlmacenId != null) {
             byProduct[id].productoAlmacen.push({
               AlmacenNombre: row.AlmacenNombre || "",
@@ -866,6 +930,21 @@ const Producto = {
           }
         });
         const productos = Object.values(byProduct);
+        // Con sucursal activa, el stock del producto es el de esa sucursal:
+        // el global (p.ProductoStock) incluiría el de los otros locales y
+        // valorizaría capital que no está acá.
+        if (filtraLocal) {
+          productos.forEach((prod) => {
+            prod.ProductoStock = prod.productoAlmacen.reduce(
+              (acc, pa) => acc + (Number(pa.ProductoAlmacenStock) || 0),
+              0
+            );
+            prod.ProductoStockUnitario = prod.productoAlmacen.reduce(
+              (acc, pa) => acc + (Number(pa.ProductoAlmacenStockUnitario) || 0),
+              0
+            );
+          });
+        }
         resolve({ productos });
       });
     });

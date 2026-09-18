@@ -317,7 +317,18 @@ const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
   const puedeLeer = usePermiso("REPORTES", "leer");
-  const { user, empresaActiva } = useAuth();
+  const { user, empresaActiva, localActiva } = useAuth();
+  // Sucursal del scope de los reportes. El backend la resuelve solo: admin =
+  // la del switcher (null = todas), usuario regular = la fija de su JWT (0 =
+  // sin restricción). Acá solo se arma la etiqueta de la cabecera de los PDFs.
+  // LocalNombre puede faltar en sesiones abiertas antes de este cambio: en ese
+  // caso no se miente con "todas", se dice que es la sucursal del usuario.
+  const sucursalReporte =
+    user?.isAdmin === "S"
+      ? (localActiva?.LocalNombre ?? "Todas las sucursales")
+      : user?.LocalId
+        ? (user?.LocalNombre ?? "Sucursal del usuario")
+        : "Todas las sucursales";
   // El reporte de envíos por móvil aplica solo a la empresa mayorista
   // (distribuidora, EmpresaTipo === "D"). Misma resolución que VentasDispatcher:
   // el admin sigue la empresa activa del switcher; el usuario regular, la suya.
@@ -723,7 +734,15 @@ const ReportesPage: React.FC = () => {
       const doc = new jsPDF();
       doc.setFontSize(18);
       doc.text("Créditos Pendientes a Cobrar", 14, 18);
-      let y = 28;
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(
+        "Incluye todas las sucursales de la empresa: la deuda es del cliente, no de la sucursal donde compró.",
+        14,
+        24,
+      );
+      doc.setTextColor(0);
+      let y = 30;
       let totalGeneral = 0;
       const rows = deudas.map((d) => [
         d.ClienteId,
@@ -813,6 +832,8 @@ const ReportesPage: React.FC = () => {
         14,
         y,
       );
+      y += 6;
+      doc.text(`Sucursal: ${sucursalReporte}`, 14, y);
       y += 6;
       if (modalidadVentas) {
         doc.text(
@@ -1070,10 +1091,12 @@ const ReportesPage: React.FC = () => {
       y += 7;
       doc.setFontSize(10);
       doc.text(
-        `Generado: ${new Date().toLocaleDateString("es-PY")} — ${enriquecidos.length} producto(s) con stock`,
+        `Generado: ${formatDateDDMMYYYY(new Date())} — ${enriquecidos.length} producto(s) con stock`,
         14,
         y,
       );
+      y += 5;
+      doc.text(`Sucursal: ${sucursalReporte}`, 14, y);
       y += 4;
 
       if (enriquecidos.length === 0) {
@@ -1236,6 +1259,8 @@ const ReportesPage: React.FC = () => {
         14,
         y,
       );
+      y += 6;
+      doc.text(`Sucursal: ${sucursalReporte}`, 14, y);
       y += 6;
 
       if (productos.length === 0) {
@@ -1447,6 +1472,8 @@ const ReportesPage: React.FC = () => {
         y,
       );
       y += 6;
+      doc.text(`Sucursal: ${sucursalReporte}`, 14, y);
+      y += 6;
       if (!esTodosProductos) {
         doc.text(`Producto: ${productoBusquedaTop}`, 14, y);
         y += 6;
@@ -1623,6 +1650,8 @@ const ReportesPage: React.FC = () => {
       14,
       14,
     );
+    doc.setFontSize(9);
+    doc.text(`Sucursal: ${sucursalReporte}`, 14, 19);
     const rows = resumenesCierre.map((r) => [
       r.fechaCierre,
       r.cajaDescripcion,
@@ -1772,6 +1801,8 @@ const ReportesPage: React.FC = () => {
       14,
       14,
     );
+    doc.setFontSize(9);
+    doc.text(`Sucursal: ${sucursalReporte}`, 14, 19);
 
     const filaIE = (r: RegistroDiarioCajaRow) => [
       formatFechaHoraLocal(r.RegistroDiarioCajaFecha),
@@ -2158,6 +2189,7 @@ const ReportesPage: React.FC = () => {
       14,
       27,
     );
+    doc.text(`Sucursal: ${sucursalReporte}`, 14, 33);
 
     autoTable(doc, {
       head: [
@@ -2185,7 +2217,7 @@ const ReportesPage: React.FC = () => {
           formatMiles(ventasProducto.totales.totalMonto),
         ],
       ],
-      startY: 32,
+      startY: 38,
       theme: "grid",
       headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
       footStyles: {
@@ -2612,6 +2644,8 @@ const ReportesPage: React.FC = () => {
         14,
         y,
       );
+      y += 6;
+      doc.text(`Sucursal: ${sucursalReporte}`, 14, y);
       y += 6;
       doc.setFontSize(9);
       doc.setTextColor(100);

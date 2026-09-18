@@ -244,7 +244,8 @@ exports.getReporteMovimientos = async (req, res) => {
     const { productos } = await Producto.getReporteMovimientosPorRango(
       fechaDesde,
       fechaHasta,
-      req.empresaId
+      req.empresaId,
+      req.localId // sucursal activa del switcher; null = todas
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {
@@ -285,7 +286,8 @@ exports.getReporteMasVendidos = async (req, res) => {
       fechaDesde,
       fechaHasta,
       req.empresaId,
-      productoIdNum
+      productoIdNum,
+      req.localId // sucursal activa del switcher; null = todas
     );
     res.json({ data: { productos, fechaDesde, fechaHasta } });
   } catch (error) {
@@ -314,7 +316,10 @@ exports.getStockBajo = async (req, res) => {
 // Reporte de stock total y por almacén de todos los productos
 exports.getReporteStock = async (req, res) => {
   try {
-    const { productos } = await Producto.getReporteStock(req.empresaId);
+    const { productos } = await Producto.getReporteStock(
+      req.empresaId,
+      req.localId // sucursal activa del switcher; null = todas
+    );
     res.json({ data: { productos } });
   } catch (error) {
     console.error(error);
