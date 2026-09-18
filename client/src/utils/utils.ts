@@ -18,6 +18,32 @@ export const calcularDV = (cedula: string): string => {
   return String(11 - resto);
 };
 
+/**
+ * Separa un RUC almacenado ("1234567-8") en su base y su dígito verificador.
+ * Si no trae guion se asume que es sólo la base (registros cargados antes de
+ * que el DV fuera editable) y el DV queda vacío.
+ */
+export const separarRUC = (ruc: string): { base: string; dv: string } => {
+  const valor = (ruc || "").trim();
+  const guion = valor.lastIndexOf("-");
+  if (guion === -1) return { base: valor, dv: "" };
+  return {
+    base: valor.slice(0, guion).trim(),
+    dv: valor.slice(guion + 1).trim(),
+  };
+};
+
+/**
+ * Arma el RUC completo para mostrar. Usa el DV almacenado cuando el valor ya lo
+ * trae (puede haber sido editado a mano); si no lo trae, lo calcula.
+ */
+export const formatRUC = (ruc: string): string => {
+  const { base, dv } = separarRUC(ruc);
+  if (!base) return "";
+  const digito = dv || calcularDV(base);
+  return digito ? `${base}-${digito}` : base;
+};
+
 export const formatMiles = (value: number | string): string => {
   const parseToNumber = (value: number | string): number => {
     if (typeof value === "string") {

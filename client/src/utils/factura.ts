@@ -4,7 +4,7 @@
 // la impresión por búsqueda de ventas. La factura NO muestra desglose de método
 // de pago, así que sirve igual antes o después de registrar el cobro.
 
-import { calcularDV, formatFecha } from "./utils";
+import { formatRUC, formatFecha } from "./utils";
 
 export interface FacturaVenta {
   VentaId: number;
@@ -254,9 +254,7 @@ const generarHoja = (venta: FacturaVenta, lineas: LineaFactura[]) => {
           }</p>
           <p style="margin-left: 280px;">
             <span>${
-              venta.ClienteRUC
-                ? `${venta.ClienteRUC}-${calcularDV(venta.ClienteRUC)}`
-                : "N/A"
+              venta.ClienteRUC ? formatRUC(venta.ClienteRUC) : "N/A"
             }</span>
             <span style="margin-left: 75px;">${
               venta.ClienteTelefono || ""

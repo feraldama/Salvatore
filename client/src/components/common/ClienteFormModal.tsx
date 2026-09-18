@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../contexts/useAuth";
 import { Modal, Button, TextInput } from "./ui";
-import { calcularDV } from "../../utils/utils";
+import { calcularDV, separarRUC } from "../../utils/utils";
 import { getVendedores, type Vendedor } from "../../services/vendedores.service";
 
 export interface Cliente {
@@ -46,6 +46,10 @@ export default function ClienteFormModal({
   const { user } = useAuth();
   const [formData, setFormData] = useState<Cliente>(emptyForm(""));
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  // El DV se guarda dentro de ClienteRUC ("1234567-8"). En el form se maneja
+  // aparte: se sugiere el calculado, pero el usuario puede pisarlo a mano.
+  const [dv, setDv] = useState("");
+  const [dvManual, setDvManual] = useState(false);
 
   const { empresaActiva } = useAuth();
 
@@ -56,10 +60,17 @@ export default function ClienteFormModal({
 
   useEffect(() => {
     if (currentCliente) {
-      setFormData({ ...currentCliente });
+      const { base, dv: dvGuardado } = separarRUC(currentCliente.ClienteRUC);
+      setFormData({ ...currentCliente, ClienteRUC: base });
+      setDv(dvGuardado || calcularDV(base));
+      // Sólo se considera manual si el DV guardado difiere del calculado; si
+      // coincide se sigue recalculando al cambiar la base.
+      setDvManual(!!dvGuardado && dvGuardado !== calcularDV(base));
     } else {
       const userId = currentUserId || (user?.id ? String(user.id).trim() : "");
       setFormData(emptyForm(userId));
+      setDv("");
+      setDvManual(false);
     }
   }, [currentCliente, currentUserId, user]);
 
@@ -67,6 +78,8 @@ export default function ClienteFormModal({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    // Mientras el DV no se haya tocado a mano, sigue al RUC.
+    if (name === "ClienteRUC" && !dvManual) setDv(calcularDV(value));
     setFormData((prev) => ({
       ...prev,
       [name]:
@@ -76,9 +89,22 @@ export default function ClienteFormModal({
     }));
   };
 
+  const handleDvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, "").slice(0, 1);
+    if (!value) {
+      // Vaciarlo devuelve el campo al DV sugerido.
+      setDvManual(false);
+      setDv(calcularDV(formData.ClienteRUC));
+      return;
+    }
+    setDvManual(true);
+    setDv(value);
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSubmit(formData);
+    const base = formData.ClienteRUC.trim();
+    onSubmit({ ...formData, ClienteRUC: base && dv ? `${base}-${dv}` : base });
   };
 
   return (
@@ -120,13 +146,26 @@ export default function ClienteFormModal({
               className="flex-1 bg-surface border border-border rounded-md text-sm text-text px-3 py-2 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
             />
             <span className="text-text-muted text-sm select-none">-</span>
-            <div className="w-14 text-center bg-surface-sunken border border-border rounded-md px-2 py-2 text-sm font-semibold text-text">
-              {calcularDV(formData.ClienteRUC) || <span className="text-text-muted font-normal">DV</span>}
-            </div>
+            <input
+              name="ClienteDV"
+              value={dv}
+              onChange={handleDvChange}
+              inputMode="numeric"
+              maxLength={1}
+              placeholder="DV"
+              title="Dígito verificador. Se sugiere el calculado, pero se puede editar."
+              className="w-14 text-center bg-surface border border-border rounded-md px-2 py-2 text-sm font-semibold text-text transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 hover:border-border-strong"
+            />
           </div>
-          {formData.ClienteRUC && calcularDV(formData.ClienteRUC) && (
+          {formData.ClienteRUC && dv && (
             <p className="mt-1 text-xs text-text-muted">
-              RUC completo: {formData.ClienteRUC}-{calcularDV(formData.ClienteRUC)}
+              RUC completo: {formData.ClienteRUC}-{dv}
+            </p>
+          )}
+          {formData.ClienteRUC && dv && dv !== calcularDV(formData.ClienteRUC) && (
+            <p className="mt-1 text-xs text-amber-700">
+              DV editado a mano (el calculado es{" "}
+              {calcularDV(formData.ClienteRUC) || "—"}).
             </p>
           )}
         </div>
