@@ -2506,15 +2506,95 @@ const ReportesPage: React.FC = () => {
         (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
           .finalY;
 
-      let totalComision = 0;
-      data.vendedores.forEach((v) => {
-        const nombre =
-          v.vendedorId == null
-            ? "Sin vendedor"
-            : [v.nombre, v.apellido].filter(Boolean).join(" ").trim() ||
-              `Vendedor ${v.vendedorId}`;
-        const comision = Math.round((v.totalVendido * pct) / 100);
-        totalComision += comision;
+      const nombreVendedor = (v: VentasPorVendedor["vendedores"][number]) =>
+        v.vendedorId == null
+          ? "Sin vendedor"
+          : [v.nombre, v.apellido].filter(Boolean).join(" ").trim() ||
+            `Vendedor ${v.vendedorId}`;
+
+      // Comisión por vendedor, calculada una sola vez y reutilizada en el
+      // resumen y en el detalle.
+      const comisionPorVendedor = new Map<string, number>();
+      data.vendedores.forEach((v, i) => {
+        comisionPorVendedor.set(
+          `${v.vendedorId ?? "null"}-${i}`,
+          Math.round((v.totalVendido * pct) / 100),
+        );
+      });
+      const totalComision = data.vendedores.reduce(
+        (acc, v, i) => acc + (comisionPorVendedor.get(`${v.vendedorId ?? "null"}-${i}`) ?? 0),
+        0,
+      );
+
+      // Resumen: una fila por vendedor con sus totales, para no tener que
+      // sumar venta por venta en el detalle.
+      if (data.vendedores.length) {
+        doc.setFontSize(13);
+        doc.text("Resumen por vendedor", 14, y);
+        y += 4;
+
+        autoTable(doc, {
+          head: [
+            [
+              "VENDEDOR",
+              "VENTAS",
+              "TOTAL VENDIDO",
+              "ENTREGADO",
+              "PENDIENTE",
+              `COMISIÓN (${pctStr}%)`,
+            ],
+          ],
+          body: data.vendedores.map((v, i) => [
+            nombreVendedor(v),
+            v.cantidad.toString(),
+            formatMiles(v.totalVendido),
+            formatMiles(v.totalEntregado),
+            formatMiles(v.totalPendiente),
+            formatMiles(comisionPorVendedor.get(`${v.vendedorId ?? "null"}-${i}`) ?? 0),
+          ]),
+          foot: [
+            [
+              "TOTAL",
+              data.totales.cantidad.toString(),
+              formatMiles(data.totales.totalVendido),
+              formatMiles(data.totales.totalEntregado),
+              formatMiles(data.totales.totalPendiente),
+              formatMiles(totalComision),
+            ],
+          ],
+          startY: y,
+          theme: "grid",
+          headStyles: { fillColor: [37, 99, 235] },
+          footStyles: {
+            fillColor: [226, 232, 240],
+            textColor: 20,
+            fontStyle: "bold",
+          },
+          styles: { fontSize: 9 },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            1: { cellWidth: 20, halign: "right" },
+            2: { cellWidth: 38, halign: "right" },
+            3: { cellWidth: 38, halign: "right" },
+            4: { cellWidth: 38, halign: "right" },
+            5: { cellWidth: 38, halign: "right" },
+          },
+        });
+        y = getFinalY() + 12;
+
+        if (y > doc.internal.pageSize.getHeight() - 40) {
+          doc.addPage();
+          y = 18;
+        }
+        doc.setFontSize(13);
+        doc.text("Detalle por vendedor", 14, y);
+        y += 8;
+      }
+
+      data.vendedores.forEach((v, i) => {
+        const nombre = nombreVendedor(v);
+        const comision =
+          comisionPorVendedor.get(`${v.vendedorId ?? "null"}-${i}`) ?? 0;
 
         if (y > doc.internal.pageSize.getHeight() - 40) {
           doc.addPage();
