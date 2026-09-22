@@ -55,16 +55,26 @@ const Usuario = {
       // Resuelve el almacén del local del usuario (un almacén por local) y la
       // empresa a la que pertenece ese local (fuente de verdad de la empresa
       // del usuario: se deriva del local, no de una columna suelta).
+      // CajaPropiaId: la caja de este usuario EN SU SUCURSAL HABITUAL. Desde la
+      // 031 un cajero puede tener una caja por sucursal, así que el JOIN se
+      // acota a la suya: sin ese filtro devolvería dos filas y el login se
+      // quedaría con una cualquiera.
+      // Es solo un dato informativo del login; la caja con la que realmente se
+      // opera la resuelve GET /caja/mia contra la sucursal de la terminal.
       db.query(
         `SELECT u.*,
                 a.AlmacenId AS AlmacenId,
                 l.LocalNombre AS LocalNombre,
                 l.EmpresaId AS LocalEmpresaId,
-                e.EmpresaTipo AS LocalEmpresaTipo
+                e.EmpresaTipo AS LocalEmpresaTipo,
+                cp.CajaId AS CajaPropiaId,
+                cp.CajaDescripcion AS CajaPropiaDescripcion
            FROM usuario u
            LEFT JOIN almacen a ON a.LocalId = u.LocalId
            LEFT JOIN local l ON l.LocalId = u.LocalId
            LEFT JOIN empresa e ON e.EmpresaId = l.EmpresaId
+           LEFT JOIN caja cp ON TRIM(cp.UsuarioId) = TRIM(u.UsuarioId)
+                            AND cp.LocalId = u.LocalId
           WHERE u.UsuarioId = ?
           LIMIT 1`,
         [email],

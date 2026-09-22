@@ -201,6 +201,10 @@ exports.login = async (req, res) => {
         AlmacenId: usuario.AlmacenId || null,
         EmpresaId: empresaIdEfectiva,
         EmpresaTipo: empresaTipoEfectivo,
+        // Caja propia del cajero (migración 029). Presente = la pantalla de
+        // apertura no muestra selector: apertura la suya y listo.
+        CajaPropiaId: usuario.CajaPropiaId ?? null,
+        CajaPropiaDescripcion: usuario.CajaPropiaDescripcion ?? null,
       },
       permisos,
     });

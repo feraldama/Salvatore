@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCajas } from "../../services/cajas.service";
+import { getCajas, getMiCaja, getCajaById } from "../../services/cajas.service";
 import ActionButton from "../../components/common/Button/ActionButton";
 import { LoadingState, PermissionDenied } from "../../components/common/ui";
 import { usePermiso } from "../../hooks/usePermiso";
@@ -40,49 +40,79 @@ export default function AperturaCierreCajaPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [cajaDisabled, setCajaDisabled] = useState(false);
+  // La caja que NO se elige: o la propia de esta sucursal (al aperturar), o la
+  // que el cajero tiene abierta (al cerrar). Elegir de una lista de cajas con
+  // nombre de persona era el error diario en la bodega central.
+  const [cajaFijada, setCajaFijada] = useState<Caja | null>(null);
   const [registrosCaja, setRegistrosCaja] = useState<RegistroDiarioCaja[]>([]);
   const [descargarPDF, setDescargarPDF] = useState(false);
   const [operacionCompletada, setOperacionCompletada] = useState(false);
 
+  // Un solo efecto resuelve QUÉ caja va en pantalla. Antes eran dos corriendo en
+  // paralelo — uno fijaba la caja propia y el otro la caja abierta — y se
+  // pisaban el mismo estado: con una caja abierta en otra sucursal, la pantalla
+  // mostraba el nombre de una y enviaba el id de la otra.
+  //
+  // El orden importa y no es simétrico:
+  //   1. ¿Hay una caja abierta? Entonces lo único que se puede hacer es CERRAR
+  //      ESA, sea de la sucursal que sea. Quien se olvidó de cerrar en otra
+  //      bodega tiene que poder destrabarse desde acá.
+  //   2. Si no hay ninguna abierta, se APERTURA la caja propia de esta sucursal.
+  //   3. Sin caja propia acá (cajas funcionales, admins), se elige de la lista.
   useEffect(() => {
-    const fetchCajas = async () => {
+    if (!user) return;
+    let cancelado = false;
+    const resolverCaja = async () => {
       try {
         setLoading(true);
-        const data = await getCajas(1, 100);
-        setCajas(data.data);
-        // No establecer caja por defecto, el usuario debe seleccionar
-      } catch {
-        setError("Error al cargar cajas");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCajas();
-  }, []);
+        const estado = await getEstadoAperturaPorUsuario(user.id);
+        const tieneAbierta =
+          estado && estado.aperturaId > estado.cierreId && estado.cajaId;
 
-  useEffect(() => {
-    // Lógica para detectar si el usuario tiene una caja aperturada
-    const checkCajaAperturada = async () => {
-      if (!user) return;
-      try {
-        const data = await getEstadoAperturaPorUsuario(user.id);
-        // Si apertura > cierre, forzar cierre y deshabilitar el select de tipo y de caja
-        if (data.aperturaId > data.cierreId) {
-          setTipo("1"); // Cierre
+        if (tieneAbierta) {
+          let abierta: Caja | null = null;
+          try {
+            abierta = await getCajaById(estado.cajaId);
+          } catch {
+            // La caja abierta puede ser de otra empresa y no resolverse acá; se
+            // muestra por id antes que dejar la pantalla en blanco.
+            abierta = null;
+          }
+          if (cancelado) return;
+          setTipo("1");
           setTipoDisabled(true);
-          setCajaDisabled(true); // Solo puede cerrar la caja que tiene abierta
-          if (data.cajaId) setCajaId(data.cajaId);
-        } else {
-          // No tiene ninguna caja abierta, forzar apertura y deshabilitar solo el select de tipo
-          setTipo("0");
-          setTipoDisabled(true);
-          setCajaDisabled(false); // Puede elegir la caja que desee
+          setCajaDisabled(true);
+          setCajaId(estado.cajaId);
+          setCajaFijada(abierta ?? ({ CajaId: estado.cajaId, CajaDescripcion: `Caja ${estado.cajaId}` } as Caja));
+          setCajas(abierta ? [abierta] : []);
+          return;
         }
+
+        setTipo("0");
+        setTipoDisabled(true);
+        setCajaDisabled(false);
+        const propia = await getMiCaja();
+        if (cancelado) return;
+        if (propia) {
+          setCajaFijada(propia);
+          setCajaId(propia.CajaId);
+          setCajas([propia]);
+          return;
+        }
+        const data = await getCajas(1, 100, undefined, undefined, true);
+        if (cancelado) return;
+        setCajaFijada(null);
+        setCajas(data.data);
       } catch {
-        // Si hay error, no forzar nada
+        if (!cancelado) setError("Error al cargar cajas");
+      } finally {
+        if (!cancelado) setLoading(false);
       }
     };
-    checkCajaAperturada();
+    resolverCaja();
+    return () => {
+      cancelado = true;
+    };
   }, [user, location.pathname]);
 
   useEffect(() => {
@@ -519,22 +549,34 @@ export default function AperturaCierreCajaPage() {
             <label className="block mb-2 text-sm font-medium text-gray-900">
               Caja
             </label>
-            <select
-              className={`bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 ${
-                cajaDisabled ? "bg-gray-200 text-gray-500" : ""
-              }`}
-              value={cajaId}
-              onChange={(e) => setCajaId(e.target.value)}
-              required
-              disabled={cajaDisabled}
-            >
-              <option value="">Seleccione una caja</option>
-              {cajas.map((caja) => (
-                <option key={caja.CajaId} value={caja.CajaId}>
-                  {caja.CajaDescripcion}
-                </option>
-              ))}
-            </select>
+            {cajaFijada ? (
+              // Caja resuelta por el sistema: se muestra, no se elige.
+              <div className="bg-gray-100 border border-gray-300 text-gray-900 text-sm rounded-lg block w-full p-2.5 font-medium">
+                {cajaFijada.CajaDescripcion}
+                {tipo === "1" && cajaFijada.LocalNombre ? (
+                  <span className="ml-2 text-xs font-normal text-gray-500">
+                    · {String(cajaFijada.LocalNombre)}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <select
+                className={`bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 ${
+                  cajaDisabled ? "bg-gray-200 text-gray-500" : ""
+                }`}
+                value={cajaId}
+                onChange={(e) => setCajaId(e.target.value)}
+                required
+                disabled={cajaDisabled}
+              >
+                <option value="">Seleccione una caja</option>
+                {cajas.map((caja) => (
+                  <option key={caja.CajaId} value={caja.CajaId}>
+                    {caja.CajaDescripcion}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-900">

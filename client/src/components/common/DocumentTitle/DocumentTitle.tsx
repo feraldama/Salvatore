@@ -16,6 +16,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/locales": "Locales",
   "/almacenes": "Almacenes",
   "/traslados": "Traslados de inventario",
+  "/terminales": "Equipos",
   "/combos": "Combos",
   "/perfiles": "Perfiles",
   "/menus": "Menús",

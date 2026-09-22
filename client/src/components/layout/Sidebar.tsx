@@ -149,6 +149,7 @@ const sections: NavigationSection[] = [
           { name: "Empresas", href: "/empresas", permiso: "LOCALES" },
           { name: "Locales", href: "/locales", permiso: "LOCALES" },
           { name: "Usuarios", href: "/users", permiso: "USUARIOS" },
+          { name: "Equipos", href: "/terminales", permiso: "LOCALES" },
           { name: "Perfiles", href: "/perfiles", permiso: "PERFILES" },
           { name: "Menús", href: "/menus", permiso: "MENUS" },
         ],

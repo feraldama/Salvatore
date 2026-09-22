@@ -1,4 +1,6 @@
 const RegistroDiarioCaja = require("../models/registrodiariocaja.model");
+const Caja = require("../models/caja.model");
+const { validarContraTerminal } = require("../utils/scopeCaja");
 const Venta = require("../models/venta.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
@@ -206,6 +208,66 @@ exports.aperturaCierreCaja = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Faltan datos requeridos" });
     }
+    // APERTURA y CIERRE tienen reglas distintas, y confundirlas dejaba al cajero
+    // sin salida. Desde la 031 un cajero puede tener una caja por sucursal:
+    //
+    //   - Al ABRIR, tiene que ser su caja EN LA SUCURSAL DONDE ESTÁ. Es el punto
+    //     exacto donde se cometía el error original: un <select> con 16 cajas de
+    //     la bodega central, casi todas nombradas por persona.
+    //   - Al CERRAR, alcanza con que la caja sea SUYA, de la sucursal que sea.
+    //     Quien se olvidó de cerrar en una bodega y hoy está en otra tiene que
+    //     poder cerrarla igual: si se le exige la caja de acá, no puede cerrar
+    //     aquella ni abrir esta (ya tiene una abierta) y queda trabado sin
+    //     ninguna salida por pantalla.
+    const esApertura = String(apertura) === "0";
+    const localOperativo = req.localOperativoId ?? null;
+    const misCajas = await Caja.getAllByUsuario(UsuarioId);
+
+    if (esApertura) {
+      // La sucursal sale de la terminal; sin terminal registrada se cae al
+      // criterio viejo (su única caja, si tiene una sola).
+      const cajaPropia = await Caja.getByUsuario(UsuarioId, localOperativo);
+      if (cajaPropia && Number(cajaPropia.CajaId) !== Number(CajaId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Tu caja${localOperativo ? " acá" : ""} es "${
+            cajaPropia.CajaDescripcion
+          }". No podés aperturar la caja de otra persona.`,
+        });
+      }
+    } else if (misCajas.length) {
+      const esMia = misCajas.some((c) => Number(c.CajaId) === Number(CajaId));
+      if (!esMia) {
+        return res.status(400).json({
+          success: false,
+          message: "Esa caja no es tuya. No podés cerrar la caja de otra persona.",
+        });
+      }
+    }
+
+    // La caja tiene que ser de la sucursal donde está el equipo (migración 030).
+    // Se valida en la APERTURA y no solo al vender: es mejor que el cajero se
+    // entere al empezar el turno que después de haber cargado media venta.
+    // El cierre se deja pasar — si ya tiene una caja abierta hay que poder
+    // cerrarla esté donde esté, o el dinero queda trabado en un turno sin fin.
+    if (esApertura) {
+      const cajaBD = await Caja.getById(CajaId, req.empresaId).catch(() => null);
+      if (!cajaBD) {
+        // Existe pero es de otra empresa, o no existe: sin esto el mensaje de
+        // terminal salía confuso ("tu caja (caja 9) es de otra sucursal").
+        return res.status(400).json({
+          success: false,
+          message: `La caja ${CajaId} no existe o no pertenece a la empresa activa.`,
+        });
+      }
+      const err = validarContraTerminal(req.terminal, cajaBD);
+      if (err) {
+        return res
+          .status(err.status)
+          .json({ success: false, message: err.message });
+      }
+    }
+
     let Sigue = "N";
     let error = "";
     // Buscar última apertura y cierre

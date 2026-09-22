@@ -1,11 +1,16 @@
 import api from "./api";
 import type { AxiosError } from "axios";
+import type { Caja } from "../types";
 
+// paraOperar: acota el listado a las cajas de la sucursal donde está el equipo.
+// Lo usa la pantalla de apertura; la administración de cajas lo deja en false
+// para seguir viendo las de la sucursal elegida en el switcher.
 export const getCajas = async (
   page = 1,
   limit = 10,
   sortBy?: string,
-  sortOrder?: "asc" | "desc"
+  sortOrder?: "asc" | "desc",
+  paraOperar = false
 ) => {
   const params: { [key: string]: string | number | undefined } = {
     page,
@@ -13,6 +18,7 @@ export const getCajas = async (
   };
   if (sortBy) params.sortBy = sortBy;
   if (sortOrder) params.sortOrder = sortOrder;
+  if (paraOperar) params.paraOperar = 1;
   try {
     const response = await api.get("/caja", { params });
     return response.data;
@@ -29,6 +35,19 @@ export const getCajaById = async (id: string | number) => {
   } catch (error) {
     const axiosError = error as AxiosError<{ message?: string }>;
     throw axiosError.response?.data || { message: "Error al obtener caja" };
+  }
+};
+
+// La caja propia del usuario (migración 029). null = no tiene dueño asignado y
+// entonces sigue eligiendo de la lista (cajas funcionales, admins, suplentes).
+export const getMiCaja = async (): Promise<Caja | null> => {
+  try {
+    const response = await api.get("/caja/mia");
+    // 204 = el usuario no tiene caja propia.
+    return response.status === 204 ? null : (response.data as Caja);
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw axiosError.response?.data || { message: "Error al obtener tu caja" };
   }
 };
 

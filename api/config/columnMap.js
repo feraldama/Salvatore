@@ -192,7 +192,20 @@ module.exports = {
   "almacenorigennombre": "AlmacenOrigenNombre",
   "almacendestinonombre": "AlmacenDestinoNombre",
   "empresaorigennombre": "EmpresaOrigenNombre",
-  "empresadestinonombre": "EmpresaDestinoNombre"
+  "empresadestinonombre": "EmpresaDestinoNombre",
+  // --- Migración 029: dueño de la caja ---
+  // DuenoNombre es un alias del listado de cajas (nombre del cajero dueño).
+  "duenonombre": "DuenoNombre",
+  "cajapropiaid": "CajaPropiaId",
+  "cajapropiadescripcion": "CajaPropiaDescripcion",
+  // --- Migración 030: terminales (puesto físico) ---
+  "terminalid": "TerminalId",
+  "terminalnombre": "TerminalNombre",
+  "terminalestado": "TerminalEstado",
+  "terminalregistradapor": "TerminalRegistradaPor",
+  "terminalregistradaen": "TerminalRegistradaEn",
+  "terminalultimouso": "TerminalUltimoUso",
+  "terminalultimaip": "TerminalUltimaIp"
 },
   pkByTable: {
   "almacen": "AlmacenId",

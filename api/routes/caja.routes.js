@@ -11,6 +11,8 @@ router.use(resolveEmpresa);
 
 // Rutas para Caja
 router.get("/search", authMiddleware, cajaController.searchCajas);
+// Antes que "/:id" para que "mia" no se lea como un CajaId.
+router.get("/mia", authMiddleware, cajaController.getMia);
 router.get("/", authMiddleware, cajaController.getAll);
 router.put("/:id/monto", authMiddleware, cajaController.updateMonto);
 router.get("/:id", authMiddleware, cajaController.getById);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
+import TerminalAviso from "../common/TerminalAviso";
 import { useAuth } from "../../contexts/useAuth";
 
 export default function Layout() {
@@ -19,6 +20,9 @@ export default function Layout() {
   if (ocultarLayout) {
     return (
       <main className="min-h-dvh">
+        {/* También en la pantalla de ventas: es donde más importa saber contra
+            qué sucursal se está descontando el stock. */}
+        <TerminalAviso />
         <Outlet key={empresaKey} />
       </main>
     );
@@ -35,6 +39,9 @@ export default function Layout() {
 
       <Navbar setMobileOpen={setMobileOpen} />
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      <div className="lg:pl-64">
+        <TerminalAviso />
+      </div>
 
       <main
         id="main"

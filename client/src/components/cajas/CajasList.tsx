@@ -5,6 +5,7 @@ import { Modal, Button, TextInput } from "../common/ui";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import { formatMiles } from "../../utils/utils";
 import { useAuth } from "../../contexts/useAuth";
+import { getUsuarios } from "../../services/usuarios.service";
 
 import type { Caja } from "../../types";
 
@@ -50,19 +51,33 @@ export default function CajasList({
   onSort,
 }: CajasListProps) {
   const { locales, localActiva } = useAuth();
+  // Cajeros disponibles para ser dueños de una caja. Sin dueño, la caja se sigue
+  // eligiendo a mano al aperturar (es lo correcto para COMPRAS o CAJA ADMIN).
+  const [usuarios, setUsuarios] = useState<
+    { UsuarioId: string; UsuarioNombre: string; LocalId: number }[]
+  >([]);
   const [formData, setFormData] = useState<{
     id: string;
     CajaId: string;
     CajaDescripcion: string;
     CajaMonto: number;
     LocalId: number | "";
+    UsuarioId: string;
   }>({
     id: "",
     CajaId: "",
     CajaDescripcion: "",
     CajaMonto: 0,
     LocalId: "",
+    UsuarioId: "",
   });
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    getUsuarios(1, 200, "UsuarioId", "asc", { estado: "A" })
+      .then((r) => setUsuarios(r?.data ?? []))
+      .catch(() => setUsuarios([]));
+  }, [isModalOpen]);
 
   useEffect(() => {
     if (currentCaja) {
@@ -72,6 +87,7 @@ export default function CajasList({
         CajaDescripcion: currentCaja.CajaDescripcion,
         CajaMonto: currentCaja.CajaMonto,
         LocalId: (currentCaja.LocalId as number) ?? "",
+        UsuarioId: String(currentCaja.UsuarioId ?? "").trim(),
       });
     } else {
       setFormData({
@@ -82,6 +98,7 @@ export default function CajasList({
         // Preselecciona la sucursal activa (si hay una elegida); si está en
         // "Todas", queda vacío y el usuario debe elegir.
         LocalId: localActiva?.LocalId ?? "",
+        UsuarioId: "",
       });
     }
   }, [currentCaja, localActiva]);
@@ -104,6 +121,14 @@ export default function CajasList({
   const columns = [
     { key: "CajaId", label: "ID" },
     { key: "CajaDescripcion", label: "Descripción" },
+    {
+      key: "DuenoNombre",
+      label: "Cajero",
+      render: (caja: Caja) =>
+        (caja.DuenoNombre as string) || (
+          <span className="text-text-muted">Sin asignar</span>
+        ),
+    },
     {
       key: "CajaMonto",
       label: "Monto",
@@ -225,6 +250,41 @@ export default function CajasList({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block mb-1.5 text-sm font-medium text-text">
+              Cajero dueño de esta caja
+            </label>
+            <select
+              name="UsuarioId"
+              value={formData.UsuarioId}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, UsuarioId: e.target.value }))
+              }
+              className="w-full bg-surface border border-border text-text text-sm rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 p-2.5"
+            >
+              <option value="">Sin dueño (se elige al aperturar)</option>
+              {/* Se listan TODOS los cajeros activos, no solo los de esta
+                  sucursal: darle una caja acá a alguien de otra bodega es
+                  justamente cómo se habilita a que venga a cubrir. */}
+              {usuarios.map((u) => {
+                const deOtra =
+                  formData.LocalId !== "" &&
+                  Number(u.LocalId) !== Number(formData.LocalId);
+                return (
+                  <option key={u.UsuarioId} value={String(u.UsuarioId).trim()}>
+                    {u.UsuarioNombre} ({String(u.UsuarioId).trim()})
+                    {deOtra ? " — de otra sucursal" : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="mt-1.5 text-xs text-text-muted">
+              Con dueño, ese cajero abre siempre esta caja cuando trabaja en esta
+              sucursal, y no ve ninguna lista. Un cajero puede tener una caja en
+              cada sucursal: así queda habilitado para cubrir en otra bodega sin
+              que nadie tenga que tocar nada ese día.
+            </p>
           </div>
         </form>
       </Modal>

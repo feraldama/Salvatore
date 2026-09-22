@@ -2,6 +2,10 @@ const Venta = require("../models/venta.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
 const { restarUnidades, sumarUnidades } = require("../utils/stockOps");
+const {
+  resolverScopeCaja,
+  avisarAlmacenDiscrepante,
+} = require("../utils/scopeCaja");
 
 // Acepta "YYYY-MM-DD" o "YYYY-MM-DDTHH:MM:SS" (ISO con o sin hora) o
 // "DD/MM/YY" / "DD/MM/YYYY" (formato GeneXus). Preserva la hora si viene.
@@ -821,6 +825,22 @@ exports.cobrarDelivery = async (req, res) => {
       });
     }
 
+    // El cobro entra a una caja física: tiene que ser la que el cajero tiene
+    // aperturada, no una que mande el body. Acá no hay stock en juego, pero sí
+    // plata cayendo en el arqueo de otra persona o de otra sucursal.
+    const scope = await resolverScopeCaja({
+      cajaId: CajaId,
+      usuarioId: req.user?.id || UsuarioId,
+      empresaId: req.empresaId,
+      localActivoId: req.user?.isAdmin === "S" ? req.localId : null,
+      terminal: req.terminal,
+    });
+    if (!scope.ok) {
+      return res
+        .status(scope.status)
+        .json({ message: scope.message, needCaja: scope.needCaja });
+    }
+
     let fecha = null;
     if (Fecha) {
       try {
@@ -928,10 +948,12 @@ exports.confirmar = async (req, res) => {
   if (!Array.isArray(Productos) || Productos.length === 0) {
     return res.status(400).json({ message: "Se requiere al menos un producto" });
   }
-  if (!AlmacenOrigenId || !ClienteId || !CajaId || !UsuarioId) {
+  // AlmacenOrigenId ya no se exige: el almacén lo resuelve el servidor desde la
+  // caja aperturada (ver resolverScopeCaja más abajo).
+  if (!ClienteId || !CajaId || !UsuarioId) {
     return res
       .status(400)
-      .json({ message: "Faltan AlmacenOrigenId, ClienteId, CajaId o UsuarioId" });
+      .json({ message: "Faltan ClienteId, CajaId o UsuarioId" });
   }
 
   let ventaFecha;
@@ -942,26 +964,31 @@ exports.confirmar = async (req, res) => {
   }
   if (!ventaFecha) ventaFecha = new Date().toISOString().slice(0, 10);
 
-  // El almacén de origen debe pertenecer a la empresa activa. Sin este check,
-  // un admin con empresa activa B pero almacén personal de la empresa A genera
-  // una venta cruzada (EmpresaId=B, AlmacenId de A): descuenta stock de la otra
-  // empresa y queda invisible en el listado scopeado por sucursal.
-  const [almRows] = await db
-    .promise()
-    .query("SELECT EmpresaId FROM Almacen WHERE AlmacenId = ?", [
-      AlmacenOrigenId,
-    ]);
-  if (!almRows.length) {
+  // El almacén de origen NO se toma del body: se deriva de la sucursal de la
+  // caja que el usuario tiene aperturada. Así la plata y la mercadería salen
+  // siempre del mismo local — antes eran dos datos independientes del cliente y
+  // una venta podía dejar el efectivo en la caja de una sucursal y descontar el
+  // stock del depósito de otra. De paso queda garantizado que el almacén es de
+  // la empresa activa (la caja se valida contra ella).
+  const scope = await resolverScopeCaja({
+    cajaId: CajaId,
+    usuarioId: req.user?.id || UsuarioId,
+    empresaId: req.empresaId,
+    localActivoId: req.user?.isAdmin === "S" ? req.localId : null,
+    terminal: req.terminal,
+  });
+  if (!scope.ok) {
     return res
-      .status(400)
-      .json({ message: `El almacén ${AlmacenOrigenId} no existe` });
+      .status(scope.status)
+      .json({ message: scope.message, needCaja: scope.needCaja });
   }
-  if (Number(almRows[0].EmpresaId) !== Number(req.empresaId || 1)) {
-    return res.status(400).json({
-      message:
-        "El almacén de origen no pertenece a la empresa activa. Seleccioná la sucursal correcta antes de vender.",
-    });
-  }
+  avisarAlmacenDiscrepante({
+    recibido: AlmacenOrigenId,
+    derivado: scope.almacenId,
+    cajaId: scope.cajaId,
+    usuarioId: req.user?.id || UsuarioId,
+  });
+  const almacenOrigenId = scope.almacenId;
 
   const conn = await db.promise().getConnection();
   try {
@@ -1030,7 +1057,7 @@ exports.confirmar = async (req, res) => {
         ultorden,
         ventaFecha,
         ClienteId,
-        AlmacenOrigenId,
+        almacenOrigenId,
         ventaTipo,
         VentaPagoTipo || "",
         Productos.length,
@@ -1152,7 +1179,7 @@ exports.confirmar = async (req, res) => {
         const [paRows] = await conn.query(
           `SELECT ProductoAlmacenStock, ProductoAlmacenStockUnitario
            FROM productoalmacen WHERE ProductoId = ? AND AlmacenId = ?`,
-          [productoId, AlmacenOrigenId]
+          [productoId, almacenOrigenId]
         );
         let paStock = 0;
         let paStockUnit = 0;
@@ -1164,7 +1191,7 @@ exports.confirmar = async (req, res) => {
             `INSERT INTO productoalmacen
                (ProductoId, AlmacenId, ProductoAlmacenStock, ProductoAlmacenStockUnitario)
              VALUES (?, ?, 0, 0)`,
-            [productoId, AlmacenOrigenId]
+            [productoId, almacenOrigenId]
           );
         }
         const nPa = restarUnidades(paStock, paStockUnit, cantidad, cantidadCaja);
@@ -1172,7 +1199,7 @@ exports.confirmar = async (req, res) => {
           `UPDATE productoalmacen
            SET ProductoAlmacenStock = ?, ProductoAlmacenStockUnitario = ?
            WHERE ProductoId = ? AND AlmacenId = ?`,
-          [nPa.stock, nPa.stockUnitario, productoId, AlmacenOrigenId]
+          [nPa.stock, nPa.stockUnitario, productoId, almacenOrigenId]
         );
       } else {
         await conn.query(
@@ -1181,21 +1208,21 @@ exports.confirmar = async (req, res) => {
         );
         const [paExists] = await conn.query(
           `SELECT 1 FROM productoalmacen WHERE ProductoId = ? AND AlmacenId = ?`,
-          [productoId, AlmacenOrigenId]
+          [productoId, almacenOrigenId]
         );
         if (!paExists.length) {
           await conn.query(
             `INSERT INTO productoalmacen
                (ProductoId, AlmacenId, ProductoAlmacenStock, ProductoAlmacenStockUnitario)
              VALUES (?, ?, 0, 0)`,
-            [productoId, AlmacenOrigenId]
+            [productoId, almacenOrigenId]
           );
         }
         await conn.query(
           `UPDATE productoalmacen
            SET ProductoAlmacenStock = ProductoAlmacenStock - ?
            WHERE ProductoId = ? AND AlmacenId = ?`,
-          [cantidad, productoId, AlmacenOrigenId]
+          [cantidad, productoId, almacenOrigenId]
         );
       }
 
@@ -1269,10 +1296,9 @@ exports.devolucion = async (req, res) => {
   if (!Array.isArray(Productos) || Productos.length === 0) {
     return res.status(400).json({ message: "Se requiere al menos un producto" });
   }
-  if (!AlmacenOrigenId || !CajaId || !UsuarioId) {
-    return res
-      .status(400)
-      .json({ message: "Faltan AlmacenOrigenId, CajaId o UsuarioId" });
+  // Igual que en confirmar: el almacén lo resuelve el servidor desde la caja.
+  if (!CajaId || !UsuarioId) {
+    return res.status(400).json({ message: "Faltan CajaId o UsuarioId" });
   }
   const total = Number(Total2) || 0;
   if (total <= 0) {
@@ -1287,24 +1313,29 @@ exports.devolucion = async (req, res) => {
   }
   if (!ventaFecha) ventaFecha = new Date().toISOString().slice(0, 10);
 
-  // Mismo check que en confirmar: el almacén que recibe la mercadería devuelta
-  // debe ser de la empresa activa (si no, el stock se repone en la otra empresa).
-  const [almRows] = await db
-    .promise()
-    .query("SELECT EmpresaId FROM Almacen WHERE AlmacenId = ?", [
-      AlmacenOrigenId,
-    ]);
-  if (!almRows.length) {
+  // Mismo criterio que en confirmar: la mercadería devuelta vuelve al depósito
+  // de la sucursal de la caja aperturada, no a un almacén que elija el cliente.
+  // Devolver plata de una caja y reponer stock en el depósito de otra sucursal
+  // era posible mientras los dos datos venían sueltos en el body.
+  const scope = await resolverScopeCaja({
+    cajaId: CajaId,
+    usuarioId: req.user?.id || UsuarioId,
+    empresaId: req.empresaId,
+    localActivoId: req.user?.isAdmin === "S" ? req.localId : null,
+    terminal: req.terminal,
+  });
+  if (!scope.ok) {
     return res
-      .status(400)
-      .json({ message: `El almacén ${AlmacenOrigenId} no existe` });
+      .status(scope.status)
+      .json({ message: scope.message, needCaja: scope.needCaja });
   }
-  if (Number(almRows[0].EmpresaId) !== Number(req.empresaId || 1)) {
-    return res.status(400).json({
-      message:
-        "El almacén de la devolución no pertenece a la empresa activa. Seleccioná la sucursal correcta.",
-    });
-  }
+  avisarAlmacenDiscrepante({
+    recibido: AlmacenOrigenId,
+    derivado: scope.almacenId,
+    cajaId: scope.cajaId,
+    usuarioId: req.user?.id || UsuarioId,
+  });
+  const almacenOrigenId = scope.almacenId;
 
   const conn = await db.promise().getConnection();
   try {
@@ -1342,11 +1373,11 @@ exports.devolucion = async (req, res) => {
         const [paRows] = await conn.query(
           `SELECT ProductoAlmacenStock, ProductoAlmacenStockUnitario
            FROM productoalmacen WHERE ProductoId = ? AND AlmacenId = ?`,
-          [productoId, AlmacenOrigenId]
+          [productoId, almacenOrigenId]
         );
         if (!paRows.length) {
           throw new Error(
-            `Producto ${productoId} no tiene registro en almacén ${AlmacenOrigenId}`
+            `Producto ${productoId} no tiene registro en almacén ${almacenOrigenId}`
           );
         }
         const nPa = sumarUnidades(
@@ -1359,7 +1390,7 @@ exports.devolucion = async (req, res) => {
           `UPDATE productoalmacen
            SET ProductoAlmacenStock = ?, ProductoAlmacenStockUnitario = ?
            WHERE ProductoId = ? AND AlmacenId = ?`,
-          [nPa.stock, nPa.stockUnitario, productoId, AlmacenOrigenId]
+          [nPa.stock, nPa.stockUnitario, productoId, almacenOrigenId]
         );
       } else {
         await conn.query(
@@ -1370,7 +1401,7 @@ exports.devolucion = async (req, res) => {
           `UPDATE productoalmacen
            SET ProductoAlmacenStock = ProductoAlmacenStock + ?
            WHERE ProductoId = ? AND AlmacenId = ?`,
-          [cantidad, productoId, AlmacenOrigenId]
+          [cantidad, productoId, almacenOrigenId]
         );
       }
     }
