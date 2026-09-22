@@ -8,6 +8,7 @@ const authMiddleware = require("../middlewares/auth");
 router.use(authMiddleware);
 
 router.get("/actual", terminalController.actual);
+router.get("/sucursales", terminalController.sucursales);
 router.get("/", terminalController.getAll);
 router.post("/", terminalController.registrar);
 router.put("/:id", terminalController.update);

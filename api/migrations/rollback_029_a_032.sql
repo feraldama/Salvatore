@@ -1,5 +1,5 @@
 -- ============================================================
--- ROLLBACK de las migraciones 029, 030, 031 y 032
+-- ROLLBACK de las migraciones 029, 030, 031, 032 y 033
 -- ============================================================
 -- Para usar SOLO si hay que volver atrás el cambio de "caja por cajero +
 -- terminales" después de haberlo desplegado.
@@ -31,7 +31,7 @@ DROP INDEX IF EXISTS caja_usuario_local_uniq;
 DROP INDEX IF EXISTS caja_usuarioid_uniq;
 ALTER TABLE caja DROP COLUMN IF EXISTS UsuarioId;
 
--- 030: terminales
+-- 030 + 033: terminales (la columna TerminalMovil se va con la tabla)
 DROP TABLE IF EXISTS terminal;
 
 COMMIT;

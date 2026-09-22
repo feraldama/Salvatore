@@ -40,6 +40,19 @@ function validarContraTerminal(terminal, caja) {
         "Este equipo no está registrado en ninguna sucursal. Pedile a un administrador que lo registre antes de operar.",
     };
   }
+  // Equipo móvil sin sucursal resuelta: o el admin no eligió ninguna en el
+  // selector, o quien lo está usando no es admin y por lo tanto no tiene
+  // selector. En los dos casos el sistema no sabe dónde está parado el usuario,
+  // que es exactamente la situación que no se puede dejar pasar.
+  if (terminal.movil && terminal.localId == null) {
+    return {
+      ok: false,
+      status: 400,
+      needSucursal: true,
+      message:
+        "Este equipo es móvil y no tiene una sucursal seleccionada. Elegí arriba la sucursal donde estás trabajando antes de operar. Si no ves el selector, usá un equipo fijo de la sucursal.",
+    };
+  }
   if (
     terminal.localId != null &&
     Number(terminal.localId) !== Number(caja.LocalId)
@@ -48,7 +61,9 @@ function validarContraTerminal(terminal, caja) {
       ok: false,
       status: 400,
       needCaja: true,
-      message: `Estás en ${terminal.localNombre} y tu caja ("${caja.CajaDescripcion}") es de otra sucursal. Pedile a un administrador una caja de ${terminal.localNombre} para poder trabajar acá.`,
+      message: terminal.movil
+        ? `Tenés seleccionada la sucursal ${terminal.localNombre} y tu caja ("${caja.CajaDescripcion}") es de otra. Cambiá la sucursal arriba, o pedí una caja de ${terminal.localNombre}.`
+        : `Estás en ${terminal.localNombre} y tu caja ("${caja.CajaDescripcion}") es de otra sucursal. Pedile a un administrador una caja de ${terminal.localNombre} para poder trabajar acá.`,
     };
   }
   return null;

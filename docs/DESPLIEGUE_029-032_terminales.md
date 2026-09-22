@@ -1,4 +1,4 @@
-# Despliegue en producción — Caja por cajero + Terminales (migraciones 029 a 032)
+# Despliegue en producción — Caja por cajero + Terminales (migraciones 029 a 033)
 
 > Instrucciones para ejecutar en el **servidor de producción**.
 > Leer completo antes de empezar. Hay dos puntos donde el orden equivocado deja
@@ -68,9 +68,10 @@ cd <proyecto>/api
 psql -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -f migrations/029_caja_usuario.sql
 psql -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -f migrations/030_terminal.sql
 psql -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -f migrations/031_caja_usuario_por_local.sql
+psql -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -f migrations/033_terminal_movil.sql
 ```
 
-Las tres son idempotentes y transaccionales: si fallan, no dejan nada a medias.
+Las cuatro son idempotentes y transaccionales: si fallan, no dejan nada a medias.
 
 **Si alguna falla con `canceling statement due to lock timeout`:** es lo
 esperado cuando hay consultas en curso. No es un error del script — significa
@@ -191,6 +192,27 @@ Repetir en **todas** las PC desde las que se vende o se mueve caja.
 > El registro **solo puede hacerse desde la propia PC**: el identificador lo
 > genera el navegador de ese equipo. Un administrador no puede darla de alta a
 > distancia.
+
+### Notebooks que se mueven entre bodegas
+
+Para un equipo que no tiene una sucursal fija —típicamente la notebook del
+administrador, que un día está en la distribuidora y otro en la bodega central—
+marcar la casilla **"Es un equipo móvil"** al registrarlo, en lugar de elegir
+una sucursal.
+
+Un equipo móvil toma la sucursal que el administrador tenga elegida en el
+selector de sucursal, y la barra superior se la confirma en todo momento
+(*"Estás operando en CENTRAL · Notebook admin"*). Cuando se muda de bodega no hay
+que registrar nada de nuevo: alcanza con cambiar el selector.
+
+Dos cosas a tener en cuenta:
+
+- El administrador necesita **una caja propia en cada sucursal donde vaya a
+  operar** (desde la 031 un cajero puede tener una caja por sucursal). Sin caja
+  en esa bodega, el sistema lo frena.
+- **Un cajero no puede operar desde un equipo móvil**: no tiene selector de
+  sucursal, así que el sistema no sabría dónde está. Los cajeros usan siempre
+  equipos fijos.
 
 Controlar la cobertura:
 

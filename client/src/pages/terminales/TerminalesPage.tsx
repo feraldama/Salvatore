@@ -6,26 +6,35 @@ import Swal from "sweetalert2";
 import { useAuth } from "../../contexts/useAuth";
 import {
   getTerminales,
+  getSucursalesEquipos,
   updateTerminal,
   type Terminal,
+  type SucursalEquipo,
 } from "../../services/terminal.service";
 import { getTerminalId, getTerminalCodigoCorto } from "../../utils/terminal";
-import { pedirRegistroDeEquipo } from "../../utils/registrarEquipo";
+import {
+  pedirRegistroDeEquipo,
+  opcionesDeSucursal,
+} from "../../utils/registrarEquipo";
 import { formatFechaHora } from "../../utils/utils";
 import { LoadingState, ErrorState, PermissionDenied } from "../../components/common/ui";
 
 export default function TerminalesPage() {
-  const { user, locales } = useAuth();
+  const { user } = useAuth();
   const [terminales, setTerminales] = useState<Terminal[]>([]);
+  // Sucursales de TODAS las empresas: un equipo se administra desde acá sin
+  // importar qué empresa tenga elegida arriba el administrador.
+  const [sucursales, setSucursales] = useState<SucursalEquipo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const esteEquipo = getTerminalId();
 
   const cargar = useCallback(() => {
     setLoading(true);
-    getTerminales()
-      .then((t) => {
+    Promise.all([getTerminales(), getSucursalesEquipos()])
+      .then(([t, s]) => {
         setTerminales(t);
+        setSucursales(s);
         setError(null);
       })
       .catch((e) => setError((e as { message?: string })?.message || "Error"))
@@ -37,14 +46,13 @@ export default function TerminalesPage() {
   }, [cargar]);
 
   const cambiarSucursal = async (t: Terminal) => {
-    const opciones = locales
-      .map(
-        (l) =>
-          `<option value="${l.LocalId}" ${
-            Number(l.LocalId) === Number(t.LocalId) ? "selected" : ""
-          }>${l.LocalNombre}</option>`
-      )
-      .join("");
+    // La opción vacía va primero y queda elegida cuando el equipo es móvil (no
+    // tiene sucursal). Sin ella, el navegador mostraba la primera sucursal de la
+    // lista como si fuera la actual, y guardar para renombrar movía el equipo de
+    // bodega sin que nadie lo pidiera.
+    const opciones =
+      `<option value="">Sin sucursal (equipo móvil)</option>` +
+      opcionesDeSucursal(sucursales, t.LocalId);
     const { value } = await Swal.fire({
       title: t.TerminalNombre,
       html: `
@@ -52,18 +60,37 @@ export default function TerminalesPage() {
           Cambiá la sucursal solo si la computadora se mudó físicamente.
         </p>
         <input id="t-nombre" class="swal2-input" value="${t.TerminalNombre}" placeholder="Nombre del equipo">
-        <select id="t-local" class="swal2-select" style="width:80%">${opciones}</select>`,
+        <select id="t-local" class="swal2-select" style="width:80%">${opciones}</select>
+        <label class="flex items-start gap-2 text-left text-sm mt-3" style="padding:0 10%">
+          <input type="checkbox" id="t-movil" ${t.TerminalMovil === "S" ? "checked" : ""} style="margin-top:3px">
+          <span><b>Es un equipo móvil</b> (notebook que se lleva entre bodegas).
+          Usa la sucursal que el administrador tenga seleccionada.</span>
+        </label>`,
       showCancelButton: true,
       confirmButtonText: "Guardar",
       cancelButtonText: "Cancelar",
-      preConfirm: () => ({
-        TerminalNombre: (
-          document.getElementById("t-nombre") as HTMLInputElement
-        )?.value?.trim(),
-        LocalId: Number(
-          (document.getElementById("t-local") as HTMLSelectElement)?.value
-        ),
-      }),
+      preConfirm: () => {
+        const movil = (document.getElementById("t-movil") as HTMLInputElement)
+          ?.checked;
+        const localId = (
+          document.getElementById("t-local") as HTMLSelectElement
+        )?.value;
+        // Un equipo fijo sin sucursal no puede guardarse: sin ella no hay
+        // depósito contra el cual descontar.
+        if (!movil && !localId) {
+          Swal.showValidationMessage(
+            "Elegí la sucursal, o marcá que es un equipo móvil"
+          );
+          return false;
+        }
+        return {
+          TerminalNombre: (
+            document.getElementById("t-nombre") as HTMLInputElement
+          )?.value?.trim(),
+          LocalId: movil ? null : Number(localId),
+          TerminalMovil: movil ? "S" : "N",
+        };
+      },
     });
     if (!value) return;
     try {
@@ -106,13 +133,14 @@ export default function TerminalesPage() {
   };
 
   const registrarEste = async () => {
-    if (await pedirRegistroDeEquipo(locales)) cargar();
+    if (await pedirRegistroDeEquipo()) cargar();
   };
 
   if (user?.isAdmin !== "S") return <PermissionDenied />;
   if (loading) return <LoadingState message="Cargando equipos..." />;
   if (error) return <ErrorState message={error} />;
 
+  // Al editar, un equipo móvil no tiene sucursal que cambiar.
   const esteRegistrado = terminales.some(
     (t) => t.TerminalId === esteEquipo && t.TerminalEstado === "A"
   );
@@ -124,6 +152,11 @@ export default function TerminalesPage() {
         Cada equipo registrado define la sucursal contra la que vende quien lo
         usa. Un cajero que va a cubrir a otra bodega opera bien sin tocar nada:
         alcanza con que la PC de esa bodega esté registrada acá.
+      </p>
+      <p className="text-sm text-text-muted mb-4">
+        La lista muestra los equipos de <b>todas las empresas</b>, sin importar
+        cuál tengas seleccionada arriba: una PC está donde está, y si quedó
+        asignada a la empresa equivocada este es el lugar para corregirlo.
       </p>
 
       {/* El alta solo puede hacerse DESDE la PC que se registra: el
@@ -159,6 +192,7 @@ export default function TerminalesPage() {
           <thead className="bg-surface-alt text-text-muted">
             <tr>
               <th className="px-4 py-2 text-left font-medium">Equipo</th>
+              <th className="px-4 py-2 text-left font-medium">Empresa</th>
               <th className="px-4 py-2 text-left font-medium">Sucursal</th>
               <th className="px-4 py-2 text-left font-medium">Último uso</th>
               <th className="px-4 py-2 text-left font-medium">Última IP</th>
@@ -169,7 +203,7 @@ export default function TerminalesPage() {
           <tbody>
             {terminales.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-text-muted">
+                <td colSpan={7} className="px-4 py-6 text-center text-text-muted">
                   Todavía no hay equipos registrados.
                 </td>
               </tr>
@@ -189,7 +223,24 @@ export default function TerminalesPage() {
                       {t.TerminalId.slice(0, 8).toUpperCase()}
                     </div>
                   </td>
-                  <td className="px-4 py-2">{t.LocalNombre}</td>
+                  <td className="px-4 py-2">
+                    {t.TerminalMovil === "S" ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      t.EmpresaNombre || (
+                        <span className="text-danger-600">Sin empresa</span>
+                      )
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {t.TerminalMovil === "S" ? (
+                      <span className="text-text-muted">
+                        Móvil — según la sucursal elegida
+                      </span>
+                    ) : (
+                      t.LocalNombre
+                    )}
+                  </td>
                   <td className="px-4 py-2">
                     {t.TerminalUltimoUso ? formatFechaHora(t.TerminalUltimoUso) : "—"}
                   </td>

@@ -17,7 +17,7 @@ const Terminal = {
       db.query(
         `SELECT t.*, l.LocalNombre, l.EmpresaId
            FROM terminal t
-           JOIN local l ON l.LocalId = t.LocalId
+           LEFT JOIN local l ON l.LocalId = t.LocalId
           WHERE TRIM(t.TerminalId) = ? AND t.TerminalEstado = 'A'
           LIMIT 1`,
         [String(terminalId || "").trim()],
@@ -48,13 +48,45 @@ const Terminal = {
     });
   },
 
+  // Listado de administración: TODOS los equipos, de todas las empresas.
+  //
+  // No se scopea por la empresa activa a propósito. Esta es la única pantalla
+  // desde donde se corrige un equipo, y filtrarla dejaría invisible justamente
+  // al que está mal asignado — el que hay que ir a buscar. Por eso viaja además
+  // EmpresaNombre: sin ese dato la columna "Sucursal" no dice de qué empresa es
+  // la sucursal, y un equipo de otra empresa parece un equipo de la propia.
   getAll: () => {
     return new Promise((resolve, reject) => {
       db.query(
-        `SELECT t.*, l.LocalNombre
+        `SELECT t.*, l.LocalNombre, l.EmpresaId, e.EmpresaNombre
            FROM terminal t
            LEFT JOIN local l ON l.LocalId = t.LocalId
-          ORDER BY l.LocalNombre, t.TerminalNombre`,
+           LEFT JOIN empresa e ON e.EmpresaId = l.EmpresaId
+          ORDER BY e.EmpresaNombre, l.LocalNombre, t.TerminalNombre`,
+        [],
+        (err, results) => {
+          if (err) return reject(err);
+          resolve(results || []);
+        }
+      );
+    });
+  },
+
+  // Sucursales elegibles al registrar o mover un equipo: TODAS, con su empresa.
+  //
+  // No sale de /locales (que sí scopea por empresa activa) porque el equipo es
+  // una PC física: la bodega donde está no tiene por qué ser la empresa que el
+  // administrador tenga seleccionada en ese momento. Ofrecer solo las de la
+  // empresa activa es lo que hacía que una PC de la bodega CENTRAL terminara
+  // registrada en DISTRIBUIDORA, que era la única opción a la vista.
+  getSucursales: () => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        `SELECT l.LocalId, l.LocalNombre, l.EmpresaId, e.EmpresaNombre
+           FROM local l
+           LEFT JOIN empresa e ON e.EmpresaId = l.EmpresaId
+          WHERE l.LocalId <> 0
+          ORDER BY e.EmpresaNombre, l.LocalNombre`,
         [],
         (err, results) => {
           if (err) return reject(err);
@@ -66,22 +98,25 @@ const Terminal = {
 
   // Alta o reactivación. Si el equipo ya existía (se dio de baja y vuelve, o se
   // reasignó a otra sucursal), se actualiza en vez de fallar por PK duplicada.
-  registrar: ({ terminalId, nombre, localId, registradaPor }) => {
+  registrar: ({ terminalId, nombre, localId, movil, registradaPor }) => {
     return new Promise((resolve, reject) => {
       db.query(
         `INSERT INTO terminal
-           (TerminalId, TerminalNombre, LocalId, TerminalEstado, TerminalRegistradaPor)
-         VALUES (?, ?, ?, 'A', ?)
+           (TerminalId, TerminalNombre, LocalId, TerminalMovil, TerminalEstado, TerminalRegistradaPor)
+         VALUES (?, ?, ?, ?, 'A', ?)
          ON CONFLICT (TerminalId) DO UPDATE
             SET TerminalNombre = EXCLUDED.TerminalNombre,
                 LocalId = EXCLUDED.LocalId,
+                TerminalMovil = EXCLUDED.TerminalMovil,
                 TerminalEstado = 'A',
                 TerminalRegistradaPor = EXCLUDED.TerminalRegistradaPor,
                 TerminalRegistradaEn = now()`,
         [
           String(terminalId).trim(),
           String(nombre || "").trim(),
-          Number(localId),
+          // Un equipo móvil no tiene sucursal fija: la da el selector del admin.
+          movil === "S" ? null : Number(localId),
+          movil === "S" ? "S" : "N",
           registradaPor || null,
         ],
         (err) => {
@@ -92,16 +127,22 @@ const Terminal = {
     });
   },
 
-  update: (terminalId, { nombre, localId, estado }) => {
+  update: (terminalId, { nombre, localId, estado, movil }) => {
     return new Promise((resolve, reject) => {
       db.query(
         `UPDATE terminal
             SET TerminalNombre = COALESCE(?, TerminalNombre),
-                LocalId        = COALESCE(?, LocalId),
+                TerminalMovil  = COALESCE(?, TerminalMovil),
+                -- al pasar a móvil se limpia la sucursal: deja de significar algo
+                LocalId        = CASE WHEN COALESCE(?, TerminalMovil) = 'S'
+                                      THEN NULL
+                                      ELSE COALESCE(?, LocalId) END,
                 TerminalEstado = COALESCE(?, TerminalEstado)
           WHERE TRIM(TerminalId) = ?`,
         [
           nombre ?? null,
+          movil ?? null,
+          movil ?? null,
           localId != null ? Number(localId) : null,
           estado ?? null,
           String(terminalId).trim(),
@@ -113,6 +154,48 @@ const Terminal = {
         }
       );
     });
+  },
+
+  // Resuelve la SUCURSAL EFECTIVA de un equipo.
+  //
+  // Para un equipo fijo es la suya, sin vueltas. Para uno móvil (migración 033)
+  // no hay sucursal propia: la da el selector de sucursal del administrador, que
+  // viaja en el header X-Local-Id. Quien no es admin no tiene ese selector, así
+  // que desde un equipo móvil no puede operar.
+  //
+  // Vive en el modelo porque hacen falta dos consumidores: el middleware que
+  // arma el scope de cada request, y GET /terminal/actual, que responde antes de
+  // que ese middleware corra. Duplicar la regla en los dos lados llevaba a que
+  // la pantalla dijera una sucursal y el backend usara otra.
+  resolverSucursal: async (t, isAdmin, localIdHeader) => {
+    const esMovil = t.TerminalMovil === "S";
+    if (!esMovil) {
+      return {
+        movil: false,
+        localId: t.LocalId ?? null,
+        localNombre: t.LocalNombre ?? null,
+        empresaId: t.EmpresaId ?? null,
+      };
+    }
+    const elegido = parseInt(localIdHeader, 10);
+    if (!isAdmin || Number.isNaN(elegido)) {
+      return { movil: true, localId: null, localNombre: null, empresaId: null };
+    }
+    const [rows] = await db
+      .promise()
+      .query(
+        "SELECT LocalNombre, EmpresaId FROM local WHERE LocalId = ? LIMIT 1",
+        [elegido]
+      );
+    if (!rows.length) {
+      return { movil: true, localId: null, localNombre: null, empresaId: null };
+    }
+    return {
+      movil: true,
+      localId: elegido,
+      localNombre: rows[0].LocalNombre,
+      empresaId: rows[0].EmpresaId ?? null,
+    };
   },
 
   // Rastro de uso: si una PC de una sucursal empieza a aparecer desde la IP de

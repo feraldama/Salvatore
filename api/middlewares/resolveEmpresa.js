@@ -78,12 +78,22 @@ module.exports = async (req, res, next) => {
     try {
       const t = await Terminal.getActiva(terminalId);
       if (t) {
+        // EQUIPO MÓVIL (migración 033): la notebook del administrador, que anda
+        // entre las tres bodegas. No tiene sucursal fija — se la da el selector
+        // de sucursal, que solo los admins tienen. Sin selección elegida no hay
+        // sucursal, y entonces no se puede operar (sí consultar).
+        const suc = await Terminal.resolverSucursal(
+          t,
+          isAdmin,
+          req.headers["x-local-id"]
+        );
         req.terminal = {
           id: String(t.TerminalId).trim(),
           nombre: t.TerminalNombre,
-          localId: toIntOrNull(t.LocalId),
-          localNombre: t.LocalNombre,
-          empresaId: toIntOrNull(t.EmpresaId),
+          movil: suc.movil,
+          localId: suc.localId,
+          localNombre: suc.localNombre,
+          empresaId: suc.empresaId,
         };
         Terminal.marcarUso(req.terminal.id, req.ip);
       }
@@ -110,7 +120,7 @@ module.exports = async (req, res, next) => {
 
   // Para el usuario regular la terminal define además lo que ve: no tiene
   // switcher, y su scope de lectura es la bodega donde está trabajando.
-  if (req.terminal && !isAdmin) {
+  if (req.terminal && !isAdmin && req.terminal.localId != null) {
     req.empresaId = req.terminal.empresaId || 1;
     req.localId = req.terminal.localId;
     try {

@@ -205,7 +205,9 @@ module.exports = {
   "terminalregistradapor": "TerminalRegistradaPor",
   "terminalregistradaen": "TerminalRegistradaEn",
   "terminalultimouso": "TerminalUltimoUso",
-  "terminalultimaip": "TerminalUltimaIp"
+  "terminalultimaip": "TerminalUltimaIp",
+  // --- Migración 033: equipos móviles ---
+  "terminalmovil": "TerminalMovil"
 },
   pkByTable: {
   "almacen": "AlmacenId",

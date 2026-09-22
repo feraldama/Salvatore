@@ -15,7 +15,7 @@ import {
 } from "../../services/terminal.service";
 
 export default function TerminalAviso() {
-  const { user, locales } = useAuth();
+  const { user } = useAuth();
   const [estado, setEstado] = useState<TerminalActual | null>(null);
   const esAdmin = user?.isAdmin === "S";
 
@@ -30,19 +30,34 @@ export default function TerminalAviso() {
   }, [user, cargar]);
 
   const registrar = async () => {
-    if (await pedirRegistroDeEquipo(locales)) cargar();
+    if (await pedirRegistroDeEquipo()) cargar();
   };
 
   if (!user || !estado) return null;
 
   if (estado.registrada) {
+    // Equipo móvil sin sucursal elegida: no se puede operar hasta que el admin
+    // seleccione dónde está. Se avisa fuerte, porque desde afuera parece que
+    // todo está bien — el equipo ESTÁ registrado.
+    if (estado.movil && estado.localId == null) {
+      return (
+        <div className="w-full bg-amber-50 border-b border-amber-300 px-4 py-2 text-sm text-amber-900 flex items-center gap-2">
+          <span aria-hidden="true">⚠️</span>
+          <span>
+            <b>Equipo móvil sin sucursal seleccionada.</b> Elegí arriba la
+            sucursal donde estás trabajando para poder vender o mover caja.
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="w-full bg-surface-alt border-b border-border px-4 py-1 text-xs text-text-muted flex items-center gap-2">
-        <span aria-hidden="true">📍</span>
+        <span aria-hidden="true">{estado.movil ? "💻" : "📍"}</span>
         <span>
           Estás operando en{" "}
           <b className="text-text">{estado.localNombre}</b>
           {estado.nombre ? ` · ${estado.nombre}` : ""}
+          {estado.movil ? " (equipo móvil)" : ""}
         </span>
       </div>
     );
