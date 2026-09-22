@@ -1,0 +1,49 @@
+-- ============================================================
+-- MIGRACIÓN 032: ÍNDICE PARA EL ESTADO DE CAJA POR USUARIO
+-- ============================================================
+-- getEstadoAperturaPorUsuario busca la última apertura y el último cierre de un
+-- cajero con ORDER BY RegistroDiarioCajaId DESC LIMIT 1. La tabla solo tiene el
+-- índice de la PK, así que Postgres la recorre hacia atrás filtrando fila por
+-- fila hasta dar con la que corresponde: cuanto más viejo es el último cierre
+-- del cajero, más lejos hay que ir.
+--
+-- Medido sobre 508.909 filas, la consulta del último cierre tarda entre 14 y
+-- 67 ms según el cajero (67 ms para uno que nunca cerró: escanea todo).
+--
+-- Antes eso no importaba mucho porque la consulta corría solo al entrar a la
+-- pantalla de caja. Desde que scopeCaja verifica que la caja enviada sea la que
+-- el usuario tiene aperturada, corre DOS VECES EN CADA VENTA, cada devolución y
+-- cada cobro de delivery — y el costo crece con el tamaño de la tabla, que no
+-- para de crecer.
+--
+-- El índice convierte las dos consultas en una búsqueda directa.
+--
+-- OJO: se usa CREATE INDEX CONCURRENTLY para no bloquear la tabla mientras la
+-- bodega está vendiendo. CONCURRENTLY NO PUEDE correr dentro de una
+-- transacción, por eso este archivo no lleva BEGIN/COMMIT y debe ejecutarse
+-- solo, sin envolverlo en otra cosa:
+--
+--     psql -d salvatore -f 032_indice_registrodiariocaja_usuario.sql
+--
+-- Si quedara un índice en estado INVALID (la creación concurrente falló a mitad
+-- de camino), hay que borrarlo y volver a crearlo:
+--     SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+--     DROP INDEX registrodiariocaja_usuario_tipo_idx;
+-- Idempotente.
+-- ============================================================
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS registrodiariocaja_usuario_tipo_idx
+  ON registrodiariocaja (UsuarioId, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaId DESC);
+
+-- ============================================================
+-- VERIFICACIÓN
+--   EXPLAIN ANALYZE
+--   SELECT RegistroDiarioCajaId, CajaId FROM registrodiariocaja
+--    WHERE UsuarioId = 'algun_cajero' AND TipoGastoId = 1 AND TipoGastoGrupoId = 2
+--    ORDER BY RegistroDiarioCajaId DESC LIMIT 1;
+-- Debe decir "Index Scan using registrodiariocaja_usuario_tipo_idx" y no
+-- "Index Scan Backward using registrodiariocaja_pkey".
+--
+-- Que el índice haya quedado válido:
+--   SELECT indisvalid FROM pg_index WHERE indexrelid = 'registrodiariocaja_usuario_tipo_idx'::regclass;
+-- ============================================================

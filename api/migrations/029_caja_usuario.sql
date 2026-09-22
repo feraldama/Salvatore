@@ -19,6 +19,14 @@
 
 BEGIN;
 
+-- No colgarse esperando un lock: ALTER TABLE necesita ACCESS EXCLUSIVE sobre la
+-- tabla y, con la bodega vendiendo, una consulta en curso puede hacerlo esperar
+-- indefinidamente mientras BLOQUEA a todos los que llegan detrás. Con esto la
+-- migración falla rápido y se reintenta en un momento tranquilo, en vez de
+-- frenar las cajas. (Pasó en desarrollo: un SELECT olvidado tuvo la migración
+-- esperando 7 minutos.)
+SET LOCAL lock_timeout = '10s';
+
 -- ------------------------------------------------------------
 -- 1. Columna
 -- ------------------------------------------------------------
@@ -41,20 +49,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS caja_usuarioid_uniq
 -- Solo se tocan cajas cuyo dueño quedó fuera de duda. Cada UPDATE exige que la
 -- caja siga sin dueño y que el usuario siga activo, así que correr la migración
 -- dos veces no pisa una asignación hecha a mano después.
-UPDATE caja c SET UsuarioId = u.UsuarioId
-  FROM usuario u
- WHERE c.UsuarioId IS NULL AND u.UsuarioEstado = 'A'
-   AND (c.CajaId, TRIM(u.UsuarioId)) IN (
-     -- CajaId, UsuarioId          descripción        evidencia
-     (1,  'YENNIFER'),   -- CAJA YENNIFER   historial + nombre
-     (5,  'marlis'),     -- CAJA MARLIS     893 aperturas
-     (9,  'ignaruiz'),   -- CAJA IGNACIO    187 aperturas
-     (10, 'pablogonza'), -- CAJA  PABLO     historial + nombre
-     (12, 'matia'),      -- CAJA MATIAS     42 aperturas (el usuario "matias" quedó inactivo)
-     (16, 'lucas'),      -- LUCAS           historial + nombre
-     (17, 'ricardo'),    -- RICARDO         historial + nombre
-     (20, 'smarlis'),    -- SMARLIS         242 aperturas
-     (22, 'tobigonza')   -- TOBIAS          solo nombre — confianza MEDIA, revisar
+-- Cada asignación exige que coincidan el id Y LA DESCRIPCIÓN de la caja. Los
+-- ids salieron de un snapshot de producción, y si en producción la caja 5 ya no
+-- es "CAJA MARLIS" (se renombró, se borró y se recreó con otro id), asignar por
+-- id a secas le daría la caja de otra persona a un cajero. Con la descripción
+-- como segunda llave, una caja que no coincide simplemente no se toca y queda
+-- para asignarla a mano desde la pantalla de cajas.
+UPDATE caja c SET UsuarioId = v.usuario
+  FROM (VALUES
+    -- CajaId, descripción exacta,    cajero,        evidencia
+    (1,  'CAJA YENNIFER',  'YENNIFER'),   -- historial + nombre
+    (5,  'CAJA MARLIS',    'marlis'),     -- 893 aperturas
+    (9,  'CAJA IGNACIO',   'ignaruiz'),   -- 187 aperturas
+    (10, 'CAJA  PABLO',    'pablogonza'), -- historial + nombre (ojo: doble espacio)
+    (12, 'CAJA MATIAS',    'matia'),      -- 42 aperturas (el usuario "matias" quedó inactivo)
+    (16, 'LUCAS',          'lucas'),      -- historial + nombre
+    (17, 'RICARDO',        'ricardo'),    -- historial + nombre
+    (20, 'SMARLIS',        'smarlis'),    -- 242 aperturas
+    (22, 'TOBIAS',         'tobigonza')   -- solo nombre — confianza MEDIA, revisar
+  ) AS v(cajaid, descripcion, usuario)
+ WHERE c.CajaId = v.cajaid
+   AND c.UsuarioId IS NULL
+   AND c.CajaDescripcion = v.descripcion
+   AND EXISTS (
+     SELECT 1 FROM usuario u
+      WHERE TRIM(u.UsuarioId) = v.usuario AND u.UsuarioEstado = 'A'
    );
 
 -- ------------------------------------------------------------

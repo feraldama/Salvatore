@@ -27,6 +27,14 @@
 
 BEGIN;
 
+-- No colgarse esperando un lock: ALTER TABLE necesita ACCESS EXCLUSIVE sobre la
+-- tabla y, con la bodega vendiendo, una consulta en curso puede hacerlo esperar
+-- indefinidamente mientras BLOQUEA a todos los que llegan detrás. Con esto la
+-- migración falla rápido y se reintenta en un momento tranquilo, en vez de
+-- frenar las cajas. (Pasó en desarrollo: un SELECT olvidado tuvo la migración
+-- esperando 7 minutos.)
+SET LOCAL lock_timeout = '10s';
+
 DROP INDEX IF EXISTS caja_usuarioid_uniq;
 
 -- btrim es IMMUTABLE, así que se puede indexar la expresión.

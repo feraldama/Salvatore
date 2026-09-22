@@ -21,6 +21,14 @@
 
 BEGIN;
 
+-- No colgarse esperando un lock: ALTER TABLE necesita ACCESS EXCLUSIVE sobre la
+-- tabla y, con la bodega vendiendo, una consulta en curso puede hacerlo esperar
+-- indefinidamente mientras BLOQUEA a todos los que llegan detrás. Con esto la
+-- migración falla rápido y se reintenta en un momento tranquilo, en vez de
+-- frenar las cajas. (Pasó en desarrollo: un SELECT olvidado tuvo la migración
+-- esperando 7 minutos.)
+SET LOCAL lock_timeout = '10s';
+
 CREATE TABLE IF NOT EXISTS terminal (
   -- Identificador generado por el navegador (UUID v4). No es un secreto: el
   -- control real es que un admin tuvo que darlo de alta contra una sucursal.
