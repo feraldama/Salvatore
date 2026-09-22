@@ -6,12 +6,11 @@
 // cartel que frena la operación y le da al administrador el botón para
 // registrarlo en el momento, sin salir de la pantalla.
 import { useCallback, useEffect, useState } from "react";
-import Swal from "sweetalert2";
 import { useAuth } from "../../contexts/useAuth";
 import { getTerminalCodigoCorto } from "../../utils/terminal";
+import { pedirRegistroDeEquipo } from "../../utils/registrarEquipo";
 import {
   getTerminalActual,
-  registrarTerminal,
   type TerminalActual,
 } from "../../services/terminal.service";
 
@@ -31,56 +30,7 @@ export default function TerminalAviso() {
   }, [user, cargar]);
 
   const registrar = async () => {
-    const opciones = locales
-      .map((l) => `<option value="${l.LocalId}">${l.LocalNombre}</option>`)
-      .join("");
-    const { value } = await Swal.fire({
-      title: "Registrar este equipo",
-      html: `
-        <p class="text-sm text-left mb-3">
-          Elegí la sucursal donde está físicamente esta computadora. Todo lo que
-          se venda desde acá va a descontar del depósito de esa sucursal.
-        </p>
-        <input id="t-nombre" class="swal2-input" placeholder="Nombre del equipo (ej. Mostrador 1)">
-        <select id="t-local" class="swal2-select" style="width:80%">
-          <option value="">Seleccioná la sucursal</option>
-          ${opciones}
-        </select>
-        <p class="text-xs text-left mt-3 text-gray-500">
-          Código de este equipo: <b>${getTerminalCodigoCorto()}</b>
-        </p>`,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: "Registrar",
-      cancelButtonText: "Cancelar",
-      preConfirm: () => {
-        const nombre = (
-          document.getElementById("t-nombre") as HTMLInputElement
-        )?.value?.trim();
-        const localId = (
-          document.getElementById("t-local") as HTMLSelectElement
-        )?.value;
-        if (!localId) {
-          Swal.showValidationMessage("Elegí la sucursal");
-          return false;
-        }
-        return { nombre: nombre || `Equipo ${getTerminalCodigoCorto()}`, localId };
-      },
-    });
-    if (!value) return;
-    try {
-      await registrarTerminal(value.nombre, Number(value.localId));
-      cargar();
-      Swal.fire({
-        icon: "success",
-        title: "Equipo registrado",
-        timer: 1800,
-        showConfirmButton: false,
-      });
-    } catch (e) {
-      const msg = (e as { message?: string })?.message || "No se pudo registrar";
-      Swal.fire({ icon: "error", title: "Error", text: msg });
-    }
+    if (await pedirRegistroDeEquipo(locales)) cargar();
   };
 
   if (!user || !estado) return null;

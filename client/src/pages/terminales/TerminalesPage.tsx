@@ -9,7 +9,8 @@ import {
   updateTerminal,
   type Terminal,
 } from "../../services/terminal.service";
-import { getTerminalId } from "../../utils/terminal";
+import { getTerminalId, getTerminalCodigoCorto } from "../../utils/terminal";
+import { pedirRegistroDeEquipo } from "../../utils/registrarEquipo";
 import { formatFechaHora } from "../../utils/utils";
 import { LoadingState, ErrorState, PermissionDenied } from "../../components/common/ui";
 
@@ -104,9 +105,17 @@ export default function TerminalesPage() {
     }
   };
 
+  const registrarEste = async () => {
+    if (await pedirRegistroDeEquipo(locales)) cargar();
+  };
+
   if (user?.isAdmin !== "S") return <PermissionDenied />;
   if (loading) return <LoadingState message="Cargando equipos..." />;
   if (error) return <ErrorState message={error} />;
+
+  const esteRegistrado = terminales.some(
+    (t) => t.TerminalId === esteEquipo && t.TerminalEstado === "A"
+  );
 
   return (
     <div>
@@ -115,6 +124,34 @@ export default function TerminalesPage() {
         Cada equipo registrado define la sucursal contra la que vende quien lo
         usa. Un cajero que va a cubrir a otra bodega opera bien sin tocar nada:
         alcanza con que la PC de esa bodega esté registrada acá.
+      </p>
+
+      {/* El alta solo puede hacerse DESDE la PC que se registra: el
+          identificador lo genera ese navegador y no viaja de otra forma. Por eso
+          el botón aparece acá y no como una fila más de la tabla. */}
+      {!esteRegistrado && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm text-amber-900">
+            <b>Esta computadora todavía no está registrada.</b> Registrala para
+            que lo que se venda desde acá descuente del depósito correcto.
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            Código de este equipo: <b>{getTerminalCodigoCorto()}</b>
+          </p>
+          <button
+            type="button"
+            onClick={registrarEste}
+            className="mt-3 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Registrar esta computadora
+          </button>
+        </div>
+      )}
+
+      <p className="mb-4 rounded-md bg-surface-alt px-3 py-2 text-xs text-text-muted">
+        Para dar de alta otra PC hay que abrir esta pantalla <b>desde esa
+        misma PC</b>, con un usuario administrador. No se puede registrar a
+        distancia.
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-border">
