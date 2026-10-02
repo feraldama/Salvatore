@@ -320,6 +320,7 @@ const ComprasList = ({
                 }
                 opciones={opcionesProveedor}
                 placeholder="Escribí para buscar…"
+                soloAlElegir
                 onSelect={(id) =>
                   updateFilter("proveedorId", id && id !== TODOS_ID ? id : "")
                 }

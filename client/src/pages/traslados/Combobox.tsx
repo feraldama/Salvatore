@@ -20,6 +20,7 @@ export default function Combobox({
   placeholder,
   disabled,
   vacio = "Sin resultados",
+  soloAlElegir = false,
   onSelect,
 }: {
   value: number | null;
@@ -27,6 +28,10 @@ export default function Combobox({
   placeholder: string;
   disabled?: boolean;
   vacio?: string;
+  // true = borrar el texto solo filtra la lista; la selección cambia únicamente
+  // al elegir una opción. Al salir sin elegir vuelve a mostrar la que estaba.
+  // Para filtros que disparan una búsqueda en cada cambio.
+  soloAlElegir?: boolean;
   onSelect: (id: number | null) => void;
 }) {
   const [texto, setTexto] = useState("");
@@ -90,7 +95,7 @@ export default function Combobox({
           setEscribiendo(true);
           setAbierto(true);
           setMarcado(0);
-          if (!e.target.value) onSelect(null);
+          if (!e.target.value && !soloAlElegir) onSelect(null);
         }}
         onFocus={(e) => {
           e.target.select();
