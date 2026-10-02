@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DataTable from "../common/Table/DataTable";
+import Combobox from "../../pages/traslados/Combobox";
 import type {
   Compra,
   CompraProducto,
@@ -10,6 +11,8 @@ import { getAlmacenById } from "../../services/almacenes.service";
 import SearchButton from "../common/Input/SearchButton";
 import { Button } from "../common/ui";
 import { PlusIcon, FunnelIcon, XMarkIcon } from "@heroicons/react/24/outline";
+
+const TODOS_ID = 0;
 
 interface Pagination {
   totalItems: number;
@@ -92,6 +95,15 @@ const ComprasList = ({
     }
     onFiltersChange(next);
   };
+
+  // "Todos" va primero en el combobox; el id 0 no choca con ningún proveedor.
+  const opcionesProveedor = useMemo(
+    () => [
+      { id: TODOS_ID, label: "Todos" },
+      ...proveedores.map((p) => ({ id: p.ProveedorId, label: p.ProveedorNombre })),
+    ],
+    [proveedores]
+  );
 
   const clearFilters = () => {
     if (!onFiltersChange) return;
@@ -300,20 +312,18 @@ const ComprasList = ({
               <label className="block mb-1 text-xs font-medium text-text-muted">
                 Proveedor
               </label>
-              <select
-                value={activeFilters.proveedorId ?? ""}
-                onChange={(e) =>
-                  updateFilter("proveedorId", e.target.value || "")
+              <Combobox
+                value={
+                  activeFilters.proveedorId
+                    ? Number(activeFilters.proveedorId)
+                    : TODOS_ID
                 }
-                className="w-full bg-surface border border-border text-text text-sm rounded-md focus:ring-brand-500 focus:border-brand-600 p-2"
-              >
-                <option value="">Todos</option>
-                {proveedores.map((p) => (
-                  <option key={p.ProveedorId} value={p.ProveedorId}>
-                    {p.ProveedorNombre}
-                  </option>
-                ))}
-              </select>
+                opciones={opcionesProveedor}
+                placeholder="Escribí para buscar…"
+                onSelect={(id) =>
+                  updateFilter("proveedorId", id && id !== TODOS_ID ? id : "")
+                }
+              />
             </div>
             <div>
               <label className="block mb-1 text-xs font-medium text-text-muted">

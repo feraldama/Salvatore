@@ -78,6 +78,9 @@ const corsOptions = {
     "Authorization",
     "X-Empresa-Id",
     "X-Local-Id",
+    // Terminal registrada (migración 030): el cliente la manda en cada request.
+    // Si falta acá, el preflight la rechaza y el navegador bloquea TODO.
+    "X-Terminal-Id",
   ],
   credentials: true,
   maxAge: 86400,

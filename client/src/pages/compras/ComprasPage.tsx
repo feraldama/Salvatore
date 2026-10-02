@@ -136,11 +136,10 @@ export default function ComprasPage() {
       });
       setError(null);
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Error desconocido");
-      }
+      // El servicio lanza el body de la respuesta ({ message } o { error }), no
+      // un Error: sin esto el motivo real se perdía como "Error desconocido".
+      const e = err as { message?: string; error?: string } | null;
+      setError(e?.message || e?.error || "Error desconocido");
     } finally {
       setLoading(false);
     }
