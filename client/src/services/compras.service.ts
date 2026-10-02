@@ -210,7 +210,7 @@ export const getComprasPaginated = async (
     const params: { [key: string]: string | number | undefined } = {
       page,
       limit,
-      sortKey,
+      sortBy: sortKey,
       sortOrder,
     };
     applyCompraFilters(params, filters);
@@ -233,10 +233,10 @@ export const searchCompras = async (
 ): Promise<ComprasResponse> => {
   try {
     const params: { [key: string]: string | number | undefined } = {
-      search: searchTerm,
+      q: searchTerm,
       page,
       limit,
-      sortKey,
+      sortBy: sortKey,
       sortOrder,
     };
     applyCompraFilters(params, filters);
