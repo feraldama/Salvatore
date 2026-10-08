@@ -239,7 +239,9 @@ const METODO_POR_GRUPO_INGRESO = {
 // como los cobros de crédito posteriores ("Cobro Crédito ... N°:"), así el
 // desglose acompaña a VentaEntrega, que también crece con esos cobros.
 // `where` son las condiciones sobre `v` (alias de venta) del reporte que lo usa.
-const desglosePagosSql = (where) => `
+// sinCobrosCredito: deja afuera los "Cobro Crédito ... N°:" y queda solo lo
+// pagado al confirmar la venta.
+const desglosePagosSql = (where, { sinCobrosCredito = false } = {}) => `
   SELECT CAST(
            substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
          ) AS venta_id,
@@ -252,6 +254,7 @@ const desglosePagosSql = (where) => `
          )
    WHERE r.TipoGastoId = 2
      AND r.TipoGastoGrupoId IN (1, 3, 4, 5, 6, 7, 8, 9, 10)
+     ${sinCobrosCredito ? "AND NOT (r.RegistroDiarioCajaDetalle LIKE 'Cobro Crédito%')" : ""}
      AND ${where}
    GROUP BY venta_id, r.TipoGastoGrupoId`;
 
@@ -1718,6 +1721,10 @@ const Venta = {
   // período (no tocan totalVendido) pero sí dinero cobrado en él, así que suman
   // en totales.porMetodo — sin esto, cobrar por transferencia un crédito del
   // mes pasado no aparecía en ninguna parte del reporte.
+  // `resumen` es el cierre que pide el cliente: lo cobrado AL VENDER separado
+  // en envío / venta en puerta × método (y su total), más los créditos
+  // cobrados en el período (por fecha de cobro, aparte) y el crédito pendiente
+  // de las ventas del período.
   getVentasPorTipo: async ({ empresaId, fechaDesde, fechaHasta }) => {
     const pe = db.promise();
     const cond = ["v.EmpresaId = ?"];
@@ -1747,6 +1754,67 @@ const Venta = {
     // desglosePagosSql / armarPagosPorVenta arriba).
     const [pagosRows] = await pe.query(desglosePagosSql(where), params);
     const pagosPorVenta = armarPagosPorVenta(pagosRows);
+    // Lo mismo pero solo lo pagado al confirmar la venta (sin cobros de
+    // crédito posteriores): base del resumen envío / venta en puerta.
+    const [pagosVentaRows] = await pe.query(
+      desglosePagosSql(where, { sinCobrosCredito: true }),
+      params
+    );
+    const pagosVentaPorVenta = armarPagosPorVenta(pagosVentaRows);
+
+    // Créditos cobrados en el período: todos los "Cobro Crédito" con fecha de
+    // COBRO dentro del período, sea cual sea la fecha de la venta. Van aparte
+    // del resumen envío / puerta (que solo toma lo pagado al vender).
+    const ccCond = ["v.EmpresaId = ?"];
+    const ccParams = [Number(empresaId)];
+    if (fechaDesde) {
+      ccCond.push("DATE(r.RegistroDiarioCajaFecha) >= ?");
+      ccParams.push(fechaDesde);
+    }
+    if (fechaHasta) {
+      ccCond.push("DATE(r.RegistroDiarioCajaFecha) <= ?");
+      ccParams.push(fechaHasta);
+    }
+    const [creditosRows] = await pe.query(
+      `SELECT r.TipoGastoGrupoId AS grupo,
+              COUNT(*) AS cantidad,
+              COALESCE(SUM(r.RegistroDiarioCajaMonto), 0) AS total
+         FROM registrodiariocaja r
+         JOIN venta v
+           ON v.VentaId = CAST(
+                substring(r.RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER
+              )
+        WHERE r.TipoGastoId = 2
+          AND r.TipoGastoGrupoId IN (1, 3, 4, 5, 6, 7, 8, 9, 10)
+          AND r.RegistroDiarioCajaDetalle LIKE 'Cobro Crédito%'
+          AND ${ccCond.join(" AND ")}
+        GROUP BY r.TipoGastoGrupoId`,
+      ccParams
+    );
+    const creditosCobrados = {
+      cantidad: 0,
+      total: 0,
+      porMetodo: { efectivo: 0, pos: 0, voucher: 0, transferencia: 0 },
+    };
+    for (const c of creditosRows) {
+      const metodo = METODO_POR_GRUPO_INGRESO[Number(c.grupo)];
+      if (!metodo) continue;
+      const monto = Number(c.total) || 0;
+      creditosCobrados.cantidad += Number(c.cantidad) || 0;
+      creditosCobrados.total += monto;
+      creditosCobrados.porMetodo[metodo] += monto;
+    }
+
+    // Cobrado al vender, separado por canal: envío (EsEnvio='S') y venta en
+    // puerta (mostrador). Se arma en el loop de ventas de abajo.
+    const nuevoMetodo = () => ({ efectivo: 0, pos: 0, voucher: 0, transferencia: 0 });
+    const resumen = {
+      envio: nuevoMetodo(),
+      puerta: nuevoMetodo(),
+      total: nuevoMetodo(),
+      creditosCobrados,
+      creditoPendiente: 0,
+    };
 
     // Cobros de crédito hechos DENTRO del período sobre ventas de FUERA del
     // período. El desglose de arriba se filtra por la fecha de la VENTA, así
@@ -1867,6 +1935,18 @@ const Venta = {
       g.porMetodo.pos += pagos.pos;
       g.porMetodo.voucher += pagos.voucher;
       g.porMetodo.transferencia += pagos.transferencia;
+
+      // Resumen por canal. Sin movimientos atados en caja (ventas migradas)
+      // se usa el fallback de desgloseDeVenta.
+      const id = Number(r.VentaId);
+      const pagosVenta =
+        pagosVentaPorVenta.get(id) ?? (pagosPorVenta.has(id) ? nuevoMetodo() : pagos);
+      const canal = r.EsEnvio === "S" ? resumen.envio : resumen.puerta;
+      for (const m of ["efectivo", "pos", "voucher", "transferencia"]) {
+        canal[m] += pagosVenta[m];
+        resumen.total[m] += pagosVenta[m];
+      }
+      resumen.creditoPendiente += pendiente;
     }
 
     const ORDEN_TIPOS = ["ENVIO", "ENVIO_TR", "CO", "CR", "PO", "TR"];
@@ -1907,7 +1987,7 @@ const Venta = {
     totales.porMetodo.voucher += cobrosPrevios.porMetodo.voucher;
     totales.porMetodo.transferencia += cobrosPrevios.porMetodo.transferencia;
 
-    return { grupos: lista, totales, cobrosPrevios };
+    return { grupos: lista, totales, cobrosPrevios, resumen };
   },
 
   // Reporte "Cobros y ganancia por día" — criterio de lo PERCIBIDO (base caja):

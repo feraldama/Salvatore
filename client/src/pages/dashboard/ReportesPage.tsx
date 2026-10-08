@@ -2093,27 +2093,91 @@ const ReportesPage: React.FC = () => {
     y += 1;
     doc.setFontSize(10);
     doc.text(
-      `Total general: ${formatMiles(ventasPorTipo.totales.totalVendido)} | ${ventasPorTipo.totales.cantidad} venta(s) | Pendiente: ${formatMiles(
-        ventasPorTipo.totales.totalPendiente,
-      )}`,
+      `Total general: ${formatMiles(ventasPorTipo.totales.totalVendido)} | ${ventasPorTipo.totales.cantidad} venta(s)`,
       14,
       y,
     );
-    y += 5;
-    const pm = ventasPorTipo.totales.porMetodo;
-    const partesMetodo = [
-      `Efectivo: ${formatMiles(pm.efectivo)}`,
-      `Transferencia: ${formatMiles(pm.transferencia)}`,
-    ];
-    if (pm.pos > 0) partesMetodo.push(`POS: ${formatMiles(pm.pos)}`);
-    if (pm.voucher > 0)
-      partesMetodo.push(`Voucher: ${formatMiles(pm.voucher)}`);
-    doc.text(`Cobrado por método: ${partesMetodo.join(" | ")}`, 14, y);
-    if (cp && cp.cantidad > 0) {
+    y += 4;
+
+    const rs = ventasPorTipo.resumen;
+    if (rs) {
+      const conPos = rs.total.pos > 0;
+      const conVoucher = rs.total.voucher > 0;
+      const fila = (label: string, m: typeof rs.total) => [
+        label,
+        formatMiles(m.efectivo),
+        formatMiles(m.transferencia),
+        ...(conPos ? [formatMiles(m.pos)] : []),
+        ...(conVoucher ? [formatMiles(m.voucher)] : []),
+      ];
+      autoTable(doc, {
+        head: [
+          [
+            "Cobrado en ventas",
+            "Efectivo",
+            "Transferencia",
+            ...(conPos ? ["POS"] : []),
+            ...(conVoucher ? ["Voucher"] : []),
+          ],
+        ],
+        body: [fila("Envío", rs.envio), fila("Venta en puerta", rs.puerta)],
+        foot: [fila("Total", rs.total)],
+        startY: y,
+        theme: "grid",
+        headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+        footStyles: {
+          fillColor: [219, 234, 254],
+          textColor: [30, 64, 175],
+          fontStyle: "bold",
+        },
+        styles: { fontSize: 8 },
+        columnStyles: {
+          1: { halign: "right" as const },
+          2: { halign: "right" as const },
+          3: { halign: "right" as const },
+          4: { halign: "right" as const },
+        },
+        tableWidth: 120,
+        margin: { left: 14, right: 14 },
+      });
+      y =
+        (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
+          .finalY + 6;
+
+      if (y > doc.internal.pageSize.getHeight() - 20) {
+        doc.addPage();
+        y = 14;
+      }
+      const cc = rs.creditosCobrados;
+      const partesCc = [
+        cc.porMetodo.efectivo > 0 &&
+          `Efectivo: ${formatMiles(cc.porMetodo.efectivo)}`,
+        cc.porMetodo.transferencia > 0 &&
+          `Transferencia: ${formatMiles(cc.porMetodo.transferencia)}`,
+        cc.porMetodo.pos > 0 && `POS: ${formatMiles(cc.porMetodo.pos)}`,
+        cc.porMetodo.voucher > 0 &&
+          `Voucher: ${formatMiles(cc.porMetodo.voucher)}`,
+      ].filter(Boolean) as string[];
+      doc.setFontSize(10);
+      doc.text(
+        `Créditos cobrados: ${formatMiles(cc.total)}${
+          partesCc.length ? ` (${partesCc.join(" | ")})` : ""
+        }`,
+        14,
+        y,
+      );
+      y += 5;
+      doc.text(
+        `Ventas a crédito ${
+          fechaDesdeTipoV === fechaHastaTipoV ? "del día" : "del período"
+        } pendiente: ${formatMiles(rs.creditoPendiente)}`,
+        14,
+        y,
+      );
       y += 5;
       doc.setFontSize(8);
       doc.text(
-        `Incluye ${formatMiles(cp.total)} cobrado en el período por créditos de ventas anteriores.`,
+        "Los créditos cobrados se cuentan por fecha de cobro y no están sumados en el total cobrado en ventas.",
         14,
         y,
       );
@@ -3401,74 +3465,130 @@ const ReportesPage: React.FC = () => {
                         {ventasPorTipo.totales.cantidad}
                       </span>
                     </div>
-                    <div>
-                      <span className="text-slate-500">Pendiente:</span>{" "}
-                      <span className="font-mono font-medium">
-                        {formatMiles(ventasPorTipo.totales.totalPendiente)}
-                      </span>
-                    </div>
                   </div>
-                  {ventasPorTipo.totales.porMetodo && (
-                    <>
-                      <h3 className="font-semibold text-slate-800 mt-4 mb-3">
-                        COBRADO POR MÉTODO
-                      </h3>
-                      {(ventasPorTipo.cobrosPrevios?.cantidad ?? 0) > 0 && (
-                        <p className="text-xs text-slate-500 -mt-2 mb-3">
-                          Incluye{" "}
-                          {formatMiles(ventasPorTipo.cobrosPrevios!.total)}{" "}
-                          cobrado en el período por créditos de ventas
-                          anteriores.
-                        </p>
-                      )}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
-                        <div>
-                          <span className="text-slate-500">Efectivo:</span>{" "}
-                          <span className="font-mono font-medium">
-                            {formatMiles(
-                              ventasPorTipo.totales.porMetodo.efectivo,
-                            )}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">
-                            Transferencia:
-                          </span>{" "}
-                          <span className="font-mono font-medium">
-                            {formatMiles(
-                              ventasPorTipo.totales.porMetodo.transferencia,
-                            )}
-                          </span>
-                        </div>
-                        {ventasPorTipo.totales.porMetodo.pos > 0 && (
-                          <div>
-                            <span className="text-slate-500">POS:</span>{" "}
-                            <span className="font-mono font-medium">
-                              {formatMiles(ventasPorTipo.totales.porMetodo.pos)}
-                            </span>
+                  {ventasPorTipo.resumen &&
+                    (() => {
+                      const rs = ventasPorTipo.resumen;
+                      const cc = rs.creditosCobrados;
+                      const conPos = rs.total.pos > 0;
+                      const conVoucher = rs.total.voucher > 0;
+                      const filas = [
+                        { label: "Envío", m: rs.envio, total: false },
+                        { label: "Venta en puerta", m: rs.puerta, total: false },
+                        { label: "Total", m: rs.total, total: true },
+                      ];
+                      const delDia =
+                        fechaDesdeTipoV === fechaHastaTipoV
+                          ? "del día"
+                          : "del período";
+                      return (
+                        <>
+                          <h3 className="font-semibold text-slate-800 mt-4 mb-2">
+                            COBRADO EN VENTAS
+                          </h3>
+                          <div className="overflow-x-auto">
+                            <table className="text-sm min-w-90">
+                              <thead>
+                                <tr className="text-slate-500">
+                                  <th className="text-left font-normal py-1 pr-6"></th>
+                                  <th className="text-right font-normal py-1 px-3">
+                                    Efectivo
+                                  </th>
+                                  <th className="text-right font-normal py-1 px-3">
+                                    Transferencia
+                                  </th>
+                                  {conPos && (
+                                    <th className="text-right font-normal py-1 px-3">
+                                      POS
+                                    </th>
+                                  )}
+                                  {conVoucher && (
+                                    <th className="text-right font-normal py-1 px-3">
+                                      Voucher
+                                    </th>
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filas.map((f) => (
+                                  <tr
+                                    key={f.label}
+                                    className={
+                                      f.total
+                                        ? "border-t border-slate-300 font-semibold text-slate-900"
+                                        : "text-slate-700"
+                                    }
+                                  >
+                                    <td className="py-1 pr-6">{f.label}</td>
+                                    <td className="py-1 px-3 text-right font-mono">
+                                      {formatMiles(f.m.efectivo)}
+                                    </td>
+                                    <td className="py-1 px-3 text-right font-mono">
+                                      {formatMiles(f.m.transferencia)}
+                                    </td>
+                                    {conPos && (
+                                      <td className="py-1 px-3 text-right font-mono">
+                                        {formatMiles(f.m.pos)}
+                                      </td>
+                                    )}
+                                    {conVoucher && (
+                                      <td className="py-1 px-3 text-right font-mono">
+                                        {formatMiles(f.m.voucher)}
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
-                        )}
-                        {ventasPorTipo.totales.porMetodo.voucher > 0 && (
-                          <div>
-                            <span className="text-slate-500">Voucher:</span>{" "}
-                            <span className="font-mono font-medium">
-                              {formatMiles(
-                                ventasPorTipo.totales.porMetodo.voucher,
+
+                          <h3 className="font-semibold text-slate-800 mt-4 mb-2">
+                            CRÉDITOS
+                          </h3>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <span className="text-slate-500">
+                                Créditos cobrados:
+                              </span>{" "}
+                              <span className="font-mono font-medium">
+                                {formatMiles(cc.total)}
+                              </span>
+                              {cc.total > 0 && (
+                                <span className="text-slate-500">
+                                  {" "}
+                                  (
+                                  {[
+                                    cc.porMetodo.efectivo > 0 &&
+                                      `Efectivo: ${formatMiles(cc.porMetodo.efectivo)}`,
+                                    cc.porMetodo.transferencia > 0 &&
+                                      `Transferencia: ${formatMiles(cc.porMetodo.transferencia)}`,
+                                    cc.porMetodo.pos > 0 &&
+                                      `POS: ${formatMiles(cc.porMetodo.pos)}`,
+                                    cc.porMetodo.voucher > 0 &&
+                                      `Voucher: ${formatMiles(cc.porMetodo.voucher)}`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                  )
+                                </span>
                               )}
-                            </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">
+                                Ventas a crédito {delDia} pendiente:
+                              </span>{" "}
+                              <span className="font-mono font-medium">
+                                {formatMiles(rs.creditoPendiente)}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                        <div>
-                          <span className="text-slate-500">
-                            Crédito pendiente:
-                          </span>{" "}
-                          <span className="font-mono font-medium">
-                            {formatMiles(ventasPorTipo.totales.totalPendiente)}
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                          <p className="text-xs text-slate-500 mt-2">
+                            Los créditos cobrados se cuentan por fecha de cobro
+                            y no están sumados en el total cobrado en ventas.
+                          </p>
+                        </>
+                      );
+                    })()}
                 </div>
               )}
             </div>
