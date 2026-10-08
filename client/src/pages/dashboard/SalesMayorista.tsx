@@ -25,6 +25,7 @@ import ClienteModal from "../../components/common/ClienteModal";
 import type { Cliente } from "../../components/common/ClienteFormModal";
 import type { jsPDF as JsPdf } from "jspdf";
 import { loadPdf } from "../../utils/lazyPdf";
+import { textoMovil } from "../../utils/ticket";
 import {
   cargarFuenteTicket,
   COLUMNAS_TICKET,
@@ -846,6 +847,12 @@ export default function SalesMayorista() {
     ];
     const metodosUsados = metodosPago.filter(([, monto]) => monto > 0);
 
+    // Vehículo elegido para el envío (se limpia recién después de imprimir).
+    const movilEnvio =
+      tipoVenta === "ENVIO" && vehiculoEnvioId !== ""
+        ? vehiculos.find((v) => v.id === Number(vehiculoEnvioId))
+        : undefined;
+
     // Tamaño de la cantidad. Va más grande que el resto para que se lea de un
     // saltazo, pero en 10pt y no en 13: era ella la que marcaba el alto de la
     // fila de números y costaba 1,3 mm por ítem.
@@ -961,6 +968,11 @@ export default function SalesMayorista() {
         } - ITEMS: ${formatMiles(items.length)}`,
         { center: true },
       );
+      // Móvil que lleva el envío (a pedido del cliente). Renglón propio:
+      // pegado al tipo de venta no entra en los 62 mm.
+      if (movilEnvio) {
+        linea(textoMovil(movilEnvio), { center: true });
+      }
 
       if (metodosUsados.length === 0) {
         linea("Forma de Pago: -", { center: true });

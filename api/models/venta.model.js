@@ -413,7 +413,21 @@ const Venta = {
       costoDelivery = Number(delRows[0]?.costo_delivery) || 0;
     }
 
-    return { venta: v, productos, pagos, costoDelivery };
+    // Móvil asignado al envío (venta_envio -> flota_vehiculo). null si la
+    // venta no es envío o no tiene vehículo.
+    let movil = null;
+    if (v.EsEnvio === "S") {
+      const [movRows] = await pe.query(
+        `SELECT fv.chapa, fv.marca, fv.modelo
+           FROM venta_envio ve
+           JOIN flota_vehiculo fv ON fv.id = ve.vehiculo_id
+          WHERE ve.venta_id = ?`,
+        [ventaId]
+      );
+      movil = movRows[0] ?? null;
+    }
+
+    return { venta: v, productos, pagos, costoDelivery, movil };
   },
 
   create: (data) => {

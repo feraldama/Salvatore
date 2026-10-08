@@ -21,7 +21,7 @@ import {
   PermissionDenied,
 } from "../../components/common/ui";
 import { formatCurrency, formatFechaHora } from "../../utils/utils";
-import { generarTicketVentaPDF } from "../../utils/ticket";
+import { generarTicketVentaPDF, textoMovil } from "../../utils/ticket";
 import { useAuth } from "../../contexts/useAuth";
 import Swal from "sweetalert2";
 
@@ -306,7 +306,7 @@ export default function VentasPage() {
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading(),
       });
-      const { venta: cab, productos, pagos, costoDelivery } =
+      const { venta: cab, productos, pagos, costoDelivery, movil } =
         await getTicketVenta(venta.VentaId);
 
       await generarTicketVentaPDF(
@@ -335,6 +335,7 @@ export default function VentasPage() {
           pagos,
           costoDelivery: Number(costoDelivery) || 0,
           total: Number(cab.Total),
+          movil: movil ? textoMovil(movil) : null,
         },
       );
       Swal.close();

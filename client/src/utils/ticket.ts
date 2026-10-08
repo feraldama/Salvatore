@@ -68,7 +68,19 @@ export interface TicketVenta {
   /** Costo del reparto (solo delivery). Sale como una línea más. */
   costoDelivery: number;
   total: number;
+  /** Móvil asignado (solo envío), ya formateado. Ver `textoMovil`. */
+  movil?: string | null;
 }
+
+/** "Móvil: ABC 123 - Marca Modelo", el renglón del vehículo de un envío. */
+export const textoMovil = (v: {
+  chapa: string;
+  marca?: string | null;
+  modelo?: string | null;
+}) => {
+  const desc = [v.marca, v.modelo].filter(Boolean).join(" ");
+  return `Móvil: ${v.chapa}${desc ? ` - ${desc}` : ""}`;
+};
 
 const ETIQUETA_TIPO: Record<TicketVenta["tipo"], string> = {
   CONTADO: "Contado",
@@ -236,6 +248,11 @@ export async function generarTicketVentaPDF(
       )}`,
       { center: true },
     );
+    // Móvil que lleva el envío (a pedido del cliente). Renglón propio: pegado
+    // al tipo de venta no entra en los 62 mm.
+    if (venta.movil) {
+      linea(venta.movil, { center: true });
+    }
 
     // Métodos de pago de esta venta (solo los que tienen monto). Débito y
     // crédito van juntos como POS: la caja los registra en un único grupo.

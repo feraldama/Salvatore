@@ -156,6 +156,12 @@ export interface TicketVentaResponse {
     cuentaCliente: number;
   };
   costoDelivery: number;
+  /** Vehículo asignado al envío; null si no es envío o no tiene. */
+  movil?: {
+    chapa: string;
+    marca: string | null;
+    modelo: string | null;
+  } | null;
 }
 
 export const getTicketVenta = async (
