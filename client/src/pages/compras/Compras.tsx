@@ -4,7 +4,11 @@ import "../../App.css";
 import {
   getProductosPaginated,
   searchProductos,
+  createProducto,
 } from "../../services/productos.service";
+import ProductoFormModal, {
+  type Producto as ProductoFormData,
+} from "../../components/products/ProductoFormModal";
 import Pagination from "../../components/common/Pagination";
 import ProductCard from "../../components/products/ProductCard";
 import { useAuth } from "../../contexts/useAuth";
@@ -39,6 +43,10 @@ import type { Caja } from "../../types";
 
 export default function Compras() {
   const puedeLeerCompras = usePermiso("NUEVACOMPRA", "leer");
+  const puedeCrearProducto = usePermiso("PRODUCTOS", "crear");
+  // Alta de producto sin salir de la compra (pasa seguido que a mitad de la
+  // carga aparece un producto que todavía no existe).
+  const [showProductoModal, setShowProductoModal] = useState(false);
   const [carrito, setCarrito] = useState<
     {
       id: number;
@@ -367,6 +375,52 @@ export default function Compras() {
       });
     }
   };
+
+  const handleCreateProducto = async (productoData: ProductoFormData) => {
+    try {
+      const response = await createProducto(productoData);
+      const nuevo = response.data;
+      setShowProductoModal(false);
+      // Se agrega directo al carrito: el costo, si se cargó, queda como precio
+      // inicial; si no, en 0 para que se ingrese el total de la factura.
+      agregarProducto({
+        id: Number(nuevo.ProductoId),
+        nombre: productoData.ProductoNombre,
+        precio: Number(productoData.ProductoPrecioPromedio) || 0,
+        imagen: resolveProductoImagen(
+          nuevo.ProductoId,
+          !!productoData.ProductoImagen
+        ),
+        stock: 0,
+        precioVentaActual: Number(productoData.ProductoPrecioVenta) || 0,
+      });
+      setBusqueda("");
+      fetchProductos();
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: "Producto creado y agregado a la compra",
+        showConfirmButton: false,
+        timer: 2000,
+      });
+    } catch (error) {
+      const err = error as { message?: string };
+      Swal.fire({
+        icon: "error",
+        title: "Error al crear producto",
+        text: err?.message || "Hubo un problema al crear el producto",
+      });
+    }
+  };
+
+  // Lo que se estaba buscando precarga el alta: dígitos = código, si no nombre.
+  const valoresInicialesProducto = (() => {
+    const termino = busqueda.trim();
+    if (!termino) return undefined;
+    return /^\d+$/.test(termino)
+      ? { ProductoCodigo: termino }
+      : { ProductoNombre: termino.toUpperCase() };
+  })();
 
   const sendRequest = async () => {
     if (!proveedorSeleccionado) {
@@ -918,6 +972,15 @@ export default function Compras() {
         </div>
       </div>
 
+      <ProductoFormModal
+        isOpen={showProductoModal}
+        onClose={() => setShowProductoModal(false)}
+        currentProduct={null}
+        onSubmit={handleCreateProducto}
+        ocultarStock
+        valoresIniciales={valoresInicialesProducto}
+      />
+
       {/* Lado Derecho */}
       <div className="flex-[2] p-4">
         <div className="flex items-center mb-4 justify-between">
@@ -930,6 +993,15 @@ export default function Compras() {
               hideButton={true}
               inputRef={searchInputRef}
             />
+            {puedeCrearProducto && (
+              <button
+                type="button"
+                onClick={() => setShowProductoModal(true)}
+                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-4 py-2 transition cursor-pointer"
+              >
+                + Nuevo producto
+              </button>
+            )}
           </div>
           {user && (
             <div className="ml-6 font-semibold text-[#222] text-[16px] flex items-center gap-2">
