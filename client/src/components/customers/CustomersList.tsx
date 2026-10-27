@@ -84,6 +84,7 @@ export default function CustomersList({
     { key: "ClienteRUC", label: "RUC" },
     { key: "ClienteNombre", label: "Nombre" },
     { key: "ClienteApellido", label: "Apellido" },
+    { key: "ClienteRazonSocial", label: "Razón social" },
     { key: "ClienteDireccion", label: "Dirección" },
     { key: "ClienteTelefono", label: "Teléfono" },
     { key: "ClienteTipo", label: "Tipo" },

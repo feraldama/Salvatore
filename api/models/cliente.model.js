@@ -17,6 +17,16 @@ function buildClienteFiltersWhere(filters = {}) {
   return { conditions, params };
 }
 
+// Razón social con la que sale la factura. Puede diferir del nombre comercial
+// (ej. "BODEGA LOS AMIGOS" factura a nombre de "FERNANDO ALDAMA"); si viene
+// vacía se usa nombre + apellido. La columna es varchar(61).
+function razonSocialDe(clienteData) {
+  const rs =
+    String(clienteData.ClienteRazonSocial || "").trim() ||
+    `${clienteData.ClienteNombre || ""} ${clienteData.ClienteApellido || ""}`.trim();
+  return rs.toUpperCase().slice(0, 61);
+}
+
 const Cliente = {
   getAll: (empresaId) => {
     return new Promise((resolve, reject) => {
@@ -133,13 +143,14 @@ const Cliente = {
       const searchQuery = `
         SELECT * FROM clientes
         WHERE (CONCAT(ClienteNombre, ' ', ClienteApellido) LIKE ?
+          OR ClienteRazonSocial LIKE ?
           OR ClienteRUC LIKE ?
           OR ClienteId LIKE ?)${filtersAndClause}
         ORDER BY ${sortField} ${order}
         LIMIT ? OFFSET ?
       `;
       const searchValue = `%${term}%`;
-      const searchParams = [searchValue, searchValue, searchValue];
+      const searchParams = [searchValue, searchValue, searchValue, searchValue];
 
       db.query(
         searchQuery,
@@ -150,6 +161,7 @@ const Cliente = {
           const countQuery = `
             SELECT COUNT(*) as total FROM clientes
             WHERE (CONCAT(ClienteNombre, ' ', ClienteApellido) LIKE ?
+              OR ClienteRazonSocial LIKE ?
               OR ClienteRUC LIKE ?
               OR ClienteId LIKE ?)${filtersAndClause}
           `;
@@ -176,6 +188,7 @@ const Cliente = {
       const query = `
         INSERT INTO clientes (
           ClienteRUC,
+          ClienteRazonSocial,
           ClienteNombre,
           ClienteApellido,
           ClienteDireccion,
@@ -184,10 +197,11 @@ const Cliente = {
           UsuarioId,
           EmpresaId,
           VendedorId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
         clienteData.ClienteRUC || "",
+        razonSocialDe(clienteData),
         clienteData.ClienteNombre,
         clienteData.ClienteApellido || "",
         clienteData.ClienteDireccion || "",
@@ -210,6 +224,7 @@ const Cliente = {
       let values = [];
       const camposActualizables = [
         "ClienteRUC",
+        "ClienteRazonSocial",
         "ClienteNombre",
         "ClienteApellido",
         "ClienteDireccion",
@@ -225,6 +240,8 @@ const Cliente = {
           // Aplicar trim solo al UsuarioId si es string
           if (campo === "UsuarioId" && typeof clienteData[campo] === "string") {
             values.push(clienteData[campo].trim());
+          } else if (campo === "ClienteRazonSocial") {
+            values.push(razonSocialDe(clienteData));
           } else {
             values.push(clienteData[campo]);
           }

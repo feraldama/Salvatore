@@ -8,6 +8,7 @@ export interface Cliente {
   id?: string | number;
   ClienteId?: string | number;
   ClienteRUC: string;
+  ClienteRazonSocial?: string;
   ClienteNombre: string;
   ClienteApellido: string;
   ClienteDireccion: string;
@@ -26,8 +27,12 @@ interface ClienteFormModalProps {
   currentUserId?: string;
 }
 
+const nombreCompleto = (c: Pick<Cliente, "ClienteNombre" | "ClienteApellido">) =>
+  `${c.ClienteNombre || ""} ${c.ClienteApellido || ""}`.trim();
+
 const emptyForm = (userId: string): Cliente => ({
   ClienteRUC: "",
+  ClienteRazonSocial: "",
   ClienteNombre: "",
   ClienteApellido: "",
   ClienteDireccion: "",
@@ -50,6 +55,9 @@ export default function ClienteFormModal({
   // aparte: se sugiere el calculado, pero el usuario puede pisarlo a mano.
   const [dv, setDv] = useState("");
   const [dvManual, setDvManual] = useState(false);
+  // Razón social de la factura: sigue a nombre + apellido hasta que se edita a
+  // mano (ej. comercio "BODEGA LOS AMIGOS" que factura como "FERNANDO ALDAMA").
+  const [rsManual, setRsManual] = useState(false);
 
   const { empresaActiva } = useAuth();
 
@@ -61,16 +69,23 @@ export default function ClienteFormModal({
   useEffect(() => {
     if (currentCliente) {
       const { base, dv: dvGuardado } = separarRUC(currentCliente.ClienteRUC);
-      setFormData({ ...currentCliente, ClienteRUC: base });
+      const rs = (currentCliente.ClienteRazonSocial || "").trim();
+      setFormData({
+        ...currentCliente,
+        ClienteRUC: base,
+        ClienteRazonSocial: rs || nombreCompleto(currentCliente),
+      });
       setDv(dvGuardado || calcularDV(base));
       // Sólo se considera manual si el DV guardado difiere del calculado; si
       // coincide se sigue recalculando al cambiar la base.
       setDvManual(!!dvGuardado && dvGuardado !== calcularDV(base));
+      setRsManual(!!rs && rs !== nombreCompleto(currentCliente));
     } else {
       const userId = currentUserId || (user?.id ? String(user.id).trim() : "");
       setFormData(emptyForm(userId));
       setDv("");
       setDvManual(false);
+      setRsManual(false);
     }
   }, [currentCliente, currentUserId, user]);
 
@@ -80,13 +95,24 @@ export default function ClienteFormModal({
     const { name, value } = e.target;
     // Mientras el DV no se haya tocado a mano, sigue al RUC.
     if (name === "ClienteRUC" && !dvManual) setDv(calcularDV(value));
-    setFormData((prev) => ({
-      ...prev,
-      [name]:
-        name === "ClienteNombre" || name === "ClienteApellido"
-          ? value.toUpperCase()
-          : value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]:
+          name === "ClienteNombre" || name === "ClienteApellido"
+            ? value.toUpperCase()
+            : value,
+      };
+      if (!rsManual) next.ClienteRazonSocial = nombreCompleto(next);
+      return next;
+    });
+  };
+
+  const handleRazonSocialChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase();
+    // Vaciarlo vuelve a seguir al nombre (y al guardar vacío se usa el nombre).
+    setRsManual(value.trim() !== "");
+    setFormData((prev) => ({ ...prev, ClienteRazonSocial: value }));
   };
 
   const handleDvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,7 +130,12 @@ export default function ClienteFormModal({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const base = formData.ClienteRUC.trim();
-    onSubmit({ ...formData, ClienteRUC: base && dv ? `${base}-${dv}` : base });
+    onSubmit({
+      ...formData,
+      ClienteRUC: base && dv ? `${base}-${dv}` : base,
+      ClienteRazonSocial:
+        (formData.ClienteRazonSocial || "").trim() || nombreCompleto(formData),
+    });
   };
 
   return (
@@ -184,6 +215,22 @@ export default function ClienteFormModal({
           onChange={handleInputChange}
           className="uppercase"
         />
+        <div className="sm:col-span-2">
+          <TextInput
+            label="Razón social (factura)"
+            name="ClienteRazonSocial"
+            value={formData.ClienteRazonSocial || ""}
+            onChange={handleRazonSocialChange}
+            maxLength={61}
+            placeholder={nombreCompleto(formData)}
+            className="uppercase"
+            helperText={
+              rsManual
+                ? "Nombre con el que sale la factura (distinto del nombre del cliente)."
+                : "Por defecto es el nombre del cliente. Cambialo si factura a nombre de otra persona o empresa."
+            }
+          />
+        </div>
         <TextInput
           label="Dirección"
           name="ClienteDireccion"

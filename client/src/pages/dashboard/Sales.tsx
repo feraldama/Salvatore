@@ -653,9 +653,11 @@ export default function Sales() {
       VentaId: ventaId,
       VentaFecha: fechaIso,
       Total: totalFactura,
-      ClienteRazonSocial: `${clienteSeleccionado?.ClienteNombre || ""} ${
-        clienteSeleccionado?.ClienteApellido || ""
-      }`.trim(),
+      ClienteRazonSocial:
+        clienteSeleccionado?.ClienteRazonSocial?.trim() ||
+        `${clienteSeleccionado?.ClienteNombre || ""} ${
+          clienteSeleccionado?.ClienteApellido || ""
+        }`.trim(),
       ClienteRUC: clienteSeleccionado?.ClienteRUC || "",
       ClienteTelefono: clienteSeleccionado?.ClienteTelefono || "",
       ClienteDireccion: clienteSeleccionado?.ClienteDireccion || "",

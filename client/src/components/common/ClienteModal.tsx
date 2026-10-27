@@ -15,6 +15,13 @@ interface ClienteModalProps {
   currentUserId?: string;
 }
 
+// Razón social sólo si difiere del nombre del cliente (si no, es redundante).
+const razonSocialDistinta = (c: Cliente) => {
+  const rs = (c.ClienteRazonSocial || "").trim();
+  const nombre = `${c.ClienteNombre || ""} ${c.ClienteApellido || ""}`.trim();
+  return rs !== "" && rs.toUpperCase() !== nombre.toUpperCase();
+};
+
 const ClienteModal: React.FC<ClienteModalProps> = ({
   show,
   onClose,
@@ -48,7 +55,12 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
     return clientes.filter(
       (c) =>
         c.ClienteRUC?.toLowerCase().includes(filtros.ruc.toLowerCase()) &&
-        c.ClienteNombre?.toLowerCase().includes(filtros.nombre.toLowerCase()) &&
+        // "Nombre" también encuentra por razón social (el comercio "BODEGA X"
+        // se puede buscar por la persona a cuyo nombre factura).
+        (c.ClienteNombre?.toLowerCase().includes(filtros.nombre.toLowerCase()) ||
+          (c.ClienteRazonSocial || "")
+            .toLowerCase()
+            .includes(filtros.nombre.toLowerCase())) &&
         (c.ClienteApellido || "")
           ?.toLowerCase()
           .includes(filtros.apellido.toLowerCase()) &&
@@ -165,7 +177,14 @@ const ClienteModal: React.FC<ClienteModalProps> = ({
                   onClick={() => onSelect(c)}
                 >
                   <td className="py-2 px-4 font-num">{c.ClienteRUC || ""}</td>
-                  <td className="py-2 px-4">{c.ClienteNombre}</td>
+                  <td className="py-2 px-4">
+                    {c.ClienteNombre}
+                    {razonSocialDistinta(c) && (
+                      <div className="text-xs text-text-muted">
+                        Factura: {c.ClienteRazonSocial}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 px-4">{c.ClienteApellido || ""}</td>
                   <td className="py-2 px-4 font-num">
                     {c.ClienteTelefono || ""}

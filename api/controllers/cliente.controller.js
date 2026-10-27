@@ -109,6 +109,7 @@ exports.createCliente = async (req, res) => {
     // Crear el nuevo cliente
     const nuevoCliente = await Cliente.create({
       ClienteRUC: req.body.ClienteRUC || "",
+      ClienteRazonSocial: req.body.ClienteRazonSocial || "",
       ClienteNombre: req.body.ClienteNombre,
       ClienteApellido: req.body.ClienteApellido || null,
       ClienteDireccion: req.body.ClienteDireccion || null,
