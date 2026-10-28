@@ -40,6 +40,11 @@ router.patch(
   authMiddleware,
   ventaController.updateEnvioVehiculo
 );
+router.post(
+  "/envios/:ventaId/convertir",
+  authMiddleware,
+  ventaController.convertirAEnvio
+);
 router.get(
   "/reporte-por-vendedor",
   authMiddleware,

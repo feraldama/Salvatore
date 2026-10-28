@@ -805,6 +805,63 @@ exports.updateEnvioVehiculo = async (req, res) => {
   }
 };
 
+// POST /venta/envios/:ventaId/convertir — body: { VehiculoId }
+// Convierte una venta de mostrador ya confirmada en ENVÍO: reclasifica sus
+// movimientos de caja a los grupos de envío, saca el efectivo de la caja física
+// y le asigna el vehículo. Solo con la caja de la venta todavía abierta (ver
+// Venta.convertirAEnvio). Scope empresa.
+exports.convertirAEnvio = async (req, res) => {
+  try {
+    const ventaId = Number(req.params.ventaId);
+    const vehiculoId = Math.round(Number(req.body?.VehiculoId) || 0);
+    if (!ventaId) {
+      return res.status(400).json({ message: "ventaId inválido" });
+    }
+    if (!vehiculoId) {
+      return res.status(400).json({ message: "Seleccione el vehículo" });
+    }
+
+    const result = await Venta.convertirAEnvio({
+      ventaId,
+      vehiculoId,
+      empresaId: req.empresaId,
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+    const rechazos = {
+      yaEsEnvio: "La venta ya es un envío.",
+      esDelivery: "La venta es un delivery y no se puede convertir en envío.",
+      esCredito:
+        "Las ventas a crédito no se pueden convertir en envío. Anulá la venta y volvé a cargarla como envío.",
+      invalidVehiculo: "Vehículo inexistente o inactivo",
+      sinMovimientos:
+        "No se encontraron los movimientos de caja de esta venta, no se puede convertir en envío.",
+      cajaCerrada:
+        "La caja donde se cobró esta venta ya se cerró. Anulá la venta y volvé a cargarla como envío.",
+    };
+    const motivo = Object.keys(rechazos).find((k) => result[k]);
+    if (motivo) {
+      return res.status(400).json({ message: rechazos[motivo] });
+    }
+
+    // Rastro en el log del servidor: mueve plata del arqueo del cajero.
+    console.log(
+      `venta_envio: venta #${ventaId} convertida a envío con vehículo #${vehiculoId} (${result.chapa}), efectivo sacado de caja: ${result.efectivo}, por usuario ${req.user?.id ?? "?"}`
+    );
+    res.json({
+      message: "Venta convertida en envío",
+      ventaId,
+      vehiculoId,
+      chapa: result.chapa,
+    });
+  } catch (error) {
+    console.error("Error al convertir la venta en envío:", error);
+    sendError(res, error, 500);
+  }
+};
+
 // POST /venta/deliveries/:ventaId/cobrar
 // body: { Pagos: { Efectivo, Banco, CuentaCliente, Voucher, Transferencia,
 //         VentaNroPOS }, CajaId, UsuarioId, Fecha }

@@ -580,6 +580,28 @@ export const updateEnvioVehiculo = async (
   }
 };
 
+// Convierte una venta de mostrador ya confirmada en envío con el vehículo
+// elegido: sus cobros salen del arqueo del cajero y pasan a Ingresos ENVIOS. El
+// backend lo rechaza si la caja de la venta ya se cerró, o si es crédito/delivery.
+export const convertirVentaAEnvio = async (
+  ventaId: number,
+  vehiculoId: number
+): Promise<{ message: string; chapa: string }> => {
+  try {
+    const response = await api.post(`/venta/envios/${ventaId}/convertir`, {
+      VehiculoId: vehiculoId,
+    });
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError<{ message?: string }>;
+    throw (
+      axiosError.response?.data || {
+        message: "Error al convertir la venta en envío",
+      }
+    );
+  }
+};
+
 // --- Reporte de ventas por vendedor (para comisiones) ---
 export interface VentasVendedor {
   vendedorId: number | null; // null = ventas sin vendedor asignado

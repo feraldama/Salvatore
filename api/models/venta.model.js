@@ -1575,6 +1575,148 @@ const Venta = {
     return { ok: true, chapa: vehRows[0].chapa };
   },
 
+  // Convierte una venta de mostrador YA confirmada en ENVÍO (caso: se cargó
+  // como contado y en realidad sale a repartir y la cobra el móvil). Deja la
+  // venta exactamente como si se hubiera confirmado con EsEnvio:
+  //   - los movimientos de caja de la confirmación se reclasifican EN SU LUGAR
+  //     a los grupos de envío (1→7, 4→8, 5→9, 6→10) con sufijo " (ENVÍO)": salen
+  //     de los ingresos del cajero y pasan a "Ingresos ENVIOS" del cierre;
+  //   - el efectivo se descuenta de CajaMonto (en un envío nunca entra);
+  //   - venta.EsEnvio = 'S' + fila en venta_envio con el vehículo (PENDIENTE).
+  // Stock y líneas no se tocan. Solo mientras la caja donde quedaron esos
+  // movimientos siga abierta: reclasificar un arqueo ya cerrado lo descuadraría.
+  // Fuera de alcance: delivery (flujo minorista propio) y ventas a crédito
+  // (ventacredito + cobros posteriores que no son de envío).
+  // Devuelve:
+  //   { ok: false, notFound: true }        -> la venta no existe en esa empresa
+  //   { ok: false, yaEsEnvio: true }       -> ya es envío
+  //   { ok: false, esDelivery: true }      -> es delivery
+  //   { ok: false, esCredito: true }       -> tiene cuenta corriente
+  //   { ok: false, invalidVehiculo: true } -> vehículo inexistente o inactivo
+  //   { ok: false, sinMovimientos: true }  -> no hay movimientos de caja atados
+  //   { ok: false, cajaCerrada: true }     -> la caja ya se cerró
+  //   { ok: true, chapa, efectivo }        -> convertida
+  convertirAEnvio: async ({ ventaId, vehiculoId, empresaId }) => {
+    const id = Number(ventaId);
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // FOR UPDATE: dos conversiones simultáneas de la misma venta no pueden
+      // reclasificar dos veces ni descontar el efectivo dos veces.
+      const [ventaRows] = await conn.query(
+        `SELECT v.EsEnvio AS es_envio, v.EsDelivery AS es_delivery
+           FROM venta v
+          WHERE v.VentaId = ? AND v.EmpresaId = ?
+          FOR UPDATE`,
+        [id, Number(empresaId)]
+      );
+      const fail = async (r) => {
+        await conn.rollback();
+        return { ok: false, ...r };
+      };
+      if (!ventaRows.length) return fail({ notFound: true });
+      if (ventaRows[0].es_envio === "S") return fail({ yaEsEnvio: true });
+      if (ventaRows[0].es_delivery === "S") return fail({ esDelivery: true });
+
+      const [vcRows] = await conn.query(
+        `SELECT 1 FROM ventacredito WHERE VentaId = ? LIMIT 1`,
+        [id]
+      );
+      if (vcRows.length) return fail({ esCredito: true });
+
+      const [vehRows] = await conn.query(
+        `SELECT chapa FROM flota_vehiculo WHERE id = ? AND activo`,
+        [Number(vehiculoId)]
+      );
+      if (!vehRows.length) return fail({ invalidVehiculo: true });
+
+      // Movimientos de la confirmación (mismos detalles que inserta
+      // registrarPagosEnCaja para una venta de mostrador sin crédito).
+      const grupoEnvio = { 1: 7, 4: 8, 5: 9, 6: 10 };
+      const detalles = [
+        `Venta N°: ${id}`,
+        `Venta POS N°: ${id}`,
+        `Venta Voucher N°: ${id}`,
+        `Venta Transferencia N°: ${id}`,
+      ];
+      const [rdcRows] = await conn.query(
+        `SELECT RegistroDiarioCajaId, CajaId, TipoGastoGrupoId,
+                RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto
+           FROM registrodiariocaja
+          WHERE TipoGastoId = 2
+            AND RegistroDiarioCajaDetalle IN (?, ?, ?, ?)`,
+        detalles
+      );
+      const movimientos = rdcRows.filter(
+        (r) => grupoEnvio[Number(r.TipoGastoGrupoId)]
+      );
+      if (!movimientos.length) return fail({ sinMovimientos: true });
+
+      // La caja sigue abierta si no hubo un cierre (TipoGasto 1 / grupo 2)
+      // posterior a los movimientos de la venta. Se bloquea la fila de la caja
+      // para no cruzarse con un cierre en curso.
+      const cajaId = Number(movimientos[0].CajaId);
+      const ultimoMovId = Math.max(
+        ...movimientos.map((r) => Number(r.RegistroDiarioCajaId))
+      );
+      await conn.query(`SELECT CajaId FROM caja WHERE CajaId = ? FOR UPDATE`, [
+        cajaId,
+      ]);
+      const [cierreRows] = await conn.query(
+        `SELECT 1 FROM registrodiariocaja
+          WHERE CajaId = ? AND TipoGastoId = 1 AND TipoGastoGrupoId = 2
+            AND RegistroDiarioCajaId > ?
+          LIMIT 1`,
+        [cajaId, ultimoMovId]
+      );
+      if (cierreRows.length) return fail({ cajaCerrada: true });
+
+      let efectivo = 0;
+      for (const r of movimientos) {
+        const grupo = Number(r.TipoGastoGrupoId);
+        if (grupo === 1) efectivo += Number(r.RegistroDiarioCajaMonto) || 0;
+        await conn.query(
+          `UPDATE registrodiariocaja
+              SET TipoGastoGrupoId = ?, RegistroDiarioCajaDetalle = ?
+            WHERE RegistroDiarioCajaId = ?`,
+          [
+            grupoEnvio[grupo],
+            `${r.RegistroDiarioCajaDetalle} (ENVÍO)`,
+            Number(r.RegistroDiarioCajaId),
+          ]
+        );
+      }
+      if (efectivo > 0) {
+        await conn.query(
+          `UPDATE caja SET CajaMonto = CajaMonto - ? WHERE CajaId = ?`,
+          [efectivo, cajaId]
+        );
+      }
+
+      await conn.query(`UPDATE venta SET EsEnvio = 'S' WHERE VentaId = ?`, [id]);
+      await conn.query(
+        `INSERT INTO venta_envio (venta_id, vehiculo_id)
+         VALUES (?, ?)
+         ON CONFLICT (venta_id) DO UPDATE
+           SET vehiculo_id = EXCLUDED.vehiculo_id, estado = 'PENDIENTE'`,
+        [id, Number(vehiculoId)]
+      );
+
+      await conn.commit();
+      return { ok: true, chapa: vehRows[0].chapa, efectivo };
+    } catch (e) {
+      try {
+        await conn.rollback();
+      } catch (rbErr) {
+        console.error("Rollback falló (convertirAEnvio):", rbErr);
+      }
+      throw e;
+    } finally {
+      conn.release();
+    }
+  },
+
   // Cobra un delivery contra entrega: registra el desglose de pago (que el
   // cajero carga al volver el chofer) en la caja abierta del cajero y marca el
   // reparto ENTREGADO + cobrado. Toda la registración en caja se difiere a este

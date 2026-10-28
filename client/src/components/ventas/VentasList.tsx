@@ -20,12 +20,14 @@ import {
   getVentaCreditoByVentaId,
   getPagosByVentaCreditoId,
   updateEnvioVehiculo,
+  convertirVentaAEnvio,
 } from "../../services/venta.service";
 import {
   getVehiculosActivos,
   type VehiculoFlota,
 } from "../../services/flota.service";
 import { usePermiso } from "../../hooks/usePermiso";
+import { useAuth } from "../../contexts/useAuth";
 
 interface VentasListProps {
   ventas: Venta[];
@@ -88,8 +90,20 @@ const VentasList = ({
   const [vehiculos, setVehiculos] = useState<VehiculoFlota[]>([]);
   const [vehiculoSel, setVehiculoSel] = useState<number | "">("");
   const [guardandoVehiculo, setGuardandoVehiculo] = useState(false);
+  // true: el modal convierte una venta de mostrador en envío (en vez de
+  // cambiarle el vehículo a un envío existente).
+  const [convertirEnvio, setConvertirEnvio] = useState(false);
 
-  const abrirCambioVehiculo = async (venta: VentaWithId) => {
+  // El envío existe solo en la distribuidora (mayorista); en minorista el
+  // reparto es delivery, que tiene su propio flujo.
+  const { user, empresaActiva } = useAuth();
+  const tipoEmpresa =
+    user?.isAdmin === "S"
+      ? empresaActiva?.EmpresaTipo ?? user?.EmpresaTipo
+      : user?.EmpresaTipo;
+
+  const abrirCambioVehiculo = async (venta: VentaWithId, convertir = false) => {
+    setConvertirEnvio(convertir);
     setVehiculoSel(venta.envio_vehiculo_id || "");
     setEnvioEdit(venta);
     if (vehiculos.length === 0) {
@@ -105,19 +119,30 @@ const VentasList = ({
     if (!envioEdit || vehiculoSel === "") return;
     setGuardandoVehiculo(true);
     try {
-      const res = await updateEnvioVehiculo(envioEdit.VentaId, vehiculoSel);
+      const res = convertirEnvio
+        ? await convertirVentaAEnvio(envioEdit.VentaId, vehiculoSel)
+        : await updateEnvioVehiculo(envioEdit.VentaId, vehiculoSel);
       // Reflejar el cambio en la tabla sin recargar todo el listado.
       setVentasWithAlmacen((prev) =>
         prev.map((v) =>
           v.VentaId === envioEdit.VentaId
-            ? { ...v, envio_vehiculo_id: vehiculoSel, envio_chapa: res.chapa }
+            ? {
+                ...v,
+                envio_vehiculo_id: vehiculoSel,
+                envio_chapa: res.chapa,
+                ...(convertirEnvio
+                  ? { EsEnvio: "S", envio_estado: "PENDIENTE" }
+                  : {}),
+              }
             : v
         )
       );
       setEnvioEdit(null);
       Swal.fire({
-        title: "Vehículo actualizado",
-        text: `La venta #${envioEdit.VentaId} ahora sale con ${res.chapa}`,
+        title: convertirEnvio ? "Venta convertida en envío" : "Vehículo actualizado",
+        text: convertirEnvio
+          ? `La venta #${envioEdit.VentaId} ahora es un envío con ${res.chapa}`
+          : `La venta #${envioEdit.VentaId} ahora sale con ${res.chapa}`,
         icon: "success",
         timer: 2500,
         showConfirmButton: false,
@@ -127,7 +152,9 @@ const VentasList = ({
         title: "Error",
         text:
           (error as { message?: string }).message ||
-          "No se pudo cambiar el vehículo del envío",
+          (convertirEnvio
+            ? "No se pudo convertir la venta en envío"
+            : "No se pudo cambiar el vehículo del envío"),
         icon: "error",
       });
     } finally {
@@ -353,8 +380,27 @@ const VentasList = ({
       key: "EsEnvio",
       label: "Envío",
       render: (venta: VentaWithId) => {
-        if (venta.EsEnvio !== "S")
-          return <span className="text-text-subtle">—</span>;
+        if (venta.EsEnvio !== "S") {
+          // Venta de mostrador de la distribuidora: se puede pasar a envío
+          // (crédito y delivery quedan afuera, el backend también los rechaza).
+          const convertible =
+            puedeEditarEnvio &&
+            tipoEmpresa === "D" &&
+            venta.EsDelivery !== "S" &&
+            venta.VentaTipo !== "CR";
+          if (!convertible)
+            return <span className="text-text-subtle">—</span>;
+          return (
+            <button
+              type="button"
+              onClick={() => abrirCambioVehiculo(venta, true)}
+              title="Convertir en envío"
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-text-subtle cursor-pointer hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+            >
+              + 🚚
+            </button>
+          );
+        }
         const chip = (
           <>🚚 {venta.envio_chapa || "Envío"}</>
         );
@@ -677,7 +723,7 @@ const VentasList = ({
       <Modal
         open={envioEdit !== null}
         onClose={() => !guardandoVehiculo && setEnvioEdit(null)}
-        title="Cambiar vehículo del envío"
+        title={convertirEnvio ? "Convertir en envío" : "Cambiar vehículo del envío"}
         description={
           envioEdit
             ? `Venta #${envioEdit.VentaId} — ${
@@ -705,11 +751,19 @@ const VentasList = ({
               }
               loading={guardandoVehiculo}
             >
-              Guardar
+              {convertirEnvio ? "Convertir en envío" : "Guardar"}
             </Button>
           </>
         }
       >
+        {convertirEnvio && (
+          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            El cobro de esta venta ({formatCurrency(Number(envioEdit?.Total) || 0)})
+            sale del arqueo de la caja y pasa a <b>Ingresos ENVIOS</b>: lo rinde el
+            móvil al entregar. Usalo solo si el cliente todavía no pagó en el
+            mostrador. Solo se puede mientras la caja donde se cobró siga abierta.
+          </div>
+        )}
         <label className="block mb-1 text-xs font-medium text-text-muted">
           Vehículo
         </label>
