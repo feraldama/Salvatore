@@ -189,7 +189,7 @@ if changed '^api/' || [ $UNITS = 1 ]; then
   systemctl --user restart salvatore-api
   sleep 2
   wait_port $API_PORT 30 && sleep 3 && systemctl --user is-active -q salvatore-api \
-    || fail "la API no levanto en :$API_PORT (ver: journalctl --user -u salvatore-api)"
+    || fail "la API no levanto en :$API_PORT (ver: journalctl _SYSTEMD_USER_UNIT=salvatore-api.service -n 50)"
   echo "API escuchando en :$API_PORT"
 fi
 

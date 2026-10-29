@@ -7,8 +7,9 @@ $Script = Join-Path $PSScriptRoot 'deploy-notify.ps1'
 $Vbs = Join-Path $StateDir 'deploy-notify.vbs'
 
 New-Item -ItemType Directory -Force $StateDir | Out-Null
-$cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""$Script"""
-Set-Content $Vbs "CreateObject(""WScript.Shell"").Run ""$($cmd -replace '"', '""')"", 0, False" -Encoding ASCII
+# En VBScript las comillas dentro de un string se duplican.
+$cmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""' + $Script + '""'
+Set-Content $Vbs ('CreateObject("WScript.Shell").Run "' + $cmd + '", 0, False') -Encoding ASCII
 
 $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "//B //Nologo ""$Vbs"""
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)
