@@ -17,5 +17,6 @@ export default defineConfig({
   preview: {
     host: true,
     port: 3024,
+    allowedHosts: ["sys.distrisalvatore.com.py"],
   },
 });
