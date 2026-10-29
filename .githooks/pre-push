@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Chequeos antes de un push a main (el servidor lo despliega solo al minuto):
+#   - client: tsc -b, si el push trae cambios en client/
+#   - api: sintaxis (node --check) de los .js cambiados
+#   - migraciones nuevas: tienen que estar aplicadas en la base local, que debe ser
+#     una copia del servidor (deploy/windows/traer-db.ps1)
+# Activar (una vez por clon):  git config core.hooksPath .githooks
+# Saltear en una emergencia:   git push --no-verify
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+Z=0000000000000000000000000000000000000000
+CHANGED=""
+while read -r lref lsha rref rsha; do
+  [ "$rref" = refs/heads/main ] || continue
+  [ "$lsha" = $Z ] && continue
+  if [ "$rsha" = $Z ]; then base=$(git merge-base "$lsha" origin/main 2>/dev/null) || continue; else base=$rsha; fi
+  CHANGED+="$(git diff --name-only "$base" "$lsha" 2>/dev/null)"$'\n'
+done
+[ -z "$(echo "$CHANGED" | tr -d '[:space:]')" ] && exit 0
+
+ERR=0
+if echo "$CHANGED" | grep -q '^client/'; then
+  echo "[pre-push] tsc del client..."
+  (cd client && pnpm exec tsc -b) || { echo "[pre-push] ERROR: el client no compila"; ERR=1; }
+fi
+
+for f in $(echo "$CHANGED" | grep -E '^api/.*\.js$' | grep -v node_modules | sort -u); do
+  [ -f "$f" ] || continue
+  node --check "$f" || { echo "[pre-push] ERROR de sintaxis: $f"; ERR=1; }
+done
+
+MIG=$(echo "$CHANGED" | grep -E '^api/migrations/[0-9]{3}_.*\.sql$' | sort -u)
+if [ -n "$MIG" ]; then
+  echo "[pre-push] migraciones nuevas: verificando que esten aplicadas en la base local..."
+  if ! PEND=$(bash deploy/migrar.sh --pendientes 2>&1); then
+    echo "[pre-push] ERROR: $PEND"
+    ERR=1; NEED=1
+  else
+    for f in $MIG; do
+      [ -f "$f" ] || continue
+      if echo "$PEND" | grep -qxF "$(basename "$f")"; then
+        echo "[pre-push] ERROR: $(basename "$f") no esta aplicada en la base local"
+        ERR=1; NEED=1
+      fi
+    done
+  fi
+  [ "${NEED:-0}" = 1 ] && echo "  Probala sobre una copia del servidor: deploy\\windows\\traer-db.ps1 (trae la base y aplica las migraciones), y verifica la app."
+fi
+
+if [ $ERR = 1 ]; then
+  echo "[pre-push] push cancelado. Forzar: git push --no-verify"
+  exit 1
+fi
+exit 0

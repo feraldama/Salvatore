@@ -1,0 +1,6 @@
+[Unit]
+Description=Salvatore: backup diario de la base
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/Salvatore/deploy/backup-diario.sh

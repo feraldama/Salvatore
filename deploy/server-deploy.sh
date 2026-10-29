@@ -9,13 +9,12 @@
 # el codigo vuelve al commit anterior (la API y el client siguen con la version
 # vieja) y --auto no reintenta ese commit hasta que llegue otro.
 #
-# Estado en ~/deploy: status (ultimo resultado, lo lee deploy-notify.ps1),
-# logs/, backups/ (pg_dump previo a cada tanda de migraciones) y failed_commit.
+# Estado en ~/deploy: status (ultimo resultado, lo lee deploy-notify.ps1), logs/,
+# backups/migraciones/ (pg_dump previo a cada tanda de migraciones) y failed_commit.
 set -uo pipefail
 
 REPO="$HOME/Salvatore"
 STATE="$HOME/deploy"
-PSQL="/usr/pgsql-17/bin/psql -X"
 PG_DUMP=/usr/pgsql-17/bin/pg_dump
 API_PORT=3023
 CLIENT_PORT=3024
@@ -30,7 +29,7 @@ for a in "$@"; do
   esac
 done
 
-mkdir -p "$STATE/logs" "$STATE/backups"
+mkdir -p "$STATE/logs" "$STATE/backups/migraciones"
 
 # El pull reemplaza este archivo: se ejecuta desde una copia.
 if [ "${DEPLOY_COPY:-0}" != 1 ]; then
@@ -135,33 +134,21 @@ changed() { echo "$CHANGED" | grep -qE "$1"; }
 if changed '^deploy/systemd/'; then
   echo "==> actualizo servicios systemd"
   cp deploy/systemd/* "$HOME/.config/systemd/user/" && systemctl --user daemon-reload || fail "no se pudieron instalar los servicios"
+  for t in deploy/systemd/*.timer; do systemctl --user enable -q --now "$(basename "$t")"; done
   UNITS=1
 fi
 
 # --- migraciones --------------------------------------------------------------
-dbenv() { grep -E "^$1=" api/.env | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E "s/^[\"'](.*)[\"']$/\1/"; }
-export PGHOST=$(dbenv DB_HOST) PGUSER=$(dbenv DB_USER) PGPASSWORD=$(dbenv DB_PASSWORD) PGDATABASE=$(dbenv DB_NAME)
-export PGPORT=$(dbenv DB_PORT); PGPORT=${PGPORT:-5432}
-
-APPLIED=$($PSQL -At -c "select filename from schema_migrations" 2>&1) \
-  || fail "no se pudo leer schema_migrations: $APPLIED"
-PENDING=""
-for f in $(ls api/migrations | grep -E '^[0-9]{3}_.*\.sql$' | sort); do
-  echo "$APPLIED" | grep -qxF "$f" || PENDING="$PENDING $f"
-done
-
+PENDING=$(bash deploy/migrar.sh --pendientes 2>&1) || fail "$PENDING"
 if [ -n "$PENDING" ]; then
-  BACKUP="$STATE/backups/$PGDATABASE-$STAMP.dump"
+  . deploy/db.sh
+  cargar_db "$REPO"
+  BACKUP="$STATE/backups/migraciones/$PGDATABASE-$STAMP.dump"
   echo "==> backup de la base: $BACKUP"
   $PG_DUMP -Fc -f "$BACKUP" || { rm -f "$BACKUP"; fail "fallo el backup (no se aplico ninguna migracion)"; }
-  ls -1t "$STATE"/backups/*.dump | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -f
-  for f in $PENDING; do
-    echo "==> migracion $f"
-    $PSQL -v ON_ERROR_STOP=1 -f "api/migrations/$f" || fail "fallo la migracion $f (backup previo: $BACKUP)"
-    $PSQL -q -v ON_ERROR_STOP=1 -c "insert into schema_migrations (filename, commit) values ('$f', '$(git rev-parse --short HEAD)')" \
-      || fail "$f se aplico pero no se pudo registrar en schema_migrations"
-    MIGRATED="$MIGRATED $f"
-  done
+  ls -1t "$STATE"/backups/migraciones/*.dump | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -f
+  bash deploy/migrar.sh || fail "fallo una migracion (backup previo: $BACKUP)"
+  MIGRATED=" $(echo $PENDING)"
 fi
 
 # --- dependencias y build -----------------------------------------------------
