@@ -1,0 +1,6 @@
+[Unit]
+Description=Salvatore: deploy automatico de origin/main
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/Salvatore/deploy/server-deploy.sh --auto

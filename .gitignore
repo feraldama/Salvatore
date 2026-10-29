@@ -66,3 +66,7 @@ salvatore_datos_iniciales.sql
 backups/
 *.dump
 *.bak
+
+# Build temporal del deploy (deploy/server-deploy.sh)
+client/dist_new/
+client/dist_old/

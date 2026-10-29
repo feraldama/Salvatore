@@ -1,0 +1,12 @@
+[Unit]
+Description=Salvatore client (vite preview de client/dist, puerto 3024)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Salvatore/client
+ExecStart=/bin/bash -c '. %h/Salvatore/deploy/env.sh && exec node node_modules/vite/bin/vite.js preview'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
