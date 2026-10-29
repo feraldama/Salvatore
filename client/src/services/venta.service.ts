@@ -705,7 +705,8 @@ export interface VentasPorTipo {
   /**
    * Cierre del período: lo cobrado AL VENDER separado en envío / venta en
    * puerta (mostrador) por método, y su total. Los créditos cobrados (por fecha
-   * de cobro) van aparte y no suman en `total`.
+   * de cobro) van aparte y no suman en `total`; la pantalla los agrega al total
+   * cobrado que muestra.
    */
   resumen?: {
     envio: PagosPorMetodo;

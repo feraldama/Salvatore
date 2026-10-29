@@ -313,6 +313,14 @@ const labelMetodo = (m: string) => METODO_LABELS[m] ?? m;
 const hayDatosTipoV = (r: VentasPorTipo) =>
   r.grupos.length > 0 || (r.cobrosPrevios?.cantidad ?? 0) > 0;
 
+// Suma método a método: total cobrado = cobrado al vender + créditos cobrados.
+const sumarMetodos = (a: PagosPorMetodo, b: PagosPorMetodo): PagosPorMetodo => ({
+  efectivo: a.efectivo + b.efectivo,
+  pos: a.pos + b.pos,
+  voucher: a.voucher + b.voucher,
+  transferencia: a.transferencia + b.transferencia,
+});
+
 const PAGE_SIZE = 25;
 
 const ReportesPage: React.FC = () => {
@@ -2101,8 +2109,9 @@ const ReportesPage: React.FC = () => {
 
     const rs = ventasPorTipo.resumen;
     if (rs) {
-      const conPos = rs.total.pos > 0;
-      const conVoucher = rs.total.voucher > 0;
+      const totalCobrado = sumarMetodos(rs.total, rs.creditosCobrados.porMetodo);
+      const conPos = totalCobrado.pos > 0;
+      const conVoucher = totalCobrado.voucher > 0;
       const fila = (label: string, m: typeof rs.total) => [
         label,
         formatMiles(m.efectivo),
@@ -2120,8 +2129,12 @@ const ReportesPage: React.FC = () => {
             ...(conVoucher ? ["Voucher"] : []),
           ],
         ],
-        body: [fila("Envío", rs.envio), fila("Venta en puerta", rs.puerta)],
-        foot: [fila("Total", rs.total)],
+        body: [
+          fila("Envío", rs.envio),
+          fila("Venta en puerta", rs.puerta),
+          fila("Créditos cobrados", rs.creditosCobrados.porMetodo),
+        ],
+        foot: [fila("Total", totalCobrado)],
         startY: y,
         theme: "grid",
         headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
@@ -2177,7 +2190,7 @@ const ReportesPage: React.FC = () => {
       y += 5;
       doc.setFontSize(8);
       doc.text(
-        "Los créditos cobrados se cuentan por fecha de cobro y no están sumados en el total cobrado en ventas.",
+        "Los créditos cobrados se cuentan por fecha de cobro (aunque la venta sea de otro período) y están sumados en el total cobrado.",
         14,
         y,
       );
@@ -3470,12 +3483,14 @@ const ReportesPage: React.FC = () => {
                     (() => {
                       const rs = ventasPorTipo.resumen;
                       const cc = rs.creditosCobrados;
-                      const conPos = rs.total.pos > 0;
-                      const conVoucher = rs.total.voucher > 0;
+                      const totalCobrado = sumarMetodos(rs.total, cc.porMetodo);
+                      const conPos = totalCobrado.pos > 0;
+                      const conVoucher = totalCobrado.voucher > 0;
                       const filas = [
                         { label: "Envío", m: rs.envio, total: false },
                         { label: "Venta en puerta", m: rs.puerta, total: false },
-                        { label: "Total", m: rs.total, total: true },
+                        { label: "Créditos cobrados", m: cc.porMetodo, total: false },
+                        { label: "Total", m: totalCobrado, total: true },
                       ];
                       const delDia =
                         fechaDesdeTipoV === fechaHastaTipoV
@@ -3584,7 +3599,8 @@ const ReportesPage: React.FC = () => {
                           </div>
                           <p className="text-xs text-slate-500 mt-2">
                             Los créditos cobrados se cuentan por fecha de cobro
-                            y no están sumados en el total cobrado en ventas.
+                            (aunque la venta sea de otro período) y están
+                            sumados en el total cobrado.
                           </p>
                         </>
                       );
