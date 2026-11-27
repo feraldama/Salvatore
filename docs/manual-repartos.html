@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de Repartos — Salvatore Distribuidora</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  :root {
+    --ink: #1f2937; --muted: #6b7280; --line: #d1d5db; --brand: #1d4ed8;
+    --brand-soft: #eff6ff; --warn: #b45309; --warn-soft: #fffbeb;
+    --ok: #047857; --ok-soft: #ecfdf5; --bad: #b91c1c; --bad-soft: #fef2f2;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 11pt; line-height: 1.5; color: var(--ink);
+    background: #fff; margin: 0 auto; max-width: 820px; padding: 24px;
+  }
+  @media print { body { padding: 0; max-width: none; } }
+  h1, h2, h3 { line-height: 1.25; color: #111827; }
+  h1 { font-size: 24pt; margin: 0 0 4px; }
+  h2 {
+    font-size: 15pt; margin: 28px 0 10px; padding-bottom: 4px;
+    border-bottom: 2px solid var(--brand); break-after: avoid;
+  }
+  h3 { font-size: 12pt; margin: 18px 0 6px; break-after: avoid; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  .page-break { break-before: page; }
+  .cover { padding: 30px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .cover .sub { font-size: 13pt; color: var(--muted); }
+  .cover .meta { margin-top: 14px; font-size: 10pt; color: var(--muted); }
+  .toc { columns: 2; column-gap: 32px; font-size: 10.5pt; }
+  .toc li { break-inside: avoid; }
+  .ui {
+    display: inline-block; padding: 0 6px; border: 1px solid var(--line);
+    border-radius: 4px; background: #f9fafb; font-weight: 600; font-size: 10pt;
+    white-space: nowrap;
+  }
+  .badge { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 9.5pt; font-weight: 600; border: 1px solid; }
+  .b-armado { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+  .b-ruta { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .b-recibido { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .b-anulado { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+  .box {
+    border: 1px solid var(--line); border-left-width: 5px; border-radius: 6px;
+    padding: 8px 12px; margin: 10px 0; break-inside: avoid;
+  }
+  .box b.t { display: block; margin-bottom: 2px; }
+  .box.info { border-left-color: var(--brand); background: var(--brand-soft); }
+  .box.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .box.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .box.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; }
+  .steps { counter-reset: paso; list-style: none; padding-left: 0; }
+  .steps > li {
+    counter-increment: paso; position: relative; padding-left: 34px; margin: 8px 0;
+    break-inside: avoid;
+  }
+  .steps > li::before {
+    content: counter(paso); position: absolute; left: 0; top: 0;
+    width: 24px; height: 24px; border-radius: 50%; background: var(--brand);
+    color: #fff; font-weight: 700; font-size: 10pt; text-align: center; line-height: 24px;
+  }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+  .flow .arrow { color: var(--muted); font-weight: 700; }
+  .flow .step { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 10pt; background: #fafafa; }
+  .flow .step small { display: block; color: var(--muted); }
+  .footer { margin-top: 30px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 9pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Manual de Repartos</h1>
+  <div class="sub">Armado de repartos, control de cajas retornables y corrección de cobros de envíos</div>
+  <div class="meta">Salvatore Distribuidora · Versión 1 · Noviembre 2026</div>
+</div>
+
+<h2>Contenido</h2>
+<ol class="toc">
+  <li>Para qué sirve y quién lo usa</li>
+  <li>El recorrido de un reparto</li>
+  <li>Tipo de caja en los productos</li>
+  <li>Armar un reparto (oficina)</li>
+  <li>Hoja de carga</li>
+  <li>Confirmar la salida (ruteador)</li>
+  <li>Confirmar la recepción (ruteador)</li>
+  <li>Ventas no entregadas</li>
+  <li>Seguimiento y diferencias de cajas</li>
+  <li>Corregir la forma de pago de un envío</li>
+  <li>Reglas importantes</li>
+  <li>Preguntas frecuentes</li>
+</ol>
+
+<h2>1. Para qué sirve y quién lo usa</h2>
+<p>
+  El módulo de <b>Repartos</b> organiza la salida de las ventas de envío de la distribuidora.
+  Cada reparto agrupa las ventas que salen juntas en un vehículo con un chofer. El sistema
+  calcula cuántas <b>cajas retornables</b> de cada tipo salen, para controlar que vuelvan todas.
+</p>
+<table>
+  <tr><th style="width:26%">Quién</th><th style="width:30%">Pantalla</th><th>Qué hace</th></tr>
+  <tr>
+    <td><b>Cajero</b> (oficina)</td>
+    <td><span class="ui">Repartos</span></td>
+    <td>Arma los repartos, agrega o quita ventas, imprime la hoja de carga, revisa las diferencias y corrige la forma de pago de los envíos.</td>
+  </tr>
+  <tr>
+    <td><b>Ruteador</b> (tablet)</td>
+    <td><span class="ui">Control de vehículos</span></td>
+    <td>Confirma la salida de cada vehículo y, cuando vuelve, cuenta las cajas y marca las ventas que no se entregaron.</td>
+  </tr>
+  <tr>
+    <td><b>Administrador</b></td>
+    <td>Todas</td>
+    <td>Puede hacer todo lo anterior.</td>
+  </tr>
+</table>
+<div class="box info">
+  <b class="t">Si no ve el menú</b>
+  Las opciones aparecen en el menú lateral solo si su perfil tiene el permiso. Si le falta alguna,
+  pídale al administrador que se la asigne en <span class="ui">Perfiles</span>.
+</div>
+
+<h2>2. El recorrido de un reparto</h2>
+<div class="flow">
+  <div class="step"><span class="badge b-armado">Armado</span><small>La oficina lo arma</small></div>
+  <span class="arrow">→</span>
+  <div class="step"><span class="badge b-ruta">En ruta</span><small>El ruteador confirma la salida</small></div>
+  <span class="arrow">→</span>
+  <div class="step"><span class="badge b-recibido">Recibido</span><small>El ruteador confirma la recepción</small></div>
+</div>
+<table>
+  <tr><th style="width:18%">Estado</th><th>Qué significa</th><th style="width:34%">Qué se puede hacer</th></tr>
+  <tr>
+    <td><span class="badge b-armado">Armado</span></td>
+    <td>El reparto está en preparación en la oficina. Las cajas se calculan con las ventas actuales.</td>
+    <td>Editar, agregar o quitar ventas, anular, imprimir.</td>
+  </tr>
+  <tr>
+    <td><span class="badge b-ruta">En ruta</span></td>
+    <td>El vehículo salió. Las cajas quedan fijas con lo que se cargó.</td>
+    <td>Solo confirmar la recepción. Las ventas ya no se pueden modificar.</td>
+  </tr>
+  <tr>
+    <td><span class="badge b-recibido">Recibido</span></td>
+    <td>El vehículo volvió y se contaron las cajas.</td>
+    <td>Consultar, imprimir y corregir cobros.</td>
+  </tr>
+  <tr>
+    <td><span class="badge b-anulado">Anulado</span></td>
+    <td>El reparto se canceló antes de salir. Sus ventas quedaron libres.</td>
+    <td>Solo consultar.</td>
+  </tr>
+</table>
+
+<h2>3. Tipo de caja en los productos</h2>
+<p>
+  Para que el sistema cuente las cajas retornables, cada producto que viene en caja retornable
+  debe tener cargado su <b>Tipo de caja</b>. Se carga al crear o editar el producto, en el campo
+  <span class="ui">Tipo de caja</span>:
+</p>
+<ul>
+  <li>Caja Cervepar · Caja Coca · Caja 340 · Caja Munich/Polar</li>
+  <li>Caja 710 negro · Caja 710 rojo · Caja 710 azul</li>
+  <li><b>Ninguno</b> para los productos sin caja retornable.</li>
+</ul>
+<p>
+  En la lista de productos hay una columna y un filtro <span class="ui">Tipo de caja</span> para
+  revisar qué productos lo tienen cargado.
+</p>
+<div class="box warn">
+  <b class="t">Importante</b>
+  Solo se cuentan las líneas de venta <b>por caja</b> de productos con tipo de caja. Las ventas por
+  unidad no suman cajas retornables. Si un producto no tiene el tipo cargado, sus cajas no aparecen
+  en el control.
+</div>
+
+<h2 class="page-break">4. Armar un reparto (oficina)</h2>
+<p>Menú <span class="ui">Repartos</span>.</p>
+
+<h3>Crear el reparto</h3>
+<ol class="steps">
+  <li>Presione <span class="ui">Nuevo reparto</span>.</li>
+  <li>Complete la <b>Fecha de salida</b>, el <b>Vehículo</b> (obligatorio), el <b>Chofer</b> (opcional) y, si hace falta, una <b>Observación</b>.</li>
+  <li>Presione <span class="ui">Guardar</span>. El reparto queda en estado <span class="badge b-armado">Armado</span> y se abre su detalle.</li>
+</ol>
+
+<h3>Agregar ventas</h3>
+<ol class="steps">
+  <li>En el detalle del reparto presione <span class="ui">Agregar ventas</span>.</li>
+  <li>Aparecen las ventas de envío pendientes que todavía no están en ningún reparto. Use <b>Desde</b>, <b>Hasta</b> y <b>N° de venta o cliente</b> para encontrarlas.</li>
+  <li>Marque las ventas que van en este viaje (o <span class="ui">Seleccionar todas</span>). Para cada una se ven sus cajas y su total.</li>
+  <li>Presione <span class="ui">Asignar</span>.</li>
+</ol>
+<div class="box info">
+  <b class="t">El vehículo se actualiza solo</b>
+  Al asignar una venta al reparto, el vehículo de esa venta pasa a ser el del reparto.
+</div>
+
+<h3>Revisar el detalle</h3>
+<p>El detalle del reparto muestra:</p>
+<ul>
+  <li><b>Cajas retornables</b>: cantidad por tipo. Mientras está Armado se calculan con las ventas actuales.</li>
+  <li><b>Ventas</b>: número, fecha, cliente y total de cada venta.</li>
+  <li><b>Productos a cargar</b>: lo que hay que subir al vehículo, en cajas y unidades.</li>
+</ul>
+
+<h3>Cambios mientras está Armado</h3>
+<ul>
+  <li><b>Quitar una venta</b>: botón con el tacho de basura en la fila de la venta. La venta queda libre para otro reparto.</li>
+  <li><b>Cambiar fecha, vehículo, chofer u observación</b>: botón <span class="ui">Editar</span>.</li>
+  <li><b>Anular el reparto</b>: botón <span class="ui">Anular</span>. Todas sus ventas quedan libres para asignarse a otro reparto.</li>
+</ul>
+
+<h2>5. Hoja de carga</h2>
+<p>
+  En el detalle del reparto, <span class="ui">Imprimir hoja de carga</span> abre una hoja lista para
+  imprimir con los datos del viaje, las cajas por tipo (salen, deben volver y volvieron), los productos
+  a cargar y las ventas, con espacio para la firma del ruteador y del chofer.
+</p>
+<div class="box warn">
+  <b class="t">Si no se abre</b>
+  El navegador puede bloquear la ventana de impresión. Permita las ventanas emergentes para el sistema y vuelva a intentarlo.
+</div>
+
+<h2 class="page-break">6. Confirmar la salida (ruteador)</h2>
+<p>
+  Menú <span class="ui">Control de vehículos</span>, en la tablet. La pantalla tiene dos pestañas:
+  <span class="ui">Salen (carga)</span> con los repartos listos para salir, y
+  <span class="ui">Llegan (recepción)</span> con los vehículos en ruta. La lista se actualiza sola
+  cada 30 segundos; también puede presionar <span class="ui">Actualizar</span>.
+</p>
+<ol class="steps">
+  <li>En <span class="ui">Salen (carga)</span>, toque el reparto del vehículo que va a salir.</li>
+  <li>Controle que se cargaron las <b>Cajas que tiene que llevar</b> y los <b>Productos</b>.</li>
+  <li>Toque <span class="ui">Confirmar salida</span> y confirme.</li>
+</ol>
+<p>
+  El reparto pasa a <span class="badge b-ruta">En ruta</span>. Desde ese momento las cajas quedan
+  fijas y <b>las ventas del reparto no se pueden modificar ni borrar</b>.
+</p>
+
+<h2>7. Confirmar la recepción (ruteador)</h2>
+<ol class="steps">
+  <li>En <span class="ui">Llegan (recepción)</span>, toque el vehículo que volvió.</li>
+  <li>En <b>Cajas que tiene que recibir</b>, cargue cuántas cajas de cada tipo volvieron, escribiendo el número o con los botones <b>−</b> y <b>+</b>. Cada tipo muestra <i>Sin contar</i> hasta que se carga, <i>Completo</i> cuando coincide, o <i>Faltan</i> / <i>Sobran</i> con la diferencia.</li>
+  <li>En <b>Ventas</b>, deje cada venta como <span class="ui">Entregada</span> o tóquela para marcarla como <span class="ui">No entregada</span> (ver punto 8).</li>
+  <li>Si hay diferencias en las cajas o ventas no entregadas, escriba la <b>observación</b> con el motivo. Es obligatoria en esos casos.</li>
+  <li>Toque <span class="ui">Confirmar recepción</span>. El sistema avisa si hay diferencias antes de confirmar.</li>
+</ol>
+<p>El reparto pasa a <span class="badge b-recibido">Recibido</span> y las ventas entregadas quedan como entregadas.</p>
+<div class="box info">
+  <b class="t">Cajas de ventas no entregadas</b>
+  Las cajas de una venta que no se entregó vuelven llenas: se cuentan igual que las vacías, junto con el resto.
+</div>
+
+<h2>8. Ventas no entregadas</h2>
+<p>Si un cliente estaba cerrado o rechazó el pedido, en la recepción se marca la venta como <b>No entregada</b>. Entonces:</p>
+<ul>
+  <li>La venta vuelve a estar <b>pendiente</b> y aparece otra vez en <span class="ui">Agregar ventas</span> para salir en otro reparto.</li>
+  <li>El reparto original la sigue mostrando, con fondo rojo y la etiqueta <b>No entregada</b>. En la hoja de carga aparece como <b>(NO ENTREGADA)</b>.</li>
+  <li>En la lista de repartos se ve cuántas ventas no se entregaron.</li>
+</ul>
+
+<h2 class="page-break">9. Seguimiento y diferencias de cajas</h2>
+<p>La lista de <span class="ui">Repartos</span> muestra, para cada reparto:</p>
+<table>
+  <tr><th style="width:24%">Columna</th><th>Qué muestra</th></tr>
+  <tr><td>Ventas</td><td>Cantidad de ventas y, debajo, cuántas no se entregaron.</td></tr>
+  <tr><td>Cajas salida</td><td>Cajas retornables que salieron.</td></tr>
+  <tr><td>Recibidas</td><td>Cajas que volvieron (vacío hasta la recepción).</td></tr>
+  <tr><td>Dif.</td><td><b>—</b> si todavía no volvió; <b style="color:var(--ok)">OK</b> si coincide; <b style="color:var(--bad)">+n</b> o <b style="color:var(--bad)">−n</b> si sobran o faltan; <b style="color:var(--bad)">por tipo</b> si el total coincide pero un tipo sobra y otro falta.</td></tr>
+</table>
+<p>
+  Use los filtros <b>Estado</b>, <b>Fecha desde</b>, <b>Fecha hasta</b> y <b>Cajas → Con diferencias</b>
+  para ver solo los repartos que volvieron con cajas de más o de menos. En el detalle, cada tipo de
+  caja muestra lo recibido y la diferencia, y se ve la observación que dejó el ruteador.
+</p>
+
+<h2>10. Corregir la forma de pago de un envío</h2>
+<div class="box info">
+  <b class="t">Cuándo se usa</b>
+  Un cliente pagó 150.000 por transferencia y debía 100.000 que iba a pagar <b>en efectivo al recibir</b>.
+  Al entregar la mercadería terminó <b>transfiriendo</b> esos 100.000. Si no se corrige, el sistema
+  espera que el chofer traiga 100.000 en efectivo y aparece como faltante.
+</div>
+<ol class="steps">
+  <li>Abra el detalle del reparto en <span class="ui">Repartos</span>.</li>
+  <li>En la fila de la venta, presione el botón de los <b>billetes</b> (<i>Corregir forma de pago</i>).</li>
+  <li>Se muestra lo cobrado en <b>Efectivo</b>, <b>POS</b>, <b>Voucher</b> y <b>Transferencia</b>. Reparta los montos según cómo pagó realmente el cliente. En el ejemplo: Efectivo 0 y Transferencia 250.000.</li>
+  <li>La suma tiene que dar el mismo total. Debajo de los montos se ve en verde cuando coincide, o en rojo cuánto falta o sobra.</li>
+  <li>Opcional: escriba una observación (por ejemplo, <i>transfirió el saldo al recibir</i>).</li>
+  <li>Presione <span class="ui">Guardar</span>.</li>
+</ol>
+<ul>
+  <li>Cada corrección queda registrada con quién la hizo, cuándo, cómo estaba y cómo quedó. Se ve en <b>Correcciones anteriores</b>, dentro de la misma ventana.</li>
+  <li>Se puede corregir aunque la caja donde se hizo la venta ya esté cerrada. <b>El arqueo del cajero no cambia</b>: solo cambia lo que se espera que traiga el chofer.</li>
+  <li>No se puede cambiar el total cobrado ni pasar parte a crédito; solo repartirlo entre las formas de pago.</li>
+  <li>Solo aparece en las ventas que siguen en el reparto (no en las marcadas como no entregadas) y se necesita el permiso <b>Corregir cobro de envíos</b> (CORREGIRCOBROENVIO).</li>
+</ul>
+
+<h2 class="page-break">11. Reglas importantes</h2>
+<div class="box bad">
+  <b class="t">Una venta en ruta no se modifica</b>
+  Cuando el reparto está <span class="badge b-ruta">En ruta</span> o <span class="badge b-recibido">Recibido</span>,
+  sus ventas no se pueden editar, cambiar de productos ni borrar. Así la hoja de carga y las cajas siguen
+  coincidiendo con lo que llevó el vehículo. La forma de pago sí se puede corregir (punto 10).
+</div>
+<ul>
+  <li><b>Una venta va en un solo reparto.</b> Para moverla, quítela del reparto Armado o márquela como no entregada en la recepción.</li>
+  <li><b>Un reparto sin ventas no puede salir.</b></li>
+  <li><b>Solo la distribuidora</b> usa repartos.</li>
+  <li>Un reparto <b>solo se anula mientras está Armado</b>. Una vez que salió ya no se anula.</li>
+  <li>La <b>observación de la recepción es obligatoria</b> cuando faltan o sobran cajas o hay ventas no entregadas.</li>
+</ul>
+
+<h2>12. Preguntas frecuentes</h2>
+<h3>No encuentro una venta en «Agregar ventas».</h3>
+<p>Revise el rango de fechas. Solo aparecen ventas de <b>envío</b>, <b>pendientes</b> y que no estén ya en otro reparto.</p>
+
+<h3>Me equivoqué de vehículo o de chofer.</h3>
+<p>Si el reparto está Armado, use <span class="ui">Editar</span>. Si ya salió, no se puede cambiar.</p>
+
+<h3>Hay que agregar un producto a una venta que ya salió.</h3>
+<p>No se puede: la venta está en ruta. Haga una venta nueva para lo que falta.</p>
+
+<h3>El vehículo volvió con una caja de menos.</h3>
+<p>Cargue la cantidad real en la recepción y explique el motivo en la observación. El reparto aparece con el filtro <b>Con diferencias</b>.</p>
+
+<h3>El ruteador no ve ningún reparto.</h3>
+<p>En <span class="ui">Salen (carga)</span> solo aparecen los repartos Armados; en <span class="ui">Llegan (recepción)</span>, los que están En ruta. Revise también que su usuario tenga el perfil <b>RUTEADOR</b>.</p>
+
+<h3>No veo el botón de los billetes para corregir el cobro.</h3>
+<p>Su perfil necesita el permiso de corregir cobros de envíos. Pídaselo al administrador.</p>
+
+<div class="footer">Salvatore Distribuidora · Manual de Repartos · Las fechas se muestran en formato dd/mm/aaaa y los montos en guaraníes con separador de miles.</div>
+
+</body>
+</html>
