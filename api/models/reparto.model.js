@@ -110,6 +110,62 @@ async function lockReparto(conn, empresaId, id, estadosPermitidos) {
   return r;
 }
 
+// ── Cobro de ventas de envío ────────────────────────────────────────────────
+// Al confirmar un envío, cada forma de pago queda como un movimiento de caja
+// (registrodiariocaja, TipoGastoId 2) en los grupos dedicados 7-10, atado a la
+// venta por el "N°: <id>" del detalle (ver Venta.registrarPagosEnCaja). Los
+// "Cobro Crédito ..." posteriores no son parte del cobro del envío.
+const GRUPO_POR_METODO = { efectivo: 7, pos: 8, voucher: 9, transferencia: 10 };
+const METODOS = Object.keys(GRUPO_POR_METODO);
+const METODO_POR_GRUPO = Object.fromEntries(
+  METODOS.map((m) => [GRUPO_POR_METODO[m], m])
+);
+
+const PAGOS_ENVIO_SQL = `
+  SELECT RegistroDiarioCajaId AS rdc_id, TipoGastoGrupoId AS grupo,
+         RegistroDiarioCajaMonto AS monto, CajaId AS caja_id,
+         RegistroDiarioCajaFecha AS fecha, UsuarioId AS usuario_id
+    FROM registrodiariocaja
+   WHERE TipoGastoId = 2
+     AND TipoGastoGrupoId IN (7, 8, 9, 10)
+     AND NOT (RegistroDiarioCajaDetalle LIKE 'Cobro Crédito%')
+     AND CAST(substring(RegistroDiarioCajaDetalle from 'N°:\\s*([0-9]+)') AS INTEGER) = ?
+   ORDER BY RegistroDiarioCajaId`;
+
+const montosVacios = () => ({ efectivo: 0, pos: 0, voucher: 0, transferencia: 0 });
+
+function sumarPorMetodo(rows) {
+  const m = montosVacios();
+  for (const r of rows) m[METODO_POR_GRUPO[Number(r.grupo)]] += Number(r.monto);
+  return m;
+}
+
+const totalDe = (m) => METODOS.reduce((a, k) => a + m[k], 0);
+const miles = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+function detallePago(metodo, ventaId, esCredito) {
+  const base = {
+    efectivo: esCredito ? "Venta Crédito" : "Venta",
+    pos: "Venta POS",
+    voucher: "Venta Voucher",
+    transferencia: "Venta Transferencia",
+  }[metodo];
+  return `${base} N°: ${ventaId} (ENVÍO)`;
+}
+
+// La venta tiene que estar hoy en este reparto (las no entregadas ya salieron
+// de él y se corrigen desde el reparto donde se entreguen).
+async function validarVentaDelReparto(conn, repartoId, ventaId, { lock = false } = {}) {
+  const id = Number(ventaId);
+  if (!Number.isInteger(id) || id <= 0) throw negocio(400, "Venta inválida");
+  const [rows] = await conn.query(
+    `SELECT venta_id FROM venta_envio WHERE reparto_id = ? AND venta_id = ?${lock ? " FOR UPDATE" : ""}`,
+    [Number(repartoId), id]
+  );
+  if (!rows.length) throw negocio(404, `La venta #${id} no está en este reparto`);
+  return id;
+}
+
 async function enTransaccion(fn) {
   const conn = await db.promise().getConnection();
   try {
@@ -559,6 +615,122 @@ const Reparto = {
       " "
     )}): no se puede modificar`;
   },
+
+  // Lo cobrado al confirmar una venta de envío, por forma de pago, y el
+  // historial de correcciones.
+  getPagosEnvio: async (empresaId, repartoId, ventaId) => {
+    const pe = db.promise();
+    const [rep] = await pe.query(
+      `SELECT estado FROM reparto WHERE id = ? AND empresa_id = ?`,
+      [Number(repartoId), Number(empresaId)]
+    );
+    if (!rep.length) throw negocio(404, "Reparto no encontrado");
+    if (rep[0].estado === "ANULADO") throw negocio(409, "El reparto está ANULADO");
+    const id = await validarVentaDelReparto(pe, repartoId, ventaId);
+    const [rows] = await pe.query(PAGOS_ENVIO_SQL, [id]);
+    const montos = sumarPorMetodo(rows);
+    const [correcciones] = await pe.query(
+      `SELECT id, TRIM(usuario_id) AS usuario_id, corregido_en, antes, despues, observacion
+         FROM venta_pago_correccion WHERE venta_id = ? ORDER BY id`,
+      [id]
+    );
+    return { venta_id: id, ...montos, total: totalDe(montos), correcciones };
+  },
+
+  // El cajero redistribuye lo cobrado de una venta de envío entre efectivo,
+  // POS, voucher y transferencia (p. ej. el efectivo a cobrar al entregar
+  // terminó siendo transferencia). El total no cambia. Se reescriben los
+  // movimientos de caja de la venta en su lugar (misma caja, fecha y usuario
+  // de origen, aunque esa caja ya esté cerrada: los grupos 7-10 no cuentan en
+  // el arqueo del cajero) y queda registro en venta_pago_correccion.
+  corregirPagosEnvio: async (empresaId, repartoId, ventaId, usuarioId, data = {}) =>
+    enTransaccion(async (conn) => {
+      const nuevos = montosVacios();
+      for (const m of METODOS) {
+        const v = data[m];
+        if (v === undefined || v === null || v === "") continue;
+        const n = Number(v);
+        if (!Number.isSafeInteger(n) || n < 0) throw negocio(400, `Monto de ${m} inválido`);
+        nuevos[m] = n;
+      }
+
+      await lockReparto(conn, empresaId, repartoId, ["ARMADO", "EN_RUTA", "RECIBIDO"]);
+      const id = await validarVentaDelReparto(conn, repartoId, ventaId, { lock: true });
+      const [ven] = await conn.query(
+        `SELECT VentaTipo AS venta_tipo FROM venta WHERE VentaId = ? FOR UPDATE`,
+        [id]
+      );
+      const esCredito = ven[0]?.venta_tipo === "CR";
+
+      const [rows] = await conn.query(`${PAGOS_ENVIO_SQL} FOR UPDATE`, [id]);
+      if (!rows.length) {
+        throw negocio(409, `La venta #${id} no tiene pagos de envío para corregir`);
+      }
+      const antes = sumarPorMetodo(rows);
+      const total = totalDe(antes);
+      if (totalDe(nuevos) !== total) {
+        throw negocio(
+          400,
+          `La suma de las formas de pago debe ser Gs. ${miles(total)} (lo cobrado en la venta)`
+        );
+      }
+      if (METODOS.every((m) => nuevos[m] === antes[m])) {
+        throw negocio(400, "No hay cambios en la forma de pago");
+      }
+
+      // Cada forma de pago con monto conserva, si existe, el movimiento que ya
+      // tenía su grupo; las demás reusan los movimientos sobrantes y, si no
+      // alcanzan, se agregan nuevos con la caja, fecha y usuario de origen.
+      const destinos = METODOS.filter((m) => nuevos[m] > 0);
+      const libres = [...rows];
+      const asignados = new Map();
+      for (const m of destinos) {
+        const i = libres.findIndex((r) => Number(r.grupo) === GRUPO_POR_METODO[m]);
+        if (i >= 0) asignados.set(m, libres.splice(i, 1)[0]);
+      }
+      for (const m of destinos) {
+        if (!asignados.has(m) && libres.length) asignados.set(m, libres.shift());
+      }
+      const origen = rows[0];
+      for (const m of destinos) {
+        const fila = asignados.get(m);
+        const detalle = detallePago(m, id, esCredito);
+        if (fila) {
+          await conn.query(
+            `UPDATE registrodiariocaja
+                SET TipoGastoGrupoId = ?, RegistroDiarioCajaDetalle = ?, RegistroDiarioCajaMonto = ?
+              WHERE RegistroDiarioCajaId = ?`,
+            [GRUPO_POR_METODO[m], detalle, nuevos[m], fila.rdc_id]
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO registrodiariocaja (
+               CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId,
+               RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId
+             ) VALUES (?, ?, 2, ?, ?, ?, ?)`,
+            [origen.caja_id, origen.fecha, GRUPO_POR_METODO[m], detalle, nuevos[m], origen.usuario_id]
+          );
+        }
+      }
+      for (const r of libres) {
+        await conn.query(`DELETE FROM registrodiariocaja WHERE RegistroDiarioCajaId = ?`, [r.rdc_id]);
+      }
+
+      // VentaTipo con la misma prioridad que la confirmación (CR > TR > PO > CO).
+      if (!esCredito) {
+        const tipo = nuevos.transferencia > 0 ? "TR" : nuevos.pos > 0 ? "PO" : "CO";
+        await conn.query(`UPDATE venta SET VentaTipo = ? WHERE VentaId = ?`, [tipo, id]);
+      }
+
+      const usr = usuarioId == null ? null : String(usuarioId).trim() || null;
+      const obs = typeof data.observacion === "string" ? data.observacion.trim() || null : null;
+      await conn.query(
+        `INSERT INTO venta_pago_correccion (venta_id, reparto_id, usuario_id, antes, despues, observacion)
+         VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?)`,
+        [id, Number(repartoId), usr, JSON.stringify(antes), JSON.stringify(nuevos), obs]
+      );
+      return { venta_id: id, ...nuevos, total };
+    }),
 };
 
 module.exports = Reparto;

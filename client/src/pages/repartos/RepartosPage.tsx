@@ -6,6 +6,7 @@ import {
   TrashIcon,
   PencilSquareIcon,
   EyeIcon,
+  BanknotesIcon,
 } from "@heroicons/react/24/outline";
 import {
   Button,
@@ -25,6 +26,11 @@ import {
   anularReparto,
   asignarVentas,
   quitarVenta,
+  getPagosEnvio,
+  corregirPagosEnvio,
+  METODOS_PAGO_ENVIO,
+  type MontosPagoEnvio,
+  type PagosEnvio,
   REPARTO_ESTADO_BADGE,
   REPARTO_ESTADO_LABEL,
   type Reparto,
@@ -380,6 +386,169 @@ function DiferenciaCajas({ r }: { r: Reparto }) {
   );
 }
 
+// Corrección de la forma de pago de una venta de envío: el cajero redistribuye
+// lo cobrado (p. ej. el efectivo a cobrar al entregar terminó siendo
+// transferencia). El total no cambia; cada corrección queda registrada.
+function CorregirCobroModal({
+  repartoId,
+  ventaId,
+  onClose,
+  onGuardado,
+}: {
+  repartoId: number;
+  ventaId: number | null;
+  onClose: () => void;
+  onGuardado: () => void;
+}) {
+  const [pagos, setPagos] = useState<PagosEnvio | null>(null);
+  const [montos, setMontos] = useState<MontosPagoEnvio>({ efectivo: 0, pos: 0, voucher: 0, transferencia: 0 });
+  const [observacion, setObservacion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (ventaId == null) {
+      setPagos(null);
+      return;
+    }
+    let vigente = true;
+    setLoading(true);
+    setObservacion("");
+    getPagosEnvio(repartoId, ventaId)
+      .then((p) => {
+        if (!vigente) return;
+        setPagos(p);
+        setMontos({ efectivo: p.efectivo, pos: p.pos, voucher: p.voucher, transferencia: p.transferencia });
+      })
+      .catch((e) => {
+        if (!vigente) return;
+        Swal.fire("Error", msg(e, "No se pudo cargar la forma de pago"), "error");
+        onClose();
+      })
+      .finally(() => vigente && setLoading(false));
+    return () => {
+      vigente = false;
+    };
+  }, [repartoId, ventaId, onClose]);
+
+  const suma = METODOS_PAGO_ENVIO.reduce((a, m) => a + montos[m.key], 0);
+  const diferencia = pagos ? pagos.total - suma : 0;
+  const sinCambios =
+    !!pagos && METODOS_PAGO_ENVIO.every((m) => montos[m.key] === pagos[m.key]);
+  const sinPagos = !!pagos && pagos.total === 0;
+
+  const guardar = async () => {
+    if (!pagos || ventaId == null || diferencia !== 0 || sinCambios) return;
+    setSaving(true);
+    try {
+      await corregirPagosEnvio(repartoId, ventaId, montos, observacion);
+      Swal.fire({ icon: "success", title: "Forma de pago corregida", timer: 1500, showConfirmButton: false });
+      onGuardado();
+    } catch (e) {
+      Swal.fire("Error", msg(e, "No se pudo corregir la forma de pago"), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resumen = (m: MontosPagoEnvio) =>
+    METODOS_PAGO_ENVIO.filter((x) => m[x.key] > 0)
+      .map((x) => `${x.label} ${formatMiles(m[x.key])}`)
+      .join(" · ") || "—";
+
+  return (
+    <Modal
+      open={ventaId != null}
+      onClose={onClose}
+      size="lg"
+      title={ventaId != null ? `Forma de pago — Venta #${ventaId}` : "Forma de pago"}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={guardar} disabled={!pagos || sinPagos || diferencia !== 0 || sinCambios || saving}>
+            {saving ? "Guardando..." : "Guardar"}
+          </Button>
+        </>
+      }
+    >
+      {loading || !pagos ? (
+        <LoadingState fullPage={false} />
+      ) : sinPagos ? (
+        <p className="text-sm text-text-muted">
+          Esta venta no tiene pagos de envío registrados (por ejemplo, quedó toda a crédito).
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Reparta lo cobrado según cómo pagó realmente el cliente. El total debe seguir siendo{" "}
+            <b className="text-text">Gs. {formatMiles(pagos.total)}</b>.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {METODOS_PAGO_ENVIO.map((m) => (
+              <div key={m.key}>
+                <label className={labelCls} htmlFor={`pago-${m.key}`}>
+                  {m.label}
+                </label>
+                <input
+                  id={`pago-${m.key}`}
+                  type="text"
+                  inputMode="numeric"
+                  className={`${inputCls} text-right`}
+                  value={montos[m.key] ? formatMiles(montos[m.key]) : ""}
+                  placeholder="0"
+                  onChange={(e) =>
+                    setMontos((prev) => ({ ...prev, [m.key]: Number(e.target.value.replace(/\D/g, "")) }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <div
+            className={`text-sm font-medium ${diferencia === 0 ? "text-success-700" : "text-danger-700"}`}
+          >
+            Suma Gs. {formatMiles(suma)}
+            {diferencia > 0 && ` — faltan Gs. ${formatMiles(diferencia)}`}
+            {diferencia < 0 && ` — sobran Gs. ${formatMiles(-diferencia)}`}
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="pago-obs">
+              Observación (opcional)
+            </label>
+            <input
+              id="pago-obs"
+              type="text"
+              className={inputCls}
+              value={observacion}
+              maxLength={250}
+              placeholder="Ej.: transfirió el saldo al recibir"
+              onChange={(e) => setObservacion(e.target.value)}
+            />
+          </div>
+          {pagos.correcciones.length > 0 && (
+            <section>
+              <h4 className="text-xs font-semibold text-text-muted mb-1">Correcciones anteriores</h4>
+              <ul className="text-xs space-y-1">
+                {pagos.correcciones.map((c) => (
+                  <li key={c.id} className="border border-border rounded-md p-2">
+                    <div className="text-text-muted">
+                      {formatFechaHora(c.corregido_en)} · {c.usuario_id ?? "?"}
+                    </div>
+                    <div>Antes: {resumen(c.antes)}</div>
+                    <div>Después: {resumen(c.despues)}</div>
+                    {c.observacion && <div className="text-text-muted">{c.observacion}</div>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function RepartoDetalleModal({
   open,
   repartoId,
@@ -400,6 +569,9 @@ function RepartoDetalleModal({
   const [det, setDet] = useState<RepartoDetalle | null>(null);
   const [loading, setLoading] = useState(false);
   const [asignarOpen, setAsignarOpen] = useState(false);
+  const [cobroVentaId, setCobroVentaId] = useState<number | null>(null);
+  const puedeCorregirCobro = usePermiso("CORREGIRCOBROENVIO", "editar");
+  const cerrarCobro = useCallback(() => setCobroVentaId(null), []);
 
   const cargar = useCallback(async () => {
     if (!repartoId) return;
@@ -419,6 +591,8 @@ function RepartoDetalleModal({
   }, [open, cargar, version]);
 
   const editable = puedeEditar && det?.estado === "ARMADO";
+  const corregible = puedeCorregirCobro && !!det && det.estado !== "ANULADO";
+  const conAcciones = editable || corregible;
   const conCajas = det?.cajas.some((c) => c.cajas_recibidas != null);
   const totalSalida = det?.cajas.reduce((a, c) => a + c.cajas_salida, 0) ?? 0;
 
@@ -586,7 +760,7 @@ function RepartoDetalleModal({
                       <th className="p-2">Fecha</th>
                       <th className="p-2">Cliente</th>
                       <th className="p-2 text-right">Total</th>
-                      {editable && <th className="p-2 w-10" />}
+                      {conAcciones && <th className="p-2 w-20" />}
                     </tr>
                   </thead>
                   <tbody>
@@ -603,16 +777,28 @@ function RepartoDetalleModal({
                           )}
                         </td>
                         <td className="p-2 text-right">Gs. {formatMiles(v.venta_total)}</td>
-                        {editable && (
-                          <td className="p-2">
-                            <button
-                              onClick={() => quitar(v.venta_id)}
-                              title="Quitar del reparto"
-                              aria-label={`Quitar venta ${v.venta_id}`}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-danger-700 hover:bg-danger-50 cursor-pointer"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </button>
+                        {conAcciones && (
+                          <td className="p-2 whitespace-nowrap text-right">
+                            {corregible && !v.no_entregada && (
+                              <button
+                                onClick={() => setCobroVentaId(v.venta_id)}
+                                title="Corregir forma de pago"
+                                aria-label={`Corregir forma de pago de la venta ${v.venta_id}`}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50 cursor-pointer"
+                              >
+                                <BanknotesIcon className="h-4 w-4" />
+                              </button>
+                            )}
+                            {editable && (
+                              <button
+                                onClick={() => quitar(v.venta_id)}
+                                title="Quitar del reparto"
+                                aria-label={`Quitar venta ${v.venta_id}`}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-danger-700 hover:bg-danger-50 cursor-pointer"
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -652,6 +838,14 @@ function RepartoDetalleModal({
           </div>
         ) : null}
       </Modal>
+      {det && (
+        <CorregirCobroModal
+          repartoId={det.id}
+          ventaId={cobroVentaId}
+          onClose={cerrarCobro}
+          onGuardado={cerrarCobro}
+        />
+      )}
       <AsignarVentasModal
         open={asignarOpen}
         reparto={det}

@@ -408,12 +408,116 @@ const db = require("../config/db");
       assert(f.every((x) => x.con_diferencia), "el filtro trae repartos sin diferencia");
     });
 
+    console.log("Corrección de la forma de pago (envío)");
+    // ven1 está ENTREGADA en el reparto rid (RECIBIDO). Pagos sintéticos como
+    // los deja la confirmación: 150.000 transferencia (grupo 10) + 100.000
+    // efectivo a cobrar al entregar (grupo 7), más un cobro de crédito que la
+    // corrección no debe tocar.
+    const caja = (await q("SELECT CajaId AS cid FROM caja ORDER BY CajaId LIMIT 1"))[0].cid;
+    const usrCaja = (await q("SELECT usuarioid AS u FROM usuario ORDER BY usuarioid LIMIT 1"))[0].u;
+    const mkPago = async (ventaId, grupo, detalle, monto) =>
+      (await q(
+        `INSERT INTO registrodiariocaja (CajaId, RegistroDiarioCajaFecha, TipoGastoId, TipoGastoGrupoId, RegistroDiarioCajaDetalle, RegistroDiarioCajaMonto, UsuarioId)
+         VALUES (?, '2026-01-15', 2, ?, ?, ?, ?) RETURNING RegistroDiarioCajaId AS rid`,
+        [caja, grupo, detalle, monto, usrCaja]
+      ))[0].rid;
+    const pagosDe = (ventaId) =>
+      q(
+        `SELECT RegistroDiarioCajaId AS id, TipoGastoGrupoId AS grupo, RegistroDiarioCajaDetalle AS detalle,
+                RegistroDiarioCajaMonto::bigint AS monto, CajaId AS caja, RegistroDiarioCajaFecha::text AS fecha, TRIM(UsuarioId) AS usuario
+           FROM registrodiariocaja
+          WHERE RegistroDiarioCajaDetalle LIKE ?
+          ORDER BY RegistroDiarioCajaId`,
+        [`%N°: ${ventaId}%`]
+      ).then((rows) => rows.filter((x) => x.id !== idOtraVenta));
+    await q("UPDATE venta SET VentaTipo='TR', Total=250000, VentaEntrega=250000 WHERE VentaId=?", [ven1]);
+    const idTransf = await mkPago(ven1, 10, `Venta Transferencia N°: ${ven1} (ENVÍO)`, 150000);
+    const idEfec = await mkPago(ven1, 7, `Venta N°: ${ven1} (ENVÍO)`, 100000);
+    const idCobro = await mkPago(ven1, 3, `Cobro Crédito Efectivo N°: ${ven1}`, 5000);
+    // Movimiento de OTRA venta cuyo número empieza igual (ven1 seguido de 0):
+    // no debe sumarse ni tocarse.
+    const idOtraVenta = await mkPago(ven1, 7, `Venta N°: ${ven1}0 (ENVÍO)`, 777);
+    await t("cobro de envío: muestra lo cobrado por forma de pago", async () => {
+      const p = await R.getPagosEnvio(EMP, rid, ven1);
+      assert.deepStrictEqual(
+        [p.efectivo, p.pos, p.voucher, p.transferencia, p.total],
+        [100000, 0, 0, 150000, 250000]
+      );
+      assert.deepStrictEqual(p.correcciones, []);
+    });
+    await t("cobro de envío: validaciones", async () => {
+      await expectErr(R.corregirPagosEnvio(EMP, rid, ven1, "caj", { efectivo: 0, pos: 0, voucher: 0, transferencia: 200000 }), 400, /250\.000/);
+      await expectErr(R.corregirPagosEnvio(EMP, rid, ven1, "caj", { efectivo: -1, transferencia: 250001 }), 400, /inválido/);
+      await expectErr(R.corregirPagosEnvio(EMP, rid, ven1, "caj", { efectivo: 1.5, transferencia: 249998.5 }), 400, /inválido/);
+      await expectErr(R.corregirPagosEnvio(EMP, rid, ven2, "caj", { transferencia: 1 }), 404, /no está en este reparto/);
+      await expectErr(R.corregirPagosEnvio(2, rid, ven1, "caj", { transferencia: 250000 }), 404);
+      const ven8 = await mkVenta([[pA, 1, "C"]]);
+      const r6 = await R.create(EMP, { vehiculo_id: v1 }, "admin");
+      await R.asignarVentas(EMP, r6, [ven8]);
+      await expectErr(R.corregirPagosEnvio(EMP, r6, ven8, "caj", { efectivo: 0 }), 409, /no tiene pagos/);
+      await R.anular(EMP, r6);
+      await expectErr(R.getPagosEnvio(EMP, r6, ven8), 409);
+      await expectErr(R.corregirPagosEnvio(EMP, rid, ven1, "caj", { efectivo: 100000, transferencia: 150000 }), 400, /No hay cambios/);
+      assert.strictEqual((await pagosDe(ven1)).length, 3, "las validaciones no deben tocar la caja");
+    });
+    await t("cobro de envío: el efectivo pasa a transferencia, queda registrado", async () => {
+      const r = await R.corregirPagosEnvio(EMP, rid, ven1, "caj1", { efectivo: 0, pos: 0, voucher: 0, transferencia: 250000, observacion: " transfirió al entregar " });
+      assert.deepStrictEqual([r.efectivo, r.transferencia, r.total], [0, 250000, 250000]);
+      const rows = await pagosDe(ven1);
+      assert.deepStrictEqual(
+        rows.map((x) => [x.id, x.grupo, x.monto]),
+        [[idTransf, 10, 250000], [idCobro, 3, 5000]],
+        "reusa el movimiento de transferencia y borra el de efectivo"
+      );
+      assert(!rows.some((x) => x.id === idEfec));
+      assert.strictEqual(rows[0].detalle, `Venta Transferencia N°: ${ven1} (ENVÍO)`);
+      assert.strictEqual(rows[1].detalle, `Cobro Crédito Efectivo N°: ${ven1}`);
+      const v = (await q("SELECT VentaTipo AS t, Total::bigint AS tot, VentaEntrega::bigint AS ent FROM venta WHERE VentaId=?", [ven1]))[0];
+      assert.deepStrictEqual([v.t, v.tot, v.ent], ["TR", 250000, 250000]);
+      const p = await R.getPagosEnvio(EMP, rid, ven1);
+      assert.strictEqual(p.correcciones.length, 1);
+      const c = p.correcciones[0];
+      assert.strictEqual(c.usuario_id, "caj1");
+      assert.strictEqual(c.observacion, "transfirió al entregar");
+      assert.deepStrictEqual(c.antes, { efectivo: 100000, pos: 0, voucher: 0, transferencia: 150000 });
+      assert.deepStrictEqual(c.despues, { efectivo: 0, pos: 0, voucher: 0, transferencia: 250000 });
+      assert(c.corregido_en);
+    });
+    await t("cobro de envío: repartir en más formas agrega movimientos en la misma caja y fecha", async () => {
+      await R.corregirPagosEnvio(EMP, rid, ven1, "caj2", { efectivo: 50000, pos: 200000 });
+      const rows = (await pagosDe(ven1)).filter((x) => x.id !== idCobro);
+      assert.deepStrictEqual(
+        rows.map((x) => [x.grupo, x.monto, x.detalle]),
+        [
+          [7, 50000, `Venta N°: ${ven1} (ENVÍO)`], // reusa el movimiento existente
+          [8, 200000, `Venta POS N°: ${ven1} (ENVÍO)`], // nuevo
+        ]
+      );
+      assert(rows.every((x) => x.caja === caja && x.fecha.startsWith("2026-01-15") && x.usuario === usrCaja.trim()));
+      assert.strictEqual((await q("SELECT VentaTipo AS t FROM venta WHERE VentaId=?", [ven1]))[0].t, "PO");
+      assert.strictEqual((await R.getPagosEnvio(EMP, rid, ven1)).correcciones.length, 2);
+    });
+    await t("cobro de envío: venta a crédito sigue CR y el efectivo dice 'Venta Crédito'", async () => {
+      await q("UPDATE venta SET VentaTipo='CR' WHERE VentaId=?", [ven1]);
+      await R.corregirPagosEnvio(EMP, rid, ven1, "caj3", { efectivo: 250000 });
+      const rows = (await pagosDe(ven1)).filter((x) => x.id !== idCobro);
+      assert.deepStrictEqual(rows.map((x) => [x.grupo, x.monto, x.detalle]), [[7, 250000, `Venta Crédito N°: ${ven1} (ENVÍO)`]]);
+      assert.strictEqual((await q("SELECT VentaTipo AS t FROM venta WHERE VentaId=?", [ven1]))[0].t, "CR");
+      const otra = (await q("SELECT TipoGastoGrupoId AS g, RegistroDiarioCajaMonto::bigint AS m FROM registrodiariocaja WHERE RegistroDiarioCajaId=?", [idOtraVenta]))[0];
+      assert.deepStrictEqual([otra.g, otra.m], [7, 777], "tocó el movimiento de otra venta");
+      assert.strictEqual((await q("SELECT COUNT(*)::int AS n FROM venta_pago_correccion WHERE venta_id=?", [ven1]))[0].n, 3);
+    });
+
     console.log("Permisos de la API (/api/repartos)");
     const permisosOriginal = PerfilMenu.getPermisosByUsuarioId;
     const PERMISOS = {
       ruteador: { CONTROLREPARTOS: { crear: false, editar: true, eliminar: false, leer: true } },
       oficina: { REPARTOS: { crear: true, editar: true, eliminar: false, leer: true } },
       consulta: { REPARTOS: { crear: false, editar: false, eliminar: false, leer: true } },
+      cajero: {
+        REPARTOS: { crear: false, editar: false, eliminar: false, leer: true },
+        CORREGIRCOBROENVIO: { crear: false, editar: true, eliminar: false, leer: true },
+      },
       nada: {},
     };
     PerfilMenu.getPermisosByUsuarioId = async (id) => PERMISOS[String(id).trim()] || {};
@@ -449,6 +553,16 @@ const db = require("../config/db");
         assert.strictEqual((await pasaPermiso("post", "/", user("consulta"))).status, 403);
         assert.strictEqual((await pasaPermiso("get", "/", user("nada"))).status, 403);
         assert.strictEqual((await pasaPermiso("get", "/", undefined)).status, 401);
+      });
+      await t("corregir cobro: solo con el permiso CORREGIRCOBROENVIO", async () => {
+        const path = "/:id/ventas/:ventaId/pagos";
+        assert.strictEqual((await pasaPermiso("get", path, user("cajero"))).pasa, true);
+        assert.strictEqual((await pasaPermiso("put", path, user("cajero"))).pasa, true);
+        assert.strictEqual((await pasaPermiso("get", "/:id", user("cajero"))).pasa, true);
+        for (const u of ["oficina", "ruteador", "consulta"]) {
+          assert.strictEqual((await pasaPermiso("put", path, user(u))).status, 403, u);
+          assert.strictEqual((await pasaPermiso("get", path, user(u))).status, 403, u);
+        }
       });
     } finally {
       PerfilMenu.getPermisosByUsuarioId = permisosOriginal;

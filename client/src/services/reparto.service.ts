@@ -205,3 +205,53 @@ export const confirmarRecepcion = async (
     throw fail(error, "Error al registrar la recepción");
   }
 };
+
+// ── Cobro de ventas de envío (permiso CORREGIRCOBROENVIO) ─────────────────────
+
+export type MetodoPagoEnvio = "efectivo" | "pos" | "voucher" | "transferencia";
+
+export const METODOS_PAGO_ENVIO: { key: MetodoPagoEnvio; label: string }[] = [
+  { key: "efectivo", label: "Efectivo" },
+  { key: "pos", label: "POS" },
+  { key: "voucher", label: "Voucher" },
+  { key: "transferencia", label: "Transferencia" },
+];
+
+export type MontosPagoEnvio = Record<MetodoPagoEnvio, number>;
+
+export interface CorreccionPagoEnvio {
+  id: number;
+  usuario_id: string | null;
+  corregido_en: string;
+  antes: MontosPagoEnvio;
+  despues: MontosPagoEnvio;
+  observacion: string | null;
+}
+
+export interface PagosEnvio extends MontosPagoEnvio {
+  venta_id: number;
+  total: number;
+  correcciones: CorreccionPagoEnvio[];
+}
+
+export const getPagosEnvio = async (id: number, ventaId: number): Promise<PagosEnvio> => {
+  try {
+    const res = await api.get(`/repartos/${id}/ventas/${ventaId}/pagos`);
+    return res.data.data;
+  } catch (error) {
+    throw fail(error, "Error al obtener la forma de pago");
+  }
+};
+
+export const corregirPagosEnvio = async (
+  id: number,
+  ventaId: number,
+  montos: MontosPagoEnvio,
+  observacion: string,
+) => {
+  try {
+    await api.put(`/repartos/${id}/ventas/${ventaId}/pagos`, { ...montos, observacion });
+  } catch (error) {
+    throw fail(error, "Error al corregir la forma de pago");
+  }
+};

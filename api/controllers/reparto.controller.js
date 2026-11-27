@@ -119,3 +119,32 @@ exports.confirmarRecepcion = async (req, res) => {
     fail(res, err, "confirmarRecepcion");
   }
 };
+
+// Cobro de una venta de envío del reparto (permiso CORREGIRCOBROENVIO).
+exports.getPagosEnvio = async (req, res) => {
+  try {
+    const data = await Reparto.getPagosEnvio(req.empresaId, req.params.id, req.params.ventaId);
+    res.json({ data });
+  } catch (err) {
+    fail(res, err, "getPagosEnvio");
+  }
+};
+
+exports.corregirPagosEnvio = async (req, res) => {
+  try {
+    const data = await Reparto.corregirPagosEnvio(
+      req.empresaId,
+      req.params.id,
+      req.params.ventaId,
+      usuarioDe(req),
+      req.body || {}
+    );
+    // Rastro en el log del servidor, además de venta_pago_correccion.
+    console.log(
+      `reparto #${req.params.id}: cobro de la venta #${data.venta_id} corregido por ${usuarioDe(req) ?? "?"}`
+    );
+    res.json({ message: "Forma de pago corregida", data });
+  } catch (err) {
+    fail(res, err, "corregirPagosEnvio");
+  }
+};
