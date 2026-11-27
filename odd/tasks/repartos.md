@@ -27,11 +27,11 @@ Branch: feat/repartos · Delivery: ask-on-risk · Test runner: none in repo (api
 - [x] T4 — S6,S7 ruteador page /control-vehiculos (tablet) · inline
 - [x] T5 — S9 registration (App routes, Sidebar, DocumentTitle, login redirect for RUTEADOR) · inline
 
-- [x] T6 — S13 move scratch test to api/scripts/verificar_repartos.js + RED checks for S10–S12, S14 · inline
-- [x] T7 — S10 migration 037 + recepción con no entregadas (model + tablet UI + detalle/hoja) · inline
-- [x] T8 — S11 permiso middleware + reparto routes · inline
-- [x] T9 — S12 edit guard on venta PUT / ventaproducto · inline
-- [x] T10 — S14 list columns + filter · inline
+- [x] T6 — S13 move scratch test to api/scripts/verificar_repartos.js + RED checks for S10–S12, S14 · inline · 954a44a
+- [x] T7 — S10 migration 037 + recepción con no entregadas (model + tablet UI + detalle/hoja) · inline · 954a44a
+- [x] T8 — S11 permiso middleware + reparto routes · inline · 51715c4
+- [x] T9 — S12 edit guard on venta PUT / ventaproducto · inline · 954a44a
+- [x] T10 — S14 list columns + filter · inline · 954a44a
 
 Route evidence: one coherent feature, units depend on each other (backend → pages), no Writer trigger reason → inline. Risk: item 1 (migration on venta_envio), item 4 (state transitions under concurrency) → independent verifier at the end.
 
@@ -51,3 +51,4 @@ Route evidence: one coherent feature, units depend on each other (backend → pa
 - L12 (2026-11-27, verbatim): "dale, avanzá con 1 a 5" — after the analysis proposing: 1 ventas no entregadas, 2 permisos en la API, 3 bloquear edición de ventas en ruta, 4 pruebas en el repo, 5 diferencias en la lista. Route: inline (dependent units on the same files, no Writer trigger). Risk expected: item 1 (migration 037), item 2 (permission guard on API) → independent verifier at the end.
 - L13 T6–T10 evidence: api/scripts/verificar_repartos.js written first with the new checks → RED observed (13 failures: no_entregadas ignored, edit guard missing, list fields missing, permissions not wired); census unchanged. Implemented: migration 037 (applied twice locally, idempotent); model (recepción no_entregadas with FOR UPDATE membership check + mandatory observation, detail UNION with no_entregada flag, productos include no entregadas, list cajas_salida/cajas_recibidas/con_diferencia/ventas_no_entregadas + conDiferencia filter, bloqueoEdicionVenta); permiso.js fixed (req.user.id, admin pass, menus array, 401/403/500) and wired on every reparto route; 409 guard on PUT /venta/:id and ventaproducto POST/PUT/DELETE. GREEN: 25 OK, 0 failures; census (venta/ventaproducto/venta_envio/reparto/reparto_caja/no_entregada/tipo caja + md5 of venta_envio) identical before/after. Real read-only check: non-admin user passes its own menu, 403 on a menu it lacks. Client tsc, eslint, vite build clean. Not exercised in a browser. Known limitation: edit guard is a check-then-write outside a transaction (old callback models), so an edit racing the exact moment of salida could slip through.
 - L14 Verifier (independent, read-only) on T6–T10: S10–S14 PASS, no blockers; script 25 OK exit 0, tsc clean. Fixed minor: non-array `no_entregadas` now 400 (was silently ignored) + probe; script header warns it holds row locks for seconds (run off-hours on the server). Accepted minors: S12 guard is check-then-write (ms race at salida, no client calls those endpoints today); other write paths (e.g. POST /venta/devolucion) not guarded, outside S12 scope; a re-pending venta edited later changes the old reparto's historic product list. Recheck: 25 OK, census identical.
+- L15 Commits: 51715c4 (T8 permisos, own commit: Risk item 2), 954a44a (T6, T7, T9, T10). RDD assess 4943b30..954a44a (untracked .atl excluded): risk medium, review_due false (under_budget) → no native review; independent verifier already covered items 1 and 2 (L14). Push/PR/deploy remain the user's decision; migration 037 runs on the server via deploy/migrar.sh on push.
