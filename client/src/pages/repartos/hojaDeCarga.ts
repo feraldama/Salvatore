@@ -68,7 +68,7 @@ ${r.productos
 ${r.ventas
   .map(
     (v) =>
-      `<tr><td>#${v.venta_id}</td><td>${esc(formatFecha(v.venta_fecha))}</td><td>${esc(v.cliente ?? "")}</td><td class="r">Gs. ${formatMiles(v.venta_total)}</td></tr>`,
+      `<tr><td>#${v.venta_id}</td><td>${esc(formatFecha(v.venta_fecha))}</td><td>${esc(v.cliente ?? "")}${v.no_entregada ? " <b>(NO ENTREGADA)</b>" : ""}</td><td class="r">Gs. ${formatMiles(v.venta_total)}</td></tr>`,
   )
   .join("")}
 </tbody></table>

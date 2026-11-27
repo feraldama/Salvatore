@@ -132,23 +132,45 @@ function DetalleRecepcion({ det, onHecho }: { det: RepartoDetalle; onHecho: () =
     Object.fromEntries(det.cajas.map((c) => [c.tipo_caja, ""])),
   );
   const [observacion, setObservacion] = useState("");
+  // Ventas que volvieron sin entregar: quedan pendientes para otro reparto.
+  const [noEntregadas, setNoEntregadas] = useState<Set<number>>(() => new Set());
   const [saving, setSaving] = useState(false);
 
   const set = (tipo: string, v: number | "") =>
     setRecibidas((prev) => ({ ...prev, [tipo]: v === "" ? "" : Math.max(0, v) }));
 
+  const toggleEntrega = (ventaId: number) =>
+    setNoEntregadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(ventaId)) next.delete(ventaId);
+      else next.add(ventaId);
+      return next;
+    });
+
   const faltanCargar = det.cajas.some((c) => recibidas[c.tipo_caja] === "");
   const hayDiferencia = det.cajas.some(
     (c) => recibidas[c.tipo_caja] !== "" && recibidas[c.tipo_caja] !== c.cajas_salida,
   );
-  const obsFaltante = hayDiferencia && !observacion.trim();
+  const obsObligatoria = hayDiferencia || noEntregadas.size > 0;
+  const obsFaltante = obsObligatoria && !observacion.trim();
+  const motivoObs = [
+    hayDiferencia && "hay diferencias",
+    noEntregadas.size > 0 && "hay ventas no entregadas",
+  ]
+    .filter(Boolean)
+    .join(" y ");
 
   const confirmar = async () => {
     if (faltanCargar || obsFaltante) return;
+    const avisos = [
+      hayDiferencia ? "Las cajas tienen diferencias." : "Las cajas coinciden.",
+      noEntregadas.size > 0 &&
+        `${noEntregadas.size} venta(s) no entregada(s) vuelven a pendientes para otro reparto.`,
+    ].filter(Boolean);
     const ok = await Swal.fire({
       title: `¿Confirmar la recepción de ${det.vehiculo_chapa}?`,
-      text: hayDiferencia ? "Se registrará con diferencias." : "Las cajas coinciden.",
-      icon: hayDiferencia ? "warning" : "question",
+      text: avisos.join(" "),
+      icon: obsObligatoria ? "warning" : "question",
       showCancelButton: true,
       confirmButtonText: "Confirmar",
       cancelButtonText: "Cancelar",
@@ -160,6 +182,7 @@ function DetalleRecepcion({ det, onHecho }: { det: RepartoDetalle; onHecho: () =
         det.id,
         det.cajas.map((c) => ({ tipo_caja: c.tipo_caja, cajas_recibidas: Number(recibidas[c.tipo_caja]) })),
         observacion,
+        [...noEntregadas],
       );
       await Swal.fire({ icon: "success", title: "Recepción registrada", timer: 1500, showConfirmButton: false });
       onHecho();
@@ -188,7 +211,7 @@ function DetalleRecepcion({ det, onHecho }: { det: RepartoDetalle; onHecho: () =
                     dif == null ? "border-border" : dif === 0 ? "border-success-600" : "border-danger-600"
                   }`}
                 >
-                  <div className="flex-1 min-w-[10rem]">
+                  <div className="flex-1 min-w-40">
                     <div className="text-lg font-semibold text-text">{labelTipoCaja(c.tipo_caja)}</div>
                     <div className="text-base text-text-muted">
                       Tiene que recibir: <span className="text-2xl font-bold text-text">{formatMiles(c.cajas_salida)}</span>
@@ -241,8 +264,46 @@ function DetalleRecepcion({ det, onHecho }: { det: RepartoDetalle; onHecho: () =
         )}
       </section>
       <section>
+        <h2 className="text-lg font-semibold text-text mb-1">Ventas</h2>
+        <p className="text-base text-text-muted mb-3">
+          Marque las que volvieron sin entregar: quedan pendientes para otro reparto.
+        </p>
+        <div className="space-y-2">
+          {det.ventas.map((v) => {
+            const noEntregada = noEntregadas.has(v.venta_id);
+            return (
+              <div
+                key={v.venta_id}
+                className={`rounded-xl border-2 bg-surface p-3 flex flex-wrap items-center gap-3 ${
+                  noEntregada ? "border-danger-600" : "border-border"
+                }`}
+              >
+                <div className="flex-1 min-w-40">
+                  <div className="text-lg font-semibold text-text">{v.cliente ?? "Sin cliente"}</div>
+                  <div className="text-base text-text-muted">
+                    Venta #{v.venta_id} · Gs. {formatMiles(v.venta_total)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleEntrega(v.venta_id)}
+                  aria-pressed={noEntregada}
+                  className={`h-14 px-5 rounded-xl text-lg font-semibold border-2 cursor-pointer ${
+                    noEntregada
+                      ? "bg-danger-50 text-danger-700 border-danger-600"
+                      : "bg-success-50 text-success-700 border-success-600"
+                  }`}
+                >
+                  {noEntregada ? "No entregada" : "Entregada"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <section>
         <label className="block text-lg font-semibold text-text mb-2">
-          Observación {hayDiferencia && <span className="text-danger-700">(obligatoria: hay diferencias)</span>}
+          Observación {obsObligatoria && <span className="text-danger-700">(obligatoria: {motivoObs})</span>}
         </label>
         <textarea
           value={observacion}

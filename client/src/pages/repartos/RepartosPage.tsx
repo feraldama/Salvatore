@@ -367,6 +367,19 @@ function AsignarVentasModal({
 }
 
 // ── Detalle del reparto ────────────────────────────────────────────────────
+// Diferencia de cajas de un reparto recibido. El neto puede dar 0 aunque un
+// tipo sobre y otro falte: en ese caso se avisa "por tipo".
+function DiferenciaCajas({ r }: { r: Reparto }) {
+  if (r.cajas_recibidas == null) return <span className="text-text-muted">—</span>;
+  if (!r.con_diferencia) return <span className="text-success-700 font-medium">OK</span>;
+  const neto = r.cajas_recibidas - r.cajas_salida;
+  return (
+    <span className="text-danger-700 font-semibold whitespace-nowrap">
+      {neto === 0 ? "por tipo" : `${neto > 0 ? "+" : "−"}${formatMiles(Math.abs(neto))}`}
+    </span>
+  );
+}
+
 function RepartoDetalleModal({
   open,
   repartoId,
@@ -578,10 +591,17 @@ function RepartoDetalleModal({
                   </thead>
                   <tbody>
                     {det.ventas.map((v) => (
-                      <tr key={v.venta_id} className="border-t border-border">
+                      <tr key={v.venta_id} className={`border-t border-border ${v.no_entregada ? "bg-danger-50" : ""}`}>
                         <td className="p-2 font-medium">#{v.venta_id}</td>
                         <td className="p-2">{formatFecha(v.venta_fecha)}</td>
-                        <td className="p-2">{v.cliente ?? "—"}</td>
+                        <td className="p-2">
+                          {v.cliente ?? "—"}
+                          {v.no_entregada && (
+                            <span className="ml-2 inline-block rounded border border-danger-600 px-1.5 text-xs font-medium text-danger-700">
+                              No entregada
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2 text-right">Gs. {formatMiles(v.venta_total)}</td>
                         {editable && (
                           <td className="p-2">
@@ -658,6 +678,7 @@ export default function RepartosPage() {
   const [estado, setEstado] = useState<RepartoEstado | "">("");
   const [desde, setDesde] = useState(sumarDias(hoyISO(), -7));
   const [hasta, setHasta] = useState(sumarDias(hoyISO(), 7));
+  const [soloDiferencias, setSoloDiferencias] = useState(false);
 
   const [vehiculos, setVehiculos] = useState<VehiculoFlota[]>([]);
   const [choferes, setChoferes] = useState<Chofer[]>([]);
@@ -676,6 +697,7 @@ export default function RepartosPage() {
           estado: estado || undefined,
           desde: desde || undefined,
           hasta: hasta || undefined,
+          conDiferencia: soloDiferencias || undefined,
         }),
       );
     } catch (e) {
@@ -683,7 +705,7 @@ export default function RepartosPage() {
     } finally {
       setLoading(false);
     }
-  }, [estado, desde, hasta]);
+  }, [estado, desde, hasta, soloDiferencias]);
 
   useEffect(() => {
     if (puedeLeer) cargar();
@@ -727,7 +749,7 @@ export default function RepartosPage() {
         )}
       </div>
 
-      <div className="bg-surface-sunken border border-border rounded-lg p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="bg-surface-sunken border border-border rounded-lg p-4 mb-4 grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div>
           <label className={labelCls}>Estado</label>
           <select value={estado} onChange={(e) => setEstado(e.target.value as RepartoEstado | "")} className={inputCls}>
@@ -746,6 +768,17 @@ export default function RepartosPage() {
         <div>
           <label className={labelCls}>Fecha hasta</label>
           <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Cajas</label>
+          <select
+            value={soloDiferencias ? "DIF" : ""}
+            onChange={(e) => setSoloDiferencias(e.target.value === "DIF")}
+            className={inputCls}
+          >
+            <option value="">TODOS</option>
+            <option value="DIF">Con diferencias</option>
+          </select>
         </div>
       </div>
 
@@ -766,6 +799,9 @@ export default function RepartosPage() {
                 <th className="p-3">Chofer</th>
                 <th className="p-3 text-right">Ventas</th>
                 <th className="p-3 text-right">Total</th>
+                <th className="p-3 text-right">Cajas salida</th>
+                <th className="p-3 text-right">Recibidas</th>
+                <th className="p-3 text-right">Dif.</th>
                 <th className="p-3">Estado</th>
                 <th className="p-3 w-12" />
               </tr>
@@ -781,8 +817,22 @@ export default function RepartosPage() {
                   <td className="p-3">{formatFecha(r.fecha)}</td>
                   <td className="p-3">{r.vehiculo_chapa}</td>
                   <td className="p-3">{r.chofer_nombre ?? "—"}</td>
-                  <td className="p-3 text-right">{formatMiles(r.cantidad_ventas)}</td>
+                  <td className="p-3 text-right">
+                    {formatMiles(r.cantidad_ventas)}
+                    {r.ventas_no_entregadas > 0 && (
+                      <div className="text-xs text-danger-700 whitespace-nowrap">
+                        {r.ventas_no_entregadas} no entregada(s)
+                      </div>
+                    )}
+                  </td>
                   <td className="p-3 text-right">Gs. {formatMiles(r.total_ventas)}</td>
+                  <td className="p-3 text-right">{formatMiles(r.cajas_salida)}</td>
+                  <td className="p-3 text-right">
+                    {r.cajas_recibidas != null ? formatMiles(r.cajas_recibidas) : "—"}
+                  </td>
+                  <td className="p-3 text-right">
+                    <DiferenciaCajas r={r} />
+                  </td>
                   <td className="p-3">
                     <EstadoBadge estado={r.estado} />
                   </td>

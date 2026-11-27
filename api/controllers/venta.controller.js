@@ -1,4 +1,5 @@
 const Venta = require("../models/venta.model");
+const Reparto = require("../models/reparto.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
 const { restarUnidades, sumarUnidades } = require("../utils/stockOps");
@@ -133,6 +134,8 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
+    const bloqueo = await Reparto.bloqueoEdicionVenta(req.params.id);
+    if (bloqueo) return res.status(409).json({ message: bloqueo });
     const venta = await Venta.update(req.params.id, req.body, req.empresaId);
     if (!venta) {
       return res.status(404).json({ message: "Venta no encontrada" });

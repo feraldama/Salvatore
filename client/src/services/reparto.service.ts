@@ -45,6 +45,14 @@ export interface Reparto {
   recepcion_observacion: string | null;
   cantidad_ventas: number;
   total_ventas: number;
+  /** Ventas que volvieron sin entregar (ya no cuentan en cantidad_ventas). */
+  ventas_no_entregadas: number;
+  /** Cajas retornables: calculadas en vivo si está ARMADO, congeladas después. */
+  cajas_salida: number;
+  /** null hasta que se confirma la recepción. */
+  cajas_recibidas: number | null;
+  /** Recibido con algún tipo de caja que no coincide. */
+  con_diferencia: boolean;
 }
 
 export interface RepartoVenta {
@@ -52,7 +60,9 @@ export interface RepartoVenta {
   venta_fecha: string;
   venta_total: number;
   cliente: string | null;
-  envio_estado: string;
+  envio_estado: string | null;
+  /** Volvió sin entregar en la recepción (quedó libre para otro reparto). */
+  no_entregada: boolean;
 }
 
 export interface RepartoProducto {
@@ -97,6 +107,7 @@ export const getRepartos = async (filtros: {
   estado?: string;
   desde?: string;
   hasta?: string;
+  conDiferencia?: boolean;
 } = {}): Promise<Reparto[]> => {
   try {
     const res = await api.get("/repartos", { params: filtros });
@@ -181,9 +192,14 @@ export const confirmarRecepcion = async (
   id: number,
   cajas: { tipo_caja: string; cajas_recibidas: number }[],
   observacion: string,
-): Promise<{ hayDiferencia: boolean }> => {
+  noEntregadas: number[] = [],
+): Promise<{ hayDiferencia: boolean; noEntregadas: number }> => {
   try {
-    const res = await api.post(`/repartos/${id}/recepcion`, { cajas, observacion });
+    const res = await api.post(`/repartos/${id}/recepcion`, {
+      cajas,
+      observacion,
+      no_entregadas: noEntregadas,
+    });
     return res.data;
   } catch (error) {
     throw fail(error, "Error al registrar la recepción");

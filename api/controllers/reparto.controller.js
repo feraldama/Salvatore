@@ -12,8 +12,8 @@ const usuarioDe = (req) => req.user?.id ?? null;
 
 exports.list = async (req, res) => {
   try {
-    const { estado, desde, hasta } = req.query;
-    const data = await Reparto.list(req.empresaId, { estado, desde, hasta });
+    const { estado, desde, hasta, conDiferencia } = req.query;
+    const data = await Reparto.list(req.empresaId, { estado, desde, hasta, conDiferencia });
     res.json({ data });
   } catch (err) {
     fail(res, err, "list");
@@ -105,7 +105,11 @@ exports.confirmarRecepcion = async (req, res) => {
       req.empresaId,
       req.params.id,
       usuarioDe(req),
-      { cajas: req.body?.cajas, observacion: req.body?.observacion }
+      {
+        cajas: req.body?.cajas,
+        observacion: req.body?.observacion,
+        no_entregadas: req.body?.no_entregadas,
+      }
     );
     console.log(
       `reparto #${req.params.id}: recepción confirmada por ${usuarioDe(req) ?? "?"}${result.hayDiferencia ? " (con diferencias)" : ""}`

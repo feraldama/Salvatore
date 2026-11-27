@@ -15,6 +15,13 @@ function negocio(status, message) {
   return { status, message };
 }
 
+// Reparto recibido con al menos un tipo de caja que no coincide.
+const CON_DIFERENCIA_SQL = `
+  SELECT 1 FROM reparto_caja rc
+   WHERE rc.reparto_id = r.id
+     AND rc.cajas_recibidas IS NOT NULL
+     AND rc.cajas_recibidas <> rc.cajas_salida`;
+
 const CAB_SELECT = `
   SELECT r.id, r.empresa_id, r.fecha, r.vehiculo_id, fv.chapa AS vehiculo_chapa,
          TRIM(r.chofer_id) AS chofer_id,
@@ -26,7 +33,24 @@ const CAB_SELECT = `
          (SELECT COUNT(*) FROM venta_envio e WHERE e.reparto_id = r.id)::int AS cantidad_ventas,
          (SELECT COALESCE(SUM(v.Total), 0) FROM venta_envio e
             JOIN venta v ON v.VentaId = e.venta_id
-           WHERE e.reparto_id = r.id)::bigint AS total_ventas
+           WHERE e.reparto_id = r.id)::bigint AS total_ventas,
+         (SELECT COUNT(*) FROM reparto_venta_no_entregada ne
+           WHERE ne.reparto_id = r.id)::int AS ventas_no_entregadas,
+         (CASE WHEN r.estado IN ('ARMADO', 'ANULADO') THEN
+            (SELECT COALESCE(SUM(vp.VentaProductoCantidad), 0)
+               FROM venta_envio e
+               JOIN ventaproducto vp ON vp.VentaId = e.venta_id
+               JOIN producto p ON p.ProductoId = vp.ProductoId
+              WHERE e.reparto_id = r.id
+                AND vp.VentaProductoUnitario = 'C'
+                AND p.ProductoTipoCaja IS NOT NULL)
+          ELSE
+            (SELECT COALESCE(SUM(rc.cajas_salida), 0)
+               FROM reparto_caja rc WHERE rc.reparto_id = r.id)
+          END)::int AS cajas_salida,
+         (SELECT SUM(rc.cajas_recibidas)
+            FROM reparto_caja rc WHERE rc.reparto_id = r.id)::int AS cajas_recibidas,
+         EXISTS (${CON_DIFERENCIA_SQL}) AS con_diferencia
     FROM reparto r
     JOIN flota_vehiculo fv ON fv.id = r.vehiculo_id
     LEFT JOIN usuario u ON u.usuarioid = r.chofer_id`;
@@ -108,7 +132,7 @@ async function enTransaccion(fn) {
 const Reparto = {
   ESTADOS,
 
-  list: async (empresaId, { estado, desde, hasta } = {}) => {
+  list: async (empresaId, { estado, desde, hasta, conDiferencia } = {}) => {
     const cond = ["r.empresa_id = ?"];
     const params = [Number(empresaId)];
     if (estado) {
@@ -129,6 +153,9 @@ const Reparto = {
       cond.push("r.fecha <= ?");
       params.push(hasta);
     }
+    if (conDiferencia === true || conDiferencia === "1" || conDiferencia === "true") {
+      cond.push(`EXISTS (${CON_DIFERENCIA_SQL})`);
+    }
     const [rows] = await db
       .promise()
       .query(
@@ -148,16 +175,27 @@ const Reparto = {
     if (!cab.length) return null;
     const reparto = cab[0];
 
+    // Ventas del reparto: las que siguen en él y las que volvieron sin
+    // entregar (migración 037), aunque ya estén en otro reparto.
     const [ventas] = await pe.query(
       `SELECT v.VentaId AS venta_id, v.VentaFecha AS venta_fecha, v.Total AS venta_total,
               NULLIF(TRIM(COALESCE(c.ClienteNombre, '') || ' ' || COALESCE(c.ClienteApellido, '')), '') AS cliente,
-              e.estado AS envio_estado
+              e.estado AS envio_estado, false AS no_entregada
          FROM venta_envio e
          JOIN venta v ON v.VentaId = e.venta_id
          LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
         WHERE e.reparto_id = ?
-        ORDER BY v.VentaId`,
-      [reparto.id]
+       UNION ALL
+       SELECT v.VentaId, v.VentaFecha, v.Total,
+              NULLIF(TRIM(COALESCE(c.ClienteNombre, '') || ' ' || COALESCE(c.ClienteApellido, '')), ''),
+              e.estado, true
+         FROM reparto_venta_no_entregada ne
+         JOIN venta v ON v.VentaId = ne.venta_id
+         LEFT JOIN venta_envio e ON e.venta_id = ne.venta_id
+         LEFT JOIN clientes c ON c.ClienteId = v.ClienteId
+        WHERE ne.reparto_id = ?
+        ORDER BY venta_id`,
+      [reparto.id, reparto.id]
     );
 
     const [productos] = await pe.query(
@@ -165,13 +203,15 @@ const Reparto = {
               p.ProductoNombre AS producto_nombre, p.ProductoTipoCaja AS tipo_caja,
               SUM(CASE WHEN vp.VentaProductoUnitario = 'C' THEN vp.VentaProductoCantidad ELSE 0 END)::int AS cajas,
               SUM(CASE WHEN vp.VentaProductoUnitario = 'C' THEN 0 ELSE vp.VentaProductoCantidad END)::int AS unidades
-         FROM venta_envio e
-         JOIN ventaproducto vp ON vp.VentaId = e.venta_id
+         FROM ventaproducto vp
          JOIN producto p ON p.ProductoId = vp.ProductoId
-        WHERE e.reparto_id = ?
+        WHERE vp.VentaId IN (
+                SELECT venta_id FROM venta_envio WHERE reparto_id = ?
+                UNION
+                SELECT venta_id FROM reparto_venta_no_entregada WHERE reparto_id = ?)
         GROUP BY p.ProductoId, p.ProductoCodigo, p.ProductoNombre, p.ProductoTipoCaja
         ORDER BY p.ProductoNombre`,
-      [reparto.id]
+      [reparto.id, reparto.id]
     );
 
     let cajas;
@@ -385,9 +425,17 @@ const Reparto = {
       );
     }),
 
-  // Ruteador: registra las cajas recibidas por tipo. Si alguna no coincide
-  // con lo que salió, la observación es obligatoria.
-  confirmarRecepcion: async (empresaId, id, usuarioId, { cajas, observacion }) =>
+  // Ruteador: registra las cajas recibidas por tipo y las ventas que volvieron
+  // sin entregar. Si alguna caja no coincide con lo que salió, o hay ventas
+  // no entregadas, la observación es obligatoria. Las no entregadas vuelven a
+  // PENDIENTE y quedan libres para otro reparto (migración 037); sus cajas
+  // no cambian el esperado porque vuelven llenas y cuentan igual.
+  confirmarRecepcion: async (
+    empresaId,
+    id,
+    usuarioId,
+    { cajas, observacion, no_entregadas }
+  ) =>
     enTransaccion(async (conn) => {
       const r = await lockReparto(conn, empresaId, id, ["EN_RUTA"]);
       const [esperadas] = await conn.query(
@@ -415,11 +463,45 @@ const Reparto = {
         }
         if (recibidas.get(e.tipo_caja) !== Number(e.cajas_salida)) hayDiferencia = true;
       }
+
+      if (no_entregadas != null && !Array.isArray(no_entregadas)) {
+        throw negocio(400, "Lista de ventas no entregadas inválida");
+      }
+      const noEntregadas = [
+        ...new Set(
+          (no_entregadas || []).map((v) => {
+            const n = v === null || v === "" ? NaN : Number(v);
+            if (!Number.isInteger(n) || n <= 0) {
+              throw negocio(400, "Venta no entregada inválida");
+            }
+            return n;
+          })
+        ),
+      ];
+      if (noEntregadas.length) {
+        // Mismo orden de locks que el resto: reparto (arriba) -> venta_envio.
+        const [enReparto] = await conn.query(
+          `SELECT venta_id FROM venta_envio
+            WHERE reparto_id = ? AND venta_id = ANY(?::int[])
+            FOR UPDATE`,
+          [r.id, noEntregadas]
+        );
+        const presentes = new Set(enReparto.map((x) => Number(x.venta_id)));
+        const ajena = noEntregadas.find((v) => !presentes.has(v));
+        if (ajena) throw negocio(400, `La venta #${ajena} no está en este reparto`);
+      }
+
       const obs = observacion ? String(observacion).trim() : "";
       if (hayDiferencia && !obs) {
         throw negocio(
           400,
           "Hay diferencias entre las cajas que salieron y las recibidas: escriba una observación"
+        );
+      }
+      if (noEntregadas.length && !obs) {
+        throw negocio(
+          400,
+          "Hay ventas no entregadas: escriba una observación con el motivo"
         );
       }
       for (const e of esperadas) {
@@ -435,13 +517,48 @@ const Reparto = {
           WHERE id = ?`,
         [usuarioId != null ? String(usuarioId).trim() : null, obs || null, r.id]
       );
+      if (noEntregadas.length) {
+        await conn.query(
+          `INSERT INTO reparto_venta_no_entregada (reparto_id, venta_id)
+           SELECT ?, unnest(?::int[])
+           ON CONFLICT DO NOTHING`,
+          [r.id, noEntregadas]
+        );
+        await conn.query(
+          `UPDATE venta_envio
+              SET estado = 'PENDIENTE', reparto_id = NULL, entregado_en = NULL
+            WHERE reparto_id = ? AND venta_id = ANY(?::int[])`,
+          [r.id, noEntregadas]
+        );
+      }
       await conn.query(
         `UPDATE venta_envio SET estado = 'ENTREGADO', entregado_en = now()
           WHERE reparto_id = ?`,
         [r.id]
       );
-      return { hayDiferencia };
+      return { hayDiferencia, noEntregadas: noEntregadas.length };
     }),
+
+  // Una venta que ya salió en un reparto (EN_RUTA / RECIBIDO) no se edita:
+  // la hoja de carga, las cajas congeladas y lo que se cobra dejarían de
+  // coincidir con lo que llevó el vehículo. Devuelve el mensaje para el
+  // usuario, o null si se puede editar (sin reparto o reparto ARMADO).
+  bloqueoEdicionVenta: async (ventaId) => {
+    const id = Number(ventaId);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    const [rows] = await db.promise().query(
+      `SELECT r.id, r.estado
+         FROM venta_envio e
+         JOIN reparto r ON r.id = e.reparto_id
+        WHERE e.venta_id = ? AND r.estado IN ('EN_RUTA', 'RECIBIDO')`,
+      [id]
+    );
+    if (!rows.length) return null;
+    return `La venta #${id} ya salió en el reparto #${rows[0].id} (${rows[0].estado.replace(
+      "_",
+      " "
+    )}): no se puede modificar`;
+  },
 };
 
 module.exports = Reparto;

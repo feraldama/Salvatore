@@ -1,5 +1,17 @@
 const VentaProducto = require("../models/ventaproducto.model");
 const { sendError } = require("../utils/errors");
+const Reparto = require("../models/reparto.model");
+
+// Las líneas de una venta que ya salió en un reparto (EN_RUTA / RECIBIDO) no
+// se agregan, editan ni borran: ver Reparto.bloqueoEdicionVenta.
+const rechazarSiEnRuta = async (ventaId, res) => {
+  const bloqueo = await Reparto.bloqueoEdicionVenta(ventaId);
+  if (bloqueo) {
+    res.status(409).json({ message: bloqueo });
+    return true;
+  }
+  return false;
+};
 
 exports.getAll = async (req, res) => {
   try {
@@ -71,6 +83,7 @@ exports.getByVentaId = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
+    if (await rechazarSiEnRuta(req.body?.VentaId, res)) return;
     const ventaProducto = await VentaProducto.create(req.body);
     res.status(201).json({
       message: "Producto de venta creado exitosamente",
@@ -84,6 +97,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
+    if (await rechazarSiEnRuta(req.params.ventaId, res)) return;
     const ventaProducto = await VentaProducto.update(
       req.params.ventaId,
       req.params.productoId,
@@ -106,6 +120,7 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
+    if (await rechazarSiEnRuta(req.params.ventaId, res)) return;
     const success = await VentaProducto.delete(
       req.params.ventaId,
       req.params.productoId
