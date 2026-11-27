@@ -1,6 +1,13 @@
 const Producto = require("../models/producto.model");
 const { sendError } = require("../utils/errors");
 
+// Valores válidos de ProductoTipoCaja (migración 035). "NINGUNO" filtra los
+// productos sin tipo de caja.
+const TIPOS_CAJA_FILTRO = [
+  "NINGUNO", "CERVEPAR", "COCA", "340", "MUNICH_POLAR",
+  "710_NEGRO", "710_ROJO", "710_AZUL",
+];
+
 function extractProductoFilters(query, empresaId, almacenId) {
   const filters = {};
   // Scope por empresa (autoritativo: viene de resolveEmpresa, no del query).
@@ -29,6 +36,8 @@ function extractProductoFilters(query, empresaId, almacenId) {
   // El POS no envía este flag, así que siempre ve solo activos.
   if (query.incluirInactivos === "true" || query.incluirInactivos === "1")
     filters.incluirInactivos = true;
+  if (TIPOS_CAJA_FILTRO.includes(query.tipoCaja))
+    filters.tipoCaja = query.tipoCaja;
   return filters;
 }
 

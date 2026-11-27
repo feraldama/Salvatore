@@ -14,6 +14,7 @@ import type { ProductoFilters } from "../../services/productos.service";
 import ProductoFormModal, {
   type ProductoAlmacenRow,
 } from "./ProductoFormModal";
+import { TIPOS_CAJA } from "../../utils/tiposCaja";
 
 interface Producto {
   ProductoId?: number;
@@ -33,6 +34,7 @@ interface Producto {
   LocalId: number;
   /** 'A' = Activo, 'I' = dado de baja (oculto para la venta). */
   ProductoEstado?: string;
+  ProductoTipoCaja?: string | null;
   productoAlmacen?: ProductoAlmacenRow[];
   [key: string]: unknown;
 }
@@ -169,6 +171,14 @@ export default function ProductsList({
       numeric: true,
     },
     {
+      key: "ProductoTipoCaja",
+      label: "Tipo de caja",
+      render: (item: Producto) =>
+        TIPOS_CAJA.find((t) => t.value === item.ProductoTipoCaja)?.label ?? (
+          <span className="text-text-muted">—</span>
+        ),
+    },
+    {
       key: "ProductoEstado",
       label: "Estado",
       sortable: false,
@@ -246,7 +256,25 @@ export default function ProductsList({
       </div>
       {onFiltersChange && showFilters && (
         <div className="bg-surface-sunken border border-border rounded-lg p-4 mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div>
+              <label className="block mb-1 text-xs font-medium text-text-muted">
+                Tipo de caja
+              </label>
+              <select
+                value={activeFilters.tipoCaja ?? ""}
+                onChange={(e) => updateFilter("tipoCaja", e.target.value)}
+                className="w-full bg-surface border border-border text-text text-sm rounded-md focus:ring-brand-500/30 focus:border-brand-600 p-2"
+              >
+                <option value="">TODOS</option>
+                <option value="NINGUNO">Ninguno</option>
+                {TIPOS_CAJA.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block mb-1 text-xs font-medium text-text-muted">
                 Stock mín.

@@ -106,6 +106,7 @@ module.exports = {
   "productoimagen": "ProductoImagen",
   "productoimagen_gxi": "ProductoImagen_GXI",
   "productoestado": "ProductoEstado",
+  "productotipocaja": "ProductoTipoCaja",
   "productoalmacenstock": "ProductoAlmacenStock",
   "productoalmacenstockunitario": "ProductoAlmacenStockUnitario",
   "proveedorruc": "ProveedorRUC",

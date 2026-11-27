@@ -44,6 +44,7 @@ const flotaRoutes = require("./routes/flota.routes");
 const deliveryTarifaRoutes = require("./routes/deliveryTarifa.routes");
 const trasladoRoutes = require("./routes/traslado.routes");
 const terminalRoutes = require("./routes/terminal.routes");
+const repartoRoutes = require("./routes/reparto.routes");
 
 const app = express();
 
@@ -132,6 +133,7 @@ app.use("/api/gen/flota", flotaRoutes);
 app.use("/api/deliverytarifa", deliveryTarifaRoutes);
 app.use("/api/traslados", trasladoRoutes);
 app.use("/api/terminal", terminalRoutes);
+app.use("/api/repartos", repartoRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/", (req, res) => res.send("API funcionando"));

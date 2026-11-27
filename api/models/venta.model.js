@@ -1538,6 +1538,7 @@ const Venta = {
   //   { ok: false, notFound: true }              -> la venta no es envío de esa empresa
   //   { ok: false, bloqueado: true, estado }     -> envío ENTREGADO/CANCELADO
   //   { ok: false, invalidVehiculo: true }       -> vehículo inexistente o inactivo
+  //   { ok: false, enReparto: id }               -> la venta está en un reparto
   //   { ok: true, chapa }                        -> actualizado (chapa del nuevo móvil)
   updateEnvioVehiculo: async ({ ventaId, vehiculoId, empresaId }) => {
     const pe = db.promise();
@@ -1545,7 +1546,8 @@ const Venta = {
     // LEFT JOIN: una venta envío anterior a la migración 012 puede no tener
     // fila en venta_envio; en ese caso se le asigna móvil por primera vez.
     const [rows] = await pe.query(
-      `SELECT v.EsEnvio AS es_envio, env.estado AS estado
+      `SELECT v.EsEnvio AS es_envio, env.estado AS estado,
+              env.reparto_id AS reparto_id
          FROM venta v
          LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
         WHERE v.VentaId = ? AND v.EmpresaId = ?`,
@@ -1553,6 +1555,11 @@ const Venta = {
     );
     if (!rows.length || rows[0].es_envio !== "S") {
       return { ok: false, notFound: true };
+    }
+    // En un reparto el vehículo lo define el reparto (migración 036): se
+    // cambia desde el reparto o quitando la venta de él.
+    if (rows[0].reparto_id) {
+      return { ok: false, enReparto: rows[0].reparto_id };
     }
 
     const estado = rows[0].estado;
@@ -1566,12 +1573,23 @@ const Venta = {
     );
     if (!vehRows.length) return { ok: false, invalidVehiculo: true };
 
-    await pe.query(
+    // WHERE reparto_id IS NULL: si entre la lectura de arriba y acá la venta
+    // se asignó a un reparto, el upsert no la toca (0 filas) en vez de pisar
+    // el vehículo que puso el reparto.
+    const [up] = await pe.query(
       `INSERT INTO venta_envio (venta_id, vehiculo_id)
        VALUES (?, ?)
-       ON CONFLICT (venta_id) DO UPDATE SET vehiculo_id = EXCLUDED.vehiculo_id`,
+       ON CONFLICT (venta_id) DO UPDATE SET vehiculo_id = EXCLUDED.vehiculo_id
+        WHERE venta_envio.reparto_id IS NULL`,
       [Number(ventaId), Number(vehiculoId)]
     );
+    if (!up.affectedRows) {
+      const [r] = await pe.query(
+        `SELECT reparto_id FROM venta_envio WHERE venta_id = ?`,
+        [Number(ventaId)]
+      );
+      return { ok: false, enReparto: r[0]?.reparto_id ?? true };
+    }
     return { ok: true, chapa: vehRows[0].chapa };
   },
 

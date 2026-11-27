@@ -1,4 +1,5 @@
 const Venta = require("../models/venta.model");
+const Reparto = require("../models/reparto.model");
 const { sendError } = require("../utils/errors");
 const db = require("../config/db");
 const { restarUnidades, sumarUnidades } = require("../utils/stockOps");
@@ -133,6 +134,8 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
+    const bloqueo = await Reparto.bloqueoEdicionVenta(req.params.id);
+    if (bloqueo) return res.status(409).json({ message: bloqueo });
     const venta = await Venta.update(req.params.id, req.body, req.empresaId);
     if (!venta) {
       return res.status(404).json({ message: "Venta no encontrada" });
@@ -174,6 +177,45 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ message: "Venta no encontrada" });
     }
     const almacenId = ventaRows[0].AlmacenId;
+
+    // Una venta que ya salió en un reparto (EN_RUTA / RECIBIDO) no se borra:
+    // desaparecería de la hoja de carga y del control de cajas.
+    // Orden de locks igual que asignar/salida (reparto -> venta_envio) para no
+    // generar deadlocks: primero el reparto (FOR SHARE: espera una salida en
+    // curso), después la fila del envío (FOR UPDATE: espera una asignación en
+    // curso). Si entre medio la venta cambió de reparto, se pide reintentar.
+    const [envPrev] = await conn.query(
+      `SELECT reparto_id FROM venta_envio WHERE venta_id = ?`,
+      [ventaId]
+    );
+    const repartoPrev = envPrev.length ? envPrev[0].reparto_id : null;
+    let repartoEstado = null;
+    if (repartoPrev) {
+      const [rep] = await conn.query(
+        `SELECT estado FROM reparto WHERE id = ? FOR SHARE`,
+        [repartoPrev]
+      );
+      repartoEstado = rep.length ? rep[0].estado : null;
+    }
+    if (envPrev.length) {
+      const [envLock] = await conn.query(
+        `SELECT reparto_id FROM venta_envio WHERE venta_id = ? FOR UPDATE`,
+        [ventaId]
+      );
+      const repartoAhora = envLock.length ? envLock[0].reparto_id : null;
+      if ((repartoAhora ?? null) !== (repartoPrev ?? null)) {
+        await conn.rollback();
+        return res.status(409).json({
+          message: "La venta se acaba de asignar o quitar de un reparto. Vuelva a intentar.",
+        });
+      }
+    }
+    if (repartoEstado === "EN_RUTA" || repartoEstado === "RECIBIDO") {
+      await conn.rollback();
+      return res.status(400).json({
+        message: `La venta está en el reparto #${repartoPrev} (${repartoEstado.replace("_", " ")}) y no se puede borrar`,
+      });
+    }
 
     // 1. Reversión de caja. Los detalles que insertan la confirmación
     // (registrarPagosEnCaja) y el cobro de crédito, en sus tres variantes de
@@ -792,6 +834,11 @@ exports.updateEnvioVehiculo = async (req, res) => {
     }
     if (result.invalidVehiculo) {
       return res.status(400).json({ message: "Vehículo inexistente o inactivo" });
+    }
+    if (result.enReparto) {
+      return res.status(400).json({
+        message: `La venta está en el reparto #${result.enReparto}: el vehículo se cambia desde el reparto`,
+      });
     }
 
     // Rastro en el log del servidor por si hay discusiones en la rendición.
