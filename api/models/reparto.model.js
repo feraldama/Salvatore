@@ -241,6 +241,14 @@ const Reparto = {
 
   create: async (empresaId, data, usuarioId) =>
     enTransaccion(async (conn) => {
+      // Los repartos son solo de la distribuidora (EmpresaTipo 'D').
+      const [emp] = await conn.query(
+        `SELECT EmpresaTipo AS tipo FROM empresa WHERE EmpresaId = ?`,
+        [Number(empresaId)]
+      );
+      if (!emp.length || emp[0].tipo !== "D") {
+        throw negocio(400, "Los repartos son solo de la distribuidora");
+      }
       if (!data.vehiculo_id) throw negocio(400, "Seleccione el vehículo");
       await validarVehiculo(conn, data.vehiculo_id);
       const choferId = await resolverUsuarioId(conn, data.chofer_id);
@@ -388,7 +396,8 @@ const Reparto = {
       );
       const recibidas = new Map();
       for (const c of Array.isArray(cajas) ? cajas : []) {
-        const n = Number(c?.cajas_recibidas);
+        const raw = c?.cajas_recibidas;
+        const n = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
         if (!Number.isInteger(n) || n < 0) {
           throw negocio(400, `Cantidad inválida para ${c?.tipo_caja ?? "una caja"}`);
         }

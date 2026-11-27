@@ -1573,12 +1573,23 @@ const Venta = {
     );
     if (!vehRows.length) return { ok: false, invalidVehiculo: true };
 
-    await pe.query(
+    // WHERE reparto_id IS NULL: si entre la lectura de arriba y acá la venta
+    // se asignó a un reparto, el upsert no la toca (0 filas) en vez de pisar
+    // el vehículo que puso el reparto.
+    const [up] = await pe.query(
       `INSERT INTO venta_envio (venta_id, vehiculo_id)
        VALUES (?, ?)
-       ON CONFLICT (venta_id) DO UPDATE SET vehiculo_id = EXCLUDED.vehiculo_id`,
+       ON CONFLICT (venta_id) DO UPDATE SET vehiculo_id = EXCLUDED.vehiculo_id
+        WHERE venta_envio.reparto_id IS NULL`,
       [Number(ventaId), Number(vehiculoId)]
     );
+    if (!up.affectedRows) {
+      const [r] = await pe.query(
+        `SELECT reparto_id FROM venta_envio WHERE venta_id = ?`,
+        [Number(ventaId)]
+      );
+      return { ok: false, enReparto: r[0]?.reparto_id ?? true };
+    }
     return { ok: true, chapa: vehRows[0].chapa };
   },
 

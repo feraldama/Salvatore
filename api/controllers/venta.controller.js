@@ -176,21 +176,41 @@ exports.delete = async (req, res) => {
     const almacenId = ventaRows[0].AlmacenId;
 
     // Una venta que ya salió en un reparto (EN_RUTA / RECIBIDO) no se borra:
-    // desaparecería de la hoja de carga y del control de cajas. FOR SHARE
-    // sobre el reparto: si el ruteador está confirmando la salida en este
-    // momento, esperamos a que termine y vemos el estado final.
-    const [repRows] = await conn.query(
-      `SELECT r.id, r.estado
-         FROM venta_envio e
-         JOIN reparto r ON r.id = e.reparto_id
-        WHERE e.venta_id = ?
-        FOR SHARE OF r`,
+    // desaparecería de la hoja de carga y del control de cajas.
+    // Orden de locks igual que asignar/salida (reparto -> venta_envio) para no
+    // generar deadlocks: primero el reparto (FOR SHARE: espera una salida en
+    // curso), después la fila del envío (FOR UPDATE: espera una asignación en
+    // curso). Si entre medio la venta cambió de reparto, se pide reintentar.
+    const [envPrev] = await conn.query(
+      `SELECT reparto_id FROM venta_envio WHERE venta_id = ?`,
       [ventaId]
     );
-    if (repRows.length && repRows[0].estado !== "ARMADO" && repRows[0].estado !== "ANULADO") {
+    const repartoPrev = envPrev.length ? envPrev[0].reparto_id : null;
+    let repartoEstado = null;
+    if (repartoPrev) {
+      const [rep] = await conn.query(
+        `SELECT estado FROM reparto WHERE id = ? FOR SHARE`,
+        [repartoPrev]
+      );
+      repartoEstado = rep.length ? rep[0].estado : null;
+    }
+    if (envPrev.length) {
+      const [envLock] = await conn.query(
+        `SELECT reparto_id FROM venta_envio WHERE venta_id = ? FOR UPDATE`,
+        [ventaId]
+      );
+      const repartoAhora = envLock.length ? envLock[0].reparto_id : null;
+      if ((repartoAhora ?? null) !== (repartoPrev ?? null)) {
+        await conn.rollback();
+        return res.status(409).json({
+          message: "La venta se acaba de asignar o quitar de un reparto. Vuelva a intentar.",
+        });
+      }
+    }
+    if (repartoEstado === "EN_RUTA" || repartoEstado === "RECIBIDO") {
       await conn.rollback();
       return res.status(400).json({
-        message: `La venta está en el reparto #${repRows[0].id} (${repRows[0].estado.replace("_", " ")}) y no se puede borrar`,
+        message: `La venta está en el reparto #${repartoPrev} (${repartoEstado.replace("_", " ")}) y no se puede borrar`,
       });
     }
 

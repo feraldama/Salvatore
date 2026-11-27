@@ -81,15 +81,17 @@ SELECT setval(pg_get_serial_sequence('perfil', 'perfilid'),
               (SELECT MAX(perfilid) FROM perfil));
 INSERT INTO perfil (PerfilDescripcion, EmpresaId)
 SELECT 'RUTEADOR', 1
-WHERE NOT EXISTS (SELECT 1 FROM perfil WHERE PerfilDescripcion = 'RUTEADOR');
+WHERE NOT EXISTS (
+  SELECT 1 FROM perfil WHERE PerfilDescripcion = 'RUTEADOR' AND EmpresaId = 1
+);
 
 DELETE FROM perfilmenu
-WHERE PerfilId = (SELECT PerfilId FROM perfil WHERE PerfilDescripcion = 'RUTEADOR')
+WHERE PerfilId = (SELECT MIN(PerfilId) FROM perfil WHERE PerfilDescripcion = 'RUTEADOR' AND EmpresaId = 1)
   AND MenuId = 'CONTROLREPARTOS';
 
 INSERT INTO perfilmenu (PerfilId, MenuId, puedeCrear, puedeEditar, puedeEliminar, puedeLeer)
 SELECT
-  (SELECT PerfilId FROM perfil WHERE PerfilDescripcion = 'RUTEADOR'),
+  (SELECT MIN(PerfilId) FROM perfil WHERE PerfilDescripcion = 'RUTEADOR' AND EmpresaId = 1),
   'CONTROLREPARTOS',
   0,  -- crear
   1,  -- editar (confirmar salida / recepción)
