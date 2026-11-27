@@ -1538,6 +1538,7 @@ const Venta = {
   //   { ok: false, notFound: true }              -> la venta no es envío de esa empresa
   //   { ok: false, bloqueado: true, estado }     -> envío ENTREGADO/CANCELADO
   //   { ok: false, invalidVehiculo: true }       -> vehículo inexistente o inactivo
+  //   { ok: false, enReparto: id }               -> la venta está en un reparto
   //   { ok: true, chapa }                        -> actualizado (chapa del nuevo móvil)
   updateEnvioVehiculo: async ({ ventaId, vehiculoId, empresaId }) => {
     const pe = db.promise();
@@ -1545,7 +1546,8 @@ const Venta = {
     // LEFT JOIN: una venta envío anterior a la migración 012 puede no tener
     // fila en venta_envio; en ese caso se le asigna móvil por primera vez.
     const [rows] = await pe.query(
-      `SELECT v.EsEnvio AS es_envio, env.estado AS estado
+      `SELECT v.EsEnvio AS es_envio, env.estado AS estado,
+              env.reparto_id AS reparto_id
          FROM venta v
          LEFT JOIN venta_envio env ON env.venta_id = v.VentaId
         WHERE v.VentaId = ? AND v.EmpresaId = ?`,
@@ -1553,6 +1555,11 @@ const Venta = {
     );
     if (!rows.length || rows[0].es_envio !== "S") {
       return { ok: false, notFound: true };
+    }
+    // En un reparto el vehículo lo define el reparto (migración 036): se
+    // cambia desde el reparto o quitando la venta de él.
+    if (rows[0].reparto_id) {
+      return { ok: false, enReparto: rows[0].reparto_id };
     }
 
     const estado = rows[0].estado;

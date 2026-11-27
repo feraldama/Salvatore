@@ -175,6 +175,25 @@ exports.delete = async (req, res) => {
     }
     const almacenId = ventaRows[0].AlmacenId;
 
+    // Una venta que ya salió en un reparto (EN_RUTA / RECIBIDO) no se borra:
+    // desaparecería de la hoja de carga y del control de cajas. FOR SHARE
+    // sobre el reparto: si el ruteador está confirmando la salida en este
+    // momento, esperamos a que termine y vemos el estado final.
+    const [repRows] = await conn.query(
+      `SELECT r.id, r.estado
+         FROM venta_envio e
+         JOIN reparto r ON r.id = e.reparto_id
+        WHERE e.venta_id = ?
+        FOR SHARE OF r`,
+      [ventaId]
+    );
+    if (repRows.length && repRows[0].estado !== "ARMADO" && repRows[0].estado !== "ANULADO") {
+      await conn.rollback();
+      return res.status(400).json({
+        message: `La venta está en el reparto #${repRows[0].id} (${repRows[0].estado.replace("_", " ")}) y no se puede borrar`,
+      });
+    }
+
     // 1. Reversión de caja. Los detalles que insertan la confirmación
     // (registrarPagosEnCaja) y el cobro de crédito, en sus tres variantes de
     // sufijo: "", " (ENVÍO)" y " (DELIVERY)". Sin las variantes con sufijo, al
@@ -792,6 +811,11 @@ exports.updateEnvioVehiculo = async (req, res) => {
     }
     if (result.invalidVehiculo) {
       return res.status(400).json({ message: "Vehículo inexistente o inactivo" });
+    }
+    if (result.enReparto) {
+      return res.status(400).json({
+        message: `La venta está en el reparto #${result.enReparto}: el vehículo se cambia desde el reparto`,
+      });
     }
 
     // Rastro en el log del servidor por si hay discusiones en la rendición.
