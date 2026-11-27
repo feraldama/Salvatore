@@ -12,9 +12,9 @@ import {
 import { formatMiles } from "../../utils/utils";
 import type { ProductoFilters } from "../../services/productos.service";
 import ProductoFormModal, {
-  TIPOS_CAJA,
   type ProductoAlmacenRow,
 } from "./ProductoFormModal";
+import { TIPOS_CAJA } from "../../utils/tiposCaja";
 
 interface Producto {
   ProductoId?: number;

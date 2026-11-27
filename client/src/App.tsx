@@ -40,6 +40,8 @@ import VendedoresPage from "./pages/vendedores/VendedoresPage";
 import EmpresasPage from "./pages/empresas/EmpresasPage";
 import VehiculosPage from "./pages/flota/VehiculosPage";
 import ChoferesPage from "./pages/flota/ChoferesPage";
+import RepartosPage from "./pages/repartos/RepartosPage";
+import ControlRepartosPage from "./pages/repartos/ControlRepartosPage";
 
 function App() {
   return (
@@ -115,6 +117,8 @@ function App() {
             <Route path="/empresas" element={<EmpresasPage />} />
             <Route path="/flota/vehiculos" element={<VehiculosPage />} />
             <Route path="/flota/choferes" element={<ChoferesPage />} />
+            <Route path="/repartos" element={<RepartosPage />} />
+            <Route path="/control-vehiculos" element={<ControlRepartosPage />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

@@ -16,11 +16,11 @@ Branch: feat/repartos · Delivery: ask-on-risk · Test runner: none in repo (api
 ## Tasks
 
 - [x] T0 — S1 commit tipo de caja (prereq, already implemented and checked) · inline · 0b6a8ea
-- [x] T1 — S2,S8,S9 migration 036 (reparto, reparto_caja, venta_envio.reparto_id, menus, perfil RUTEADOR) · inline
-- [x] T2 — S2-S8 backend: reparto model/controller/routes + venta protections · inline · (T1+T2 same commit)
-- [ ] T3 — S3,S4 office page /repartos (list, armado, hoja de carga print) · inline
-- [ ] T4 — S6,S7 ruteador page /repartos/control (tablet) · inline
-- [ ] T5 — S9 registration (App routes, Sidebar, DocumentTitle) + final checks · inline
+- [x] T1 — S2,S8,S9 migration 036 (reparto, reparto_caja, venta_envio.reparto_id, menus, perfil RUTEADOR) · inline · 816cbe7
+- [x] T2 — S2-S8 backend: reparto model/controller/routes + venta protections · inline · 816cbe7 (T1+T2)
+- [x] T3 — S3,S4 office page /repartos (list, armado, hoja de carga print) · inline
+- [x] T4 — S6,S7 ruteador page /control-vehiculos (tablet) · inline
+- [x] T5 — S9 registration (App routes, Sidebar, DocumentTitle, login redirect for RUTEADOR) · inline
 
 Route evidence: one coherent feature, units depend on each other (backend → pages), no Writer trigger reason → inline. Risk: item 1 (migration on venta_envio), item 4 (state transitions under concurrency) → independent verifier at the end.
 
@@ -33,3 +33,5 @@ Route evidence: one coherent feature, units depend on each other (backend → pa
 - L5 decision: states simplified to ARMADO/EN_RUTA/RECIBIDO/ANULADO (no separate CERRADO: reception closes it). Per-stop crate detail deferred to the app phase (additive later). Local DB has no schema_migrations; migrations applied manually with psql.
 - L6 T1: migration 036 applied twice on local DB (idempotent). perfil sequence was behind (duplicate key perfilid=5) → setval to MAX before insert.
 - L7 T2 evidence: scratch script (scratchpad/test_reparto.js) runs model + venta controller inside one outer transaction rolled back (inner commits → savepoints): 14 checks OK (create validation, ventas disponibles cajas count, all-or-nothing assign, cross-empresa 404, vehicle change blocked in reparto, live hoja de carga 710_ROJO=4/COCA=6 with U lines excluded, salida freezes crates, double salida 409, delete of EN_RUTA venta blocked, recepción validations incl. mandatory observation, RECIBIDO/ENTREGADO, anular frees ventas; regressions: vehicle change without reparto OK, delete in ARMADO reparto OK). Census venta/ventaproducto/venta_envio/reparto/registrodiariocaja/sum stock identical before/after. RED not observed first (tests written after code) — exception noted. Real two-connection concurrency not exercised (single outer connection).
+- L8 RDD assess on 57e1509..816cbe7: risk medium, review_due false (under_budget) → no native review; independent verifier still due for named items 1 and 4.
+- L9 T3-T5: client tsc + eslint clean, vite build OK (py-4! important class emitted). Ruteador route renamed /repartos/control → /control-vehiculos so the Sidebar prefix match doesn't highlight both items. TIPOS_CAJA moved to client/src/utils/tiposCaja.ts (shared). Login sends a user whose only readable menu is CONTROLREPARTOS to /control-vehiculos. Not exercised in a browser.

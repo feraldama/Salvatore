@@ -124,7 +124,13 @@ const sections: NavigationSection[] = [
       { name: "Vendedores", href: "/vendedores", icon: UserGroupIcon, permiso: "VENDEDORES" },
       { name: "Vehículos", href: "/flota/vehiculos", icon: TruckIcon, permiso: "VEHICULOS" },
       { name: "Choferes", href: "/flota/choferes", icon: UserGroupIcon, permiso: "CHOFERES" },
-      { name: "Rutas de Reparto", href: "/rutas", icon: TruckIcon },
+      { name: "Repartos", href: "/repartos", icon: TruckIcon, permiso: "REPARTOS" },
+      {
+        name: "Control de vehículos",
+        href: "/control-vehiculos",
+        icon: TruckIcon,
+        permiso: "CONTROLREPARTOS",
+      },
     ],
   },
   {

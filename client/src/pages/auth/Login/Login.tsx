@@ -62,12 +62,28 @@ function Login() {
     if (error) setError("");
   };
 
+  // El ruteador (solo tiene CONTROLREPARTOS) entra directo a su pantalla de
+  // tablet; el resto al dashboard.
+  const destinoInicial = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      const permisos = JSON.parse(localStorage.getItem("permisos") || "{}");
+      const menus = Object.keys(permisos).filter((m) => permisos[m]?.leer);
+      if (user?.isAdmin !== "S" && menus.length === 1 && menus[0] === "CONTROLREPARTOS") {
+        return "/control-vehiculos";
+      }
+    } catch {
+      /* datos de sesión ilegibles: dashboard */
+    }
+    return "/dashboard";
+  };
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (loading) return;
     try {
       await login(credentials);
-      navigate("/dashboard");
+      navigate(destinoInicial());
     } catch (err) {
       const message =
         err instanceof Error && err.message

@@ -5,6 +5,7 @@ import { getAlmacenes } from "../../services/almacenes.service";
 import { formatMiles, formatMilesWithDecimals } from "../../utils/utils";
 import { comprimirImagenABase64 } from "../../utils/productImage";
 import { useAuth } from "../../contexts/useAuth";
+import { TIPOS_CAJA } from "../../utils/tiposCaja";
 
 export interface ProductoAlmacenRow {
   AlmacenId: number;
@@ -36,17 +37,6 @@ export interface Producto {
   productoAlmacen?: ProductoAlmacenRow[];
   [key: string]: unknown;
 }
-
-/** Valores válidos de ProductoTipoCaja (ver migración 035). */
-export const TIPOS_CAJA: { value: string; label: string }[] = [
-  { value: "CERVEPAR", label: "Caja Cervepar" },
-  { value: "COCA", label: "Caja Coca" },
-  { value: "340", label: "Caja 340" },
-  { value: "MUNICH_POLAR", label: "Caja Munich/Polar" },
-  { value: "710_NEGRO", label: "Caja 710 negro" },
-  { value: "710_ROJO", label: "Caja 710 rojo" },
-  { value: "710_AZUL", label: "Caja 710 azul" },
-];
 
 interface ProductoFormModalProps {
   isOpen: boolean;
