@@ -33,7 +33,7 @@ function productoListCols(almacenId) {
   ${stockCols},
   p.ProductoCantidadCaja, p.ProductoIVA,
   p.ProductoStockMinimo, p.ProductoImagen_GXI,
-  p.LocalId, p.EmpresaId, p.ProductoEstado,
+  p.LocalId, p.EmpresaId, p.ProductoEstado, p.ProductoTipoCaja,
   (LENGTH(p.ProductoImagen) > 0) AS HasImagen
 `;
 }
@@ -52,6 +52,7 @@ function productoAlmacenJoin(almacenId) {
  * - localId (Local FK)
  * - stockMin / stockMax: rango sobre ProductoStock
  * - precioMin / precioMax: rango sobre ProductoPrecioVenta
+ * - tipoCaja: código de caja, o "NINGUNO" = sin tipo de caja
  */
 function buildProductoFiltersWhere(filters = {}) {
   const conditions = [];
@@ -91,6 +92,12 @@ function buildProductoFiltersWhere(filters = {}) {
   if (filters.precioMax != null && filters.precioMax !== "") {
     conditions.push("COALESCE(p.ProductoPrecioVenta, 0) <= ?");
     params.push(Number(filters.precioMax));
+  }
+  if (filters.tipoCaja === "NINGUNO") {
+    conditions.push("p.ProductoTipoCaja IS NULL");
+  } else if (filters.tipoCaja) {
+    conditions.push("p.ProductoTipoCaja = ?");
+    params.push(filters.tipoCaja);
   }
 
   return { conditions, params };
@@ -212,6 +219,7 @@ const Producto = {
         "ProductoImagen_GXI",
         "LocalId",
         "LocalNombre",
+        "ProductoTipoCaja",
       ];
       const allowedSortOrders = ["ASC", "DESC"];
       const sortField = allowedSortFields.includes(sortBy)
@@ -292,6 +300,7 @@ const Producto = {
         "ProductoImagen_GXI",
         "LocalId",
         "LocalNombre",
+        "ProductoTipoCaja",
       ];
       const allowedSortOrders = ["ASC", "DESC"];
       const sortField = allowedSortFields.includes(sortBy)
@@ -400,8 +409,9 @@ const Producto = {
           ProductoImagen,
           ProductoImagen_GXI,
           LocalId,
-          EmpresaId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          EmpresaId,
+          ProductoTipoCaja
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const values = [
         productoData.ProductoCodigo,
@@ -419,6 +429,7 @@ const Producto = {
         productoData.ProductoImagen_GXI || null,
         localId,
         empresaId,
+        productoData.ProductoTipoCaja || null,
       ];
       db.query(query, values, (err, result) => {
         if (err) return reject(err);
@@ -480,6 +491,7 @@ const Producto = {
         "ProductoImagen_GXI",
         "LocalId",
         "ProductoEstado",
+        "ProductoTipoCaja",
       ];
       camposActualizables.forEach((campo) => {
         if (productoData[campo] === undefined) return;
@@ -489,6 +501,10 @@ const Producto = {
           if (!productoData.ProductoImagen) return;
           updateFields.push(`${campo} = ?`);
           values.push(Buffer.from(productoData.ProductoImagen, "base64"));
+        } else if (campo === "ProductoTipoCaja") {
+          // "" o null = Ninguno.
+          updateFields.push(`${campo} = ?`);
+          values.push(productoData[campo] || null);
         } else {
           updateFields.push(`${campo} = ?`);
           values.push(productoData[campo]);

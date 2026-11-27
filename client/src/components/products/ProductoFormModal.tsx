@@ -31,9 +31,22 @@ export interface Producto {
   LocalId: number;
   /** 'A' = Activo, 'I' = dado de baja (oculto para la venta). */
   ProductoEstado?: string;
+  /** Caja (envase) del producto; null/"" = Ninguno. Ver TIPOS_CAJA. */
+  ProductoTipoCaja?: string | null;
   productoAlmacen?: ProductoAlmacenRow[];
   [key: string]: unknown;
 }
+
+/** Valores válidos de ProductoTipoCaja (ver migración 035). */
+export const TIPOS_CAJA: { value: string; label: string }[] = [
+  { value: "CERVEPAR", label: "Caja Cervepar" },
+  { value: "COCA", label: "Caja Coca" },
+  { value: "340", label: "Caja 340" },
+  { value: "MUNICH_POLAR", label: "Caja Munich/Polar" },
+  { value: "710_NEGRO", label: "Caja 710 negro" },
+  { value: "710_ROJO", label: "Caja 710 rojo" },
+  { value: "710_AZUL", label: "Caja 710 azul" },
+];
 
 interface ProductoFormModalProps {
   isOpen: boolean;
@@ -76,6 +89,7 @@ export default function ProductoFormModal({
     ProductoStockMinimo: 0,
     ProductoImagen: "",
     ProductoImagen_GXI: "",
+    ProductoTipoCaja: "",
     // El backend asigna el LocalId real (local primario de la empresa activa)
     // al crear; este valor es solo un placeholder para el estado del form.
     LocalId: 0,
@@ -138,6 +152,7 @@ export default function ProductoFormModal({
         ProductoImagen: currentProduct.ProductoImagen || "",
         ProductoImagen_GXI: currentProduct.ProductoImagen_GXI || "",
         LocalId: currentProduct.LocalId,
+        ProductoTipoCaja: currentProduct.ProductoTipoCaja || "",
       });
     } else {
       setStockAlmacenes([]);
@@ -155,6 +170,7 @@ export default function ProductoFormModal({
         ProductoStockMinimo: 0,
         ProductoImagen: "",
         ProductoImagen_GXI: "",
+        ProductoTipoCaja: "",
         LocalId: 0,
         ...valoresIniciales,
       });
@@ -722,7 +738,7 @@ export default function ProductoFormModal({
                 </p>
               </div>
               {/* Imagen: solo mostrar base64 si existe */}
-              <div className="col-span-6">
+              <div className="col-span-6 sm:col-span-3">
                 <label className="block mb-2 text-sm font-medium text-text">
                   Imagen del producto
                 </label>
@@ -758,6 +774,28 @@ export default function ProductoFormModal({
                     </>
                   )}
                 </div>
+              </div>
+              <div className="col-span-6 sm:col-span-3">
+                <label
+                  htmlFor="ProductoTipoCaja"
+                  className="block mb-2 text-sm font-medium text-text"
+                >
+                  Tipo de caja
+                </label>
+                <select
+                  name="ProductoTipoCaja"
+                  id="ProductoTipoCaja"
+                  value={formData.ProductoTipoCaja || ""}
+                  onChange={handleInputChange}
+                  className="bg-surface border border-border text-text text-sm rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-brand-600/30 focus:border-brand-600 block w-full p-2.5"
+                >
+                  <option value="">Ninguno</option>
+                  {TIPOS_CAJA.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

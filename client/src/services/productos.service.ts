@@ -10,6 +10,8 @@ export interface ProductoFilters {
   precioMax?: number | string;
   /** Incluir productos dados de baja (solo la gestión de productos). */
   incluirInactivos?: boolean;
+  /** Código de TIPOS_CAJA, o "NINGUNO" para los que no tienen tipo de caja. */
+  tipoCaja?: string;
 }
 
 const applyProductoFilters = (
@@ -30,6 +32,7 @@ const applyProductoFilters = (
   if (filters.precioMax != null && filters.precioMax !== "")
     params.precioMax = filters.precioMax;
   if (filters.incluirInactivos) params.incluirInactivos = "true";
+  if (filters.tipoCaja) params.tipoCaja = filters.tipoCaja;
 };
 
 // Traer todos los productos sin paginación
